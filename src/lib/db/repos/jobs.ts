@@ -145,17 +145,41 @@ export function completeJob(db: Database.Database, id: string): void {
   ).run(new Date().toISOString(), id);
 }
 
-/** 记录失败：未超上限则指数退避重排，超限置 dead。 */
+/** 配置错误的固定重排间隔（秒）：不置 dead，等待用户配置正确后自动恢复。 */
+export const CONFIG_ERROR_RETRY_SECONDS = 300;
+
+/**
+ * 记录失败。
+ *
+ * - 默认：未超上限则指数退避重排，超限置 `dead`。
+ * - `permanentRetry`：用于"配置问题"类失败（如 Jev 未配置/密钥无效）。
+ *   这类失败不能因为达到次数上限就永久放弃，否则用户配置好之后历史线报永远不会被判断。
+ *   因此保持 `pending`、按固定间隔重排、只累计 attempts 供观察。
+ */
 export function failJob(
   db: Database.Database,
   id: string,
   error: string,
   now: Date = new Date(),
+  options: { permanentRetry?: boolean } = {},
 ): { status: JobStatus; attempts: number; runAt: string } {
   const job = getJob(db, id);
   if (!job) throw new Error(`任务不存在：${id}`);
   const attempts = job.attempts + 1;
   const nowIso = now.toISOString();
+
+  if (options.permanentRetry) {
+    const runAt = new Date(
+      now.getTime() + CONFIG_ERROR_RETRY_SECONDS * 1000,
+    ).toISOString();
+    db.prepare(
+      `UPDATE jobs SET status = 'pending', attempts = @attempts, last_error = @error,
+         run_at = @runAt, lease_owner = NULL, lease_until = NULL, updated_at = @nowIso
+       WHERE id = @id`,
+    ).run({ id, attempts, error, runAt, nowIso });
+    return { status: "pending", attempts, runAt };
+  }
+
   if (attempts >= job.maxAttempts) {
     db.prepare(
       `UPDATE jobs SET status = 'dead', attempts = @attempts, last_error = @error,
