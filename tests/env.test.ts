@@ -18,7 +18,6 @@ describe("lib/env", () => {
     expect(env.dataDir).toBe("/tmp/xianbao-data");
     expect(env.encryptionKey).toHaveLength(32);
     expect(env.cookieSecure).toBe(false);
-    expect(env.port).toBe(3000);
     expect(env.xianbaoApiBase).toBe("https://new.xianbao.fun");
   });
 
@@ -42,9 +41,14 @@ describe("lib/env", () => {
     expect(() => decodeEncryptionKey("not base64!!!")).toThrow(/base64/);
   });
 
-  it("PORT 非法时拒绝", () => {
-    expect(() => loadEnv(base({ PORT: "abc" }))).toThrow(/PORT/);
-    expect(() => loadEnv(base({ PORT: "70000" }))).toThrow(/PORT/);
+  it("PORT 不属于应用配置：任意值都不影响 loadEnv（只由 compose 端口映射使用）", () => {
+    const env = loadEnv(base({ PORT: "abc" }));
+    expect(env.dataDir).toBe("/tmp/xianbao-data");
+    expect(Object.keys(env)).not.toContain("port");
+    // 容器内固定监听 3000，宿主机发布端口由 compose 的 ${PORT:-3000}:3000 决定
+    expect(loadEnv(base({ PORT: "70000" })).xianbaoApiBase).toBe(
+      "https://new.xianbao.fun",
+    );
   });
 
   it("COOKIE_SECURE=true 时开启 Secure", () => {
