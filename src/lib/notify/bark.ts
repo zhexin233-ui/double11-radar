@@ -1,5 +1,7 @@
+import { describeNetworkFailure } from "@/lib/http/network-error";
 import {
   BARK_GROUP,
+  NOTIFY_TIMEOUT_MS,
   notificationBodyLines,
   notificationTitle,
   type NotifyMessage,
@@ -55,11 +57,19 @@ export async function sendBark(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    return failure(`Bark 请求失败：${detail}`);
+    console.error("[bark] 投递失败：", error);
+    return failure(
+      describeNetworkFailure(error, {
+        service: "Bark 服务",
+        target: config.serverUrl,
+        timeoutMs: NOTIFY_TIMEOUT_MS,
+        timeoutHint: "请检查服务地址与 NAS 出网情况",
+        unreachableHint: "请检查服务地址、NAS 出网与设备 Key 是否正确",
+      }),
+    );
   }
 
   const text = await response.text();

@@ -1,3 +1,4 @@
+import { describeNetworkFailure } from "@/lib/http/network-error";
 import {
   SystemOneResponseSchema,
   type SystemOneResponse,
@@ -47,29 +48,22 @@ export interface SystemOneRequest {
   questions: Record<string, JevQuestion>;
 }
 
-function errorName(error: unknown): string {
-  if (typeof error === "object" && error !== null && "name" in error) {
-    return String((error as { name?: unknown }).name ?? "");
-  }
-  return "";
-}
-
 /**
- * 把网络层失败翻译成中文、可操作的信息。
- *
- * 不再回传底层英文信息（如 `fetch failed`）——它既不可读，也可能带上环境细节。
- * 原始异常由调用方写入服务端日志。
+ * 把网络层失败翻译成中文、可操作的信息（实现见 lib/http/network-error.ts）。
+ * 原始异常只写入服务端日志。
  */
 export function describeJevNetworkFailure(
   error: unknown,
   baseUrl: string,
   timeoutMs: number,
 ): string {
-  const name = errorName(error);
-  if (name === "AbortError" || name === "TimeoutError") {
-    return `调用 Jev 超时（${timeoutMs} 毫秒）：请检查服务地址与网络，或在页面调大超时时间`;
-  }
-  return `无法连接 Jev 服务（${baseUrl}）：请检查服务地址、NAS 出网与代理设置`;
+  return describeNetworkFailure(error, {
+    service: "Jev 服务",
+    target: baseUrl,
+    timeoutMs,
+    timeoutHint: "请检查服务地址与网络，或在页面调大超时时间",
+    unreachableHint: "请检查服务地址、NAS 出网与代理设置",
+  });
 }
 
 export interface JevClientConfig {

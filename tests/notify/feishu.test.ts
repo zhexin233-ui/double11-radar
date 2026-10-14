@@ -100,3 +100,23 @@ describe("飞书群 Webhook（mock 验证）", () => {
     expect(typeof body.content).toBe("object");
   });
 });
+
+describe("飞书网络失败信息中文化且不泄露 Webhook", () => {
+  it("网络失败给出中文提示，且消息中不含 Webhook 地址", async () => {
+    const webhookUrl = "https://open.feishu.cn/open-apis/bot/v2/hook/super-secret-webhook";
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const result = await sendFeishu(
+      MESSAGE,
+      { webhookUrl },
+      { fetchImpl },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("飞书机器人无法连接");
+    expect(result.error).not.toContain("fetch failed");
+    // Webhook 本身是凭据，绝不能出现在错误信息里
+    expect(result.error).not.toContain(webhookUrl);
+    expect(result.error).not.toContain("super-secret-webhook");
+  });
+});

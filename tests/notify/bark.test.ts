@@ -50,7 +50,7 @@ describe("Bark 推送（mock 验证）", () => {
     expect(result.retryable).toBe(true);
   });
 
-  it("网络错误容错为可重试失败", async () => {
+  it("网络错误容错为可重试失败，且不把原始英文信息回传", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("network down");
     });
@@ -60,6 +60,39 @@ describe("Bark 推送（mock 验证）", () => {
       { fetchImpl },
     );
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("network down");
+    expect(result.retryable).toBe(true);
+    expect(result.error).toContain("Bark 服务无法连接");
+    expect(result.error).not.toContain("network down");
+  });
+});
+
+describe("Bark 网络失败信息中文化（不泄露英文原始信息）", () => {
+  it("网络失败给出中文可操作提示且带上服务地址", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const result = await sendBark(
+      MESSAGE,
+      { serverUrl: "https://api.day.app", deviceKey: "device-key" },
+      { fetchImpl },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Bark 服务无法连接");
+    expect(result.error).toContain("https://api.day.app");
+    expect(result.error).not.toContain("fetch failed");
+    expect(/[\u4e00-\u9fff]/.test(result.error ?? "")).toBe(true);
+  });
+
+  it("超时给出中文可操作提示", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "TimeoutError");
+    });
+    const result = await sendBark(
+      MESSAGE,
+      { serverUrl: "https://api.day.app", deviceKey: "device-key" },
+      { fetchImpl },
+    );
+    expect(result.error).toContain("Bark 服务调用超时");
+    expect(result.error).not.toContain("aborted");
   });
 });
