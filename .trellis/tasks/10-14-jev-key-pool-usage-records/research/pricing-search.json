@@ -1,0 +1,540 @@
+{
+  "ok": true,
+  "error_type": "",
+  "error": "",
+  "session_id": "c678358cad2e",
+  "query": "site:typesafe.ai Jev pricing cached tokens rate limits API keys account shared",
+  "platform": "",
+  "model": "grok-4.20-multi-agent-0309",
+  "primary_api_mode": "chat-completions",
+  "content": "**Jev** (current version `jev-1.13.0`, aliases `jev-latest` / `jev-preview`) is TypeSafe.ai’s flagship “System One” model. It is optimized for fast, structured decisions (Choice, Score, or Noul primitives with probabilities and confidence) rather than text generation. It takes a `state` (text, JSON object, or array) plus multiple typed questions in one call and returns machine-readable outputs. Input is text/structured data only.[[1]](https://docs.typesafe.ai/models)\n\n### Pricing\n- **Input tokens**: $0.042 per million tokens (**$42 per billion tokens** / Btok).[[1]](https://docs.typesafe.ai/models)\n- **Output tokens**: Free (“too cheap to meter”).\n- You are charged only for input tokens sent in each request. Output and small fixed-shape answers are not billed. Batching multiple questions in one request (they share the state) is the main way to reduce cost and latency.[[2]](https://opentweet.io/jev/limits)\n\nThere is **no documented server-side prompt/cached tokens discount** or separate cached-tokens rate. “Caching” in the documentation and cookbooks refers to **client-side JSON caches** used in notebooks and examples so repeated runs replay stored results instead of hitting the API (for development and reproducible benchmarks). No prepaid tiers, free allowance, or volume discounts are published in the core docs (some third-party sites mention prepaid credits or small new-account credits, but official sources emphasize straightforward per-input-token billing).[[3]](https://jevaiguide.com/jev-pricing/)\n\nEnterprise/custom plans exist for high volume; contact sales@typesafe.ai. Pricing and limits can change.\n\n### Rate Limits (per account)\nCurrent documented limits (as of mid-October 2026 docs):\n\n- **100K tokens per second**\n- **80 requests per second**\n\nExceeding either returns **HTTP 429 Too Many Requests**. SDKs automatically retry with exponential backoff and respect the `retry-after` header. There is also a **529 Overloaded** status for temporary platform issues.[[4]](https://docs.typesafe.ai/api)\n\n**Important notes**:\n- Limits are **adjusting dynamically** due to high demand and can change without notice as capacity expands.\n- Earlier launch figures were different (e.g., 250K tokens/s and 1,200 requests/minute); always check the live models page.\n- Higher limits are available on custom and enterprise plans. Contact sales@typesafe.ai for teams or high-volume use.[[1]](https://docs.typesafe.ai/models)\n\n**Context window**: 64k tokens per request total; 32k tokens budget for the state plus the single longest question. Accuracy can vary as state size grows.\n\n### API Keys and Authentication\n- Create and manage keys in the **TypeSafe console** (typically console.typesafe.ai/keys or linked from the quickstart).\n- Use the standard header: `Authorization: Bearer <API_KEY>`.\n- The official Python (`typesafe-sdk`) and JavaScript/TypeScript SDKs read the `TYPESAFE_API_KEY` environment variable by default and handle retries, connection reuse, etc.\n- Endpoint: `POST https://api.typesafe.ai/v1/systemone` (with JSON body containing `model`, `state`, and `questions` map). Responses include `usage` with `input_tokens` and `output_tokens`.[[5]](https://docs.typesafe.ai/introduction/quickstart)\n\n**401 Unauthorized** = missing or invalid key. Keep keys secret; do not hard-code them in client-side code.\n\n### Accounts and “Shared” Usage\n- **Standard accounts** are self-serve via the console for API access and key management. Rate limits and billing are at the account/key level.\n- **Enterprise** offerings target teams and high-volume users. They provide higher rate limits, SOC 2 Type II compliance, Zero Data Retention (ZDR – no training on your inputs/outputs), and the ability to discuss custom terms, VPC/on-prem options, BAAs, etc. Contact sales@typesafe.ai.[[6]](https://typesafe.ai/enterprise)\n\nThere is no published “shared account” tier. Technically, multiple people or services can use the same API key (one balance across all uses), but this is **not recommended**: it mixes billing, risks key exposure, causes rate-limit contention, and complicates debugging/auditing. Best practice is one key per project/service or proper team/enterprise setup with separate keys where supported. TypeSafe states they do not train on customer data and offers strong privacy controls for enterprise.\n\n### Quick Recommendations\n- Start with the official models page for the single source of truth on pricing + limits.\n- Use the SDKs (they handle retries, connection pooling, and typed primitives).\n- Batch questions aggressively to amortize the state cost.\n- Monitor the `usage` field in responses and set up alerts for spend.\n- For production/high scale, talk to sales early about enterprise limits and guarantees.\n\n**Primary sources**: Official docs at https://docs.typesafe.ai/models (pricing, limits, context), https://docs.typesafe.ai/api (auth, errors, rate-limit handling), quickstart, and enterprise page. These were current as of October 2026; always verify live because limits are noted as dynamic.[[1]](https://docs.typesafe.ai/models)\n\nFor the absolute latest numbers or enterprise discussion, visit the console or email sales@typesafe.ai.",
+  "sources": [
+    {
+      "title": "1",
+      "url": "https://docs.typesafe.ai/models"
+    },
+    {
+      "title": "2",
+      "url": "https://opentweet.io/jev/limits"
+    },
+    {
+      "title": "3",
+      "url": "https://jevaiguide.com/jev-pricing/"
+    },
+    {
+      "title": "4",
+      "url": "https://docs.typesafe.ai/api"
+    },
+    {
+      "title": "5",
+      "url": "https://docs.typesafe.ai/introduction/quickstart"
+    },
+    {
+      "title": "6",
+      "url": "https://typesafe.ai/enterprise"
+    },
+    {
+      "url": "context7:/websites/typesafe_ai",
+      "title": "TypeSafe AI",
+      "description": "TypeSafe AI provides System One AI models that evaluate typed questions against application state to deliver fast, calibrated, and structured decisions directly to software.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/llmstxt/typesafe_ai_llms_txt",
+      "title": "TypeSafe AI",
+      "description": "TypeSafe AI provides System One AI models that evaluate state against typed questions to deliver fast, calibrated, structured decisions directly to software.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/typesafe-docs/typesafeai",
+      "title": "TypeSafe AI",
+      "description": "TypeSafe AI provides a System One API and calibrated decision models that evaluate typed questions against a state to return structured choices, scores, and confidence values for deterministic code routing.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rameerez/api_keys",
+      "title": "API Keys",
+      "description": "Add secure, production-ready API key authentication to your Rails app in minutes with key generation, hashing, expiration, revocation, scopes, and a drop-in dashboard for users to self-manage their API keys.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/alisaifee/limits",
+      "title": "limits",
+      "description": "Python library for rate limiting with multiple strategies and commonly used storage backends (Redis, Memcached, MongoDB).",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/ralsina/rate_limiter",
+      "title": "Rate Limiter",
+      "description": "Rate Limiter is a simple, composable rate limiting library for Crystal applications that uses a sliding window algorithm with thread-safe implementation and flexible key-based identification.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/typesafe_ai_introduction",
+      "title": "TypeSafe",
+      "description": "TypeSafe is an AI decision system that evaluates typed questions against state to return structured, calibrated results for software automation.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/typesafe_ai_sdk_javascript",
+      "title": "TypeSafe AI JavaScript SDK",
+      "description": "The TypeSafe AI JavaScript SDK provides a TypeScript and JavaScript client for interacting with the TypeSafe AI API to execute type-safe question answering and structured queries.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/typesafe-ai/typesafe-sdk-python",
+      "title": "TypeSafe AI Python SDK",
+      "description": "TypeSafe AI Python SDK provides synchronous and asynchronous Python clients for interacting with the TypeSafe AI API to perform structured classification and question answering.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/apidoc_keys_so",
+      "title": "Keys.so API",
+      "description": "Keys.so API is a REST API service for integrating keyword research and SEO analytics capabilities, providing domain dashboards, keyword tracking, and search visibility data.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/gargpratyush/jev-router",
+      "title": "Jev Router",
+      "description": "Jev Router provides automatic per-turn model routing for Claude Code and OpenAI Codex, directing each turn to the cheapest sufficient model.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/express-rate-limit/express-rate-limit",
+      "title": "Express Rate Limit",
+      "description": "Basic rate-limiting middleware for the Express web server",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/fastify/fastify-rate-limit",
+      "title": "Fastify Rate Limit",
+      "description": "A low-overhead rate limiter plugin for Fastify routes that prevents abuse by limiting the number of requests per client in a configurable time window.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/colliber/duckdb-jev",
+      "title": "DuckDB Jev",
+      "description": "DuckDB Jev is a DuckDB extension that integrates Jev to query table rows in SQL and return typed SQL results instead of unstructured text.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/ciscoheat/sveltekit-rate-limiter",
+      "title": "Sveltekit Rate Limiter",
+      "description": "A modular rate limiter for SvelteKit. Use in password resets, account registration, etc.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/qew7/jev-feels",
+      "title": "jev-feels",
+      "description": "Ruby-like semantic text predicates via Jev. Jev.feels?(:urgent) is an ordinary condition, not an SDK session.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rayriffy/elysia-rate-limit",
+      "title": "Elysia Rate Limit",
+      "description": "A lightweight rate limiter plugin for Elysia.js, providing configurable rate limiting to protect API endpoints.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/browser-use/jev-ultrafast",
+      "title": "Jev Ultrafast",
+      "description": "Jev Ultrafast is a browser agent with a dynamic, indexed action space that executes web automation tasks quickly by choosing operations and target elements in a single request.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/webriots/rate",
+      "title": "Rate",
+      "description": "A high-performance rate limiter library for Go applications with multiple rate limiting strategies.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rhinobase/hono-rate-limiter",
+      "title": "Hono Rate Limiter",
+      "description": "Hono Rate Limiter is a middleware for Hono that limits repeated requests to public APIs and endpoints, helping to prevent abuse.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/nds-stack/bun-rate-limit",
+      "title": "Bun Rate Limit",
+      "description": "A zero-dependency, in-memory token bucket rate limiter for Bun that provides high-performance rate limiting without timers or I/O overhead.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/get-convex/rate-limiter",
+      "title": "Convex Rate Limiter",
+      "description": "Convex Rate Limiter is a type-safe, transactional rate limiting component for Convex applications that supports multiple algorithms, configurable sharding, and React integration.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/hexdocs_pm_ash_rate_limiter",
+      "title": "Ash Rate Limiter",
+      "description": "An extension for the Ash framework that protects actions from abuse by enforcing rate limits using the Hammer library.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/raj-deshmukh6403/distributed-rate-limiter",
+      "title": "Distributed Rate Limiter",
+      "description": "A production-grade distributed rate limiting service built with Spring Boot and Redis that prevents API abuse across multiple server instances using atomic Lua scripts.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/cristipufu/aspnetcore-redis-rate-limiting",
+      "title": "Redis Rate Limiting",
+      "description": "Redis Rate Limiting is an ASP.NET Core library that provides a Redis backplane for rate limiting in multi-node deployments, supporting multiple strategies including concurrent requests, fixed window, sliding window, and token bucket algorithms.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/danharrin/livewire-rate-limiting",
+      "title": "Livewire Rate Limiting",
+      "description": "A Laravel package that allows you to apply rate limiters to Livewire actions for throttling login attempts, preventing brute force attacks, and reducing spam.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/pgjones/quart-rate-limiter",
+      "title": "Quart Rate Limiter",
+      "description": "Quart Rate Limiter is an extension for the Quart web framework that enables developers to easily define and enforce rate limits on a per-route basis.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/ash-project/ash_rate_limiter",
+      "title": "Ash Rate Limiter",
+      "description": "An extension for the Ash framework that protects actions from abuse by enforcing rate limits, utilizing the Hammer library for rate limiting functionality.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rameerez/pricing_plans",
+      "title": "Pricing Plans",
+      "description": "Pricing Plans is a Ruby on Rails gem that provides a single source of truth for defining and enforcing pricing plan limits and SaaS entitlements, simplifying pricing logic in your application.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/developer_ui_site-manager",
+      "title": "Site Manager API",
+      "description": "Site Manager API is a RESTful API that enables developers to programmatically monitor and manage UniFi network deployments at scale with comprehensive data access and performance metrics.",
+      "provider": "context7"
+    }
+  ],
+  "sources_count": 36,
+  "primary_sources": [
+    {
+      "title": "1",
+      "url": "https://docs.typesafe.ai/models"
+    },
+    {
+      "title": "2",
+      "url": "https://opentweet.io/jev/limits"
+    },
+    {
+      "title": "3",
+      "url": "https://jevaiguide.com/jev-pricing/"
+    },
+    {
+      "title": "4",
+      "url": "https://docs.typesafe.ai/api"
+    },
+    {
+      "title": "5",
+      "url": "https://docs.typesafe.ai/introduction/quickstart"
+    },
+    {
+      "title": "6",
+      "url": "https://typesafe.ai/enterprise"
+    }
+  ],
+  "primary_sources_count": 6,
+  "extra_sources": [
+    {
+      "url": "https://docs.typesafe.ai/models",
+      "provider": "tavily",
+      "title": "Models - TypeSafe AI",
+      "description": "## ​ Current models\n\n| Jev 1.13 | `jev-1.13.0` |\n --- |\n| Price (per Btok / per Mtok) | $42 / $0.042 |\n| Rate limits | 100K tokens per second / 80 requests per second |\n| Context length | 64k tokens per request; 32k tokens for `state` plus the longest question |\n| Input | Text only. String, JSON object, or array of text values. No image, audio, or video input. | [...] Price: Charged per input token. Output tokens are free. A Btok is a billion tokens and an Mtok is a million tokens.\n Rate limits: Measured in tokens per second and requests per second. A request over either limit returns `429 Too Many Requests`. Our client SDKs retry with backoff by default and honor the `retry-after` header when the response carries one. If you call the HTTP API directly, see Handling rate limits.\n Context length: Jev ingests the `state` once and evaluates every question against it in parallel. The 64k budget covers the `state` plus all questions combined; the 32k budget applies to the `state` plus the single longest question. See Speculative fan-out for packing many questions into one request, and Jev 1.13 jaggedness for how accuracy shifts as the state grows. [...] ## ​ Data handling\n\nJev is not trained on customer requests or responses. See Legal for the Data Processing Agreement, the Privacy Policy, and details on zero data retention (ZDR) for enterprise customers.\n\n## ​ Listing models\n\n`GET /v1/models` returns the names your account can send in the `model` field, with a description and release date for each. It currently lists the aliases. Versioned IDs such as `jev-1.13.0` are accepted by the `model` field whether or not they appear in the list.\n\n```\ncurl  \\ curl   \\ -H \"Authorization: Bearer $TYPESAFE_API_KEY\" -H \"Authorization: Bearer $TYPESAFE_API_KEY \"\n```"
+    },
+    {
+      "url": "context7:/websites/typesafe_ai",
+      "title": "TypeSafe AI",
+      "description": "TypeSafe AI provides System One AI models that evaluate typed questions against application state to deliver fast, calibrated, and structured decisions directly to software.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/llmstxt/typesafe_ai_llms_txt",
+      "title": "TypeSafe AI",
+      "description": "TypeSafe AI provides System One AI models that evaluate state against typed questions to deliver fast, calibrated, structured decisions directly to software.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/typesafe-docs/typesafeai",
+      "title": "TypeSafe AI",
+      "description": "TypeSafe AI provides a System One API and calibrated decision models that evaluate typed questions against a state to return structured choices, scores, and confidence values for deterministic code routing.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rameerez/api_keys",
+      "title": "API Keys",
+      "description": "Add secure, production-ready API key authentication to your Rails app in minutes with key generation, hashing, expiration, revocation, scopes, and a drop-in dashboard for users to self-manage their API keys.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/alisaifee/limits",
+      "title": "limits",
+      "description": "Python library for rate limiting with multiple strategies and commonly used storage backends (Redis, Memcached, MongoDB).",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/ralsina/rate_limiter",
+      "title": "Rate Limiter",
+      "description": "Rate Limiter is a simple, composable rate limiting library for Crystal applications that uses a sliding window algorithm with thread-safe implementation and flexible key-based identification.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/typesafe_ai_introduction",
+      "title": "TypeSafe",
+      "description": "TypeSafe is an AI decision system that evaluates typed questions against state to return structured, calibrated results for software automation.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/typesafe_ai_sdk_javascript",
+      "title": "TypeSafe AI JavaScript SDK",
+      "description": "The TypeSafe AI JavaScript SDK provides a TypeScript and JavaScript client for interacting with the TypeSafe AI API to execute type-safe question answering and structured queries.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/typesafe-ai/typesafe-sdk-python",
+      "title": "TypeSafe AI Python SDK",
+      "description": "TypeSafe AI Python SDK provides synchronous and asynchronous Python clients for interacting with the TypeSafe AI API to perform structured classification and question answering.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/apidoc_keys_so",
+      "title": "Keys.so API",
+      "description": "Keys.so API is a REST API service for integrating keyword research and SEO analytics capabilities, providing domain dashboards, keyword tracking, and search visibility data.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/gargpratyush/jev-router",
+      "title": "Jev Router",
+      "description": "Jev Router provides automatic per-turn model routing for Claude Code and OpenAI Codex, directing each turn to the cheapest sufficient model.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/express-rate-limit/express-rate-limit",
+      "title": "Express Rate Limit",
+      "description": "Basic rate-limiting middleware for the Express web server",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/fastify/fastify-rate-limit",
+      "title": "Fastify Rate Limit",
+      "description": "A low-overhead rate limiter plugin for Fastify routes that prevents abuse by limiting the number of requests per client in a configurable time window.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/colliber/duckdb-jev",
+      "title": "DuckDB Jev",
+      "description": "DuckDB Jev is a DuckDB extension that integrates Jev to query table rows in SQL and return typed SQL results instead of unstructured text.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/ciscoheat/sveltekit-rate-limiter",
+      "title": "Sveltekit Rate Limiter",
+      "description": "A modular rate limiter for SvelteKit. Use in password resets, account registration, etc.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/qew7/jev-feels",
+      "title": "jev-feels",
+      "description": "Ruby-like semantic text predicates via Jev. Jev.feels?(:urgent) is an ordinary condition, not an SDK session.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rayriffy/elysia-rate-limit",
+      "title": "Elysia Rate Limit",
+      "description": "A lightweight rate limiter plugin for Elysia.js, providing configurable rate limiting to protect API endpoints.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/browser-use/jev-ultrafast",
+      "title": "Jev Ultrafast",
+      "description": "Jev Ultrafast is a browser agent with a dynamic, indexed action space that executes web automation tasks quickly by choosing operations and target elements in a single request.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/webriots/rate",
+      "title": "Rate",
+      "description": "A high-performance rate limiter library for Go applications with multiple rate limiting strategies.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rhinobase/hono-rate-limiter",
+      "title": "Hono Rate Limiter",
+      "description": "Hono Rate Limiter is a middleware for Hono that limits repeated requests to public APIs and endpoints, helping to prevent abuse.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/nds-stack/bun-rate-limit",
+      "title": "Bun Rate Limit",
+      "description": "A zero-dependency, in-memory token bucket rate limiter for Bun that provides high-performance rate limiting without timers or I/O overhead.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/get-convex/rate-limiter",
+      "title": "Convex Rate Limiter",
+      "description": "Convex Rate Limiter is a type-safe, transactional rate limiting component for Convex applications that supports multiple algorithms, configurable sharding, and React integration.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/hexdocs_pm_ash_rate_limiter",
+      "title": "Ash Rate Limiter",
+      "description": "An extension for the Ash framework that protects actions from abuse by enforcing rate limits using the Hammer library.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/raj-deshmukh6403/distributed-rate-limiter",
+      "title": "Distributed Rate Limiter",
+      "description": "A production-grade distributed rate limiting service built with Spring Boot and Redis that prevents API abuse across multiple server instances using atomic Lua scripts.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/cristipufu/aspnetcore-redis-rate-limiting",
+      "title": "Redis Rate Limiting",
+      "description": "Redis Rate Limiting is an ASP.NET Core library that provides a Redis backplane for rate limiting in multi-node deployments, supporting multiple strategies including concurrent requests, fixed window, sliding window, and token bucket algorithms.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/danharrin/livewire-rate-limiting",
+      "title": "Livewire Rate Limiting",
+      "description": "A Laravel package that allows you to apply rate limiters to Livewire actions for throttling login attempts, preventing brute force attacks, and reducing spam.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/pgjones/quart-rate-limiter",
+      "title": "Quart Rate Limiter",
+      "description": "Quart Rate Limiter is an extension for the Quart web framework that enables developers to easily define and enforce rate limits on a per-route basis.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/ash-project/ash_rate_limiter",
+      "title": "Ash Rate Limiter",
+      "description": "An extension for the Ash framework that protects actions from abuse by enforcing rate limits, utilizing the Hammer library for rate limiting functionality.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/rameerez/pricing_plans",
+      "title": "Pricing Plans",
+      "description": "Pricing Plans is a Ruby on Rails gem that provides a single source of truth for defining and enforcing pricing plan limits and SaaS entitlements, simplifying pricing logic in your application.",
+      "provider": "context7"
+    },
+    {
+      "url": "context7:/websites/developer_ui_site-manager",
+      "title": "Site Manager API",
+      "description": "Site Manager API is a RESTful API that enables developers to programmatically monitor and manage UniFi network deployments at scale with comprehensive data access and performance metrics.",
+      "provider": "context7"
+    }
+  ],
+  "extra_sources_count": 31,
+  "source_warning": "extra_sources are retrieved in parallel and are not automatically used to verify generated content; use fetch on key URLs for claim-level evidence.",
+  "routing_decision": {
+    "docs_intent": true,
+    "zh_current_intent": false,
+    "web_current_intent": false,
+    "fetch_intent": false,
+    "supplemental_paths": [
+      "docs_search"
+    ],
+    "validation_level": "balanced",
+    "fallback_mode": "auto",
+    "providers": "auto",
+    "main_search_chain": [
+      "openai-compatible"
+    ],
+    "openai_compatible_stream": true
+  },
+  "providers_used": [
+    "OpenAI-compatible",
+    "tavily",
+    "context7"
+  ],
+  "provider_attempts": [
+    {
+      "capability": "main_search",
+      "provider": "OpenAI-compatible",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 30854.46,
+      "result_count": 1
+    },
+    {
+      "capability": "web_search",
+      "provider": "tavily",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 35394.7,
+      "result_count": 1
+    },
+    {
+      "capability": "docs_search",
+      "provider": "context7",
+      "status": "ok",
+      "error_type": "",
+      "error": "",
+      "elapsed_ms": 5999.72,
+      "result_count": 30
+    }
+  ],
+  "fallback_used": false,
+  "validation_level": "balanced",
+  "minimum_profile_ok": true,
+  "capability_status": {
+    "main_search": {
+      "configured": [
+        "openai-compatible"
+      ],
+      "fallback_chain": [
+        "xai-responses",
+        "openai-compatible"
+      ],
+      "ok": true
+    },
+    "web_search": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "zhipu",
+        "tavily",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "docs_search": {
+      "configured": [
+        "context7"
+      ],
+      "fallback_chain": [
+        "context7",
+        "exa"
+      ],
+      "ok": true
+    },
+    "web_fetch": {
+      "configured": [
+        "tavily"
+      ],
+      "fallback_chain": [
+        "tavily",
+        "firecrawl"
+      ],
+      "ok": true
+    },
+    "vertical_search": {
+      "configured": [],
+      "fallback_chain": [
+        "anysearch"
+      ],
+      "experimental": true,
+      "ok": false
+    }
+  },
+  "elapsed_ms": 41394.67
+}
