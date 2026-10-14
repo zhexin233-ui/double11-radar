@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { createNeed, listNeeds } from "@/lib/db/repos/needs";
-import { HttpError, handleRoute, ok, requireSameOrigin } from "@/lib/http/json";
+import { invalidBodyError, handleRoute, ok, requireSameOrigin } from "@/lib/http/json";
 import { requireAuth } from "@/lib/http/server";
 
 const CreateSchema = z.object({
-  name: z.string().trim().min(1, "需求名称不能为空").max(100),
-  note: z.string().max(500).optional(),
-  enabled: z.boolean().optional(),
+  name: z
+    .string({ error: "请填写需求名称" })
+    .trim()
+    .min(1, "需求名称不能为空")
+    .max(100, "需求名称过长（最多 100 字）"),
+  note: z.string({ error: "备注必须是文本" }).max(500, "备注过长（最多 500 字）").optional(),
+  enabled: z.boolean({ error: "enabled 必须是布尔值" }).optional(),
 });
 
 export const GET = handleRoute(async (req) => {
@@ -19,7 +23,7 @@ export const POST = handleRoute(async (req) => {
   const db = requireAuth(req);
   const body = CreateSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
-    throw new HttpError("INVALID_BODY", body.error.issues[0]?.message ?? "请求不合法", 400);
+    throw invalidBodyError(body.error);
   }
   const need = createNeed(db, {
     name: body.data.name,

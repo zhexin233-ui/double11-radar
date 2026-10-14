@@ -107,6 +107,25 @@ function combineSignals(
   };
 }
 
+function errorName(error: unknown): string {
+  if (typeof error === "object" && error !== null && "name" in error) {
+    return String((error as { name?: unknown }).name ?? "");
+  }
+  return "";
+}
+
+/** 网络层失败统一为中文可操作信息，不泄露底层英文细节。 */
+export function describeXianbaoNetworkFailure(
+  error: unknown,
+  timeoutMs: number,
+): string {
+  const name = errorName(error);
+  if (name === "AbortError" || name === "TimeoutError") {
+    return `请求线报酷超时（${timeoutMs} 毫秒）：请检查 NAS 出网情况`;
+  }
+  return "无法连接线报酷接口：请检查 NAS 出网与 DNS/代理设置";
+}
+
 async function request(
   url: string,
   options: XianbaoClientOptions,
@@ -122,8 +141,11 @@ async function request(
       signal,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new XianbaoError(`请求线报酷失败：${message}`, { status: 0 });
+    console.error("[xianbao] 请求失败：", error);
+    throw new XianbaoError(
+      describeXianbaoNetworkFailure(error, timeoutMs),
+      { status: 0 },
+    );
   }
 
   if (response.status === 429) {
