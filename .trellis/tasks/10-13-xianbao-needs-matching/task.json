@@ -1,0 +1,31 @@
+{
+  "id": "xianbao-needs-matching",
+  "name": "xianbao-needs-matching",
+  "title": "线报需求匹配与推送规划",
+  "description": "Docker本地NAS部署的单管理员网页应用：配置需求、全部开放频道、TypeSafe Jev原生匹配、Bark与飞书群推送；只处理新线报，仅推送明确匹配，历史低价延期。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "xianbao",
+  "package": null,
+  "priority": "P2",
+  "creator": "yang",
+  "assignee": "yang",
+  "createdAt": "2026-10-13",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "最终方案已获用户明确批准；用户同时要求暂不实施并更换模型执行。当前保持planning，未运行task.py start。后续收到开始执行指令后按handoff.md继续，不重复确认相同方案。",
+  "meta": {
+    "plan_approved": true,
+    "plan_approved_date": "2026-10-13",
+    "execution_deferred_by_user": true,
+    "handoff_file": ".trellis/tasks/10-13-xianbao-needs-matching/handoff.md"
+  }
+}

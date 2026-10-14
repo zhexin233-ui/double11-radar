@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/10-13-xianbao-needs-matching/research/impl-architecture.md", "reason": "实施架构契约：栈版本、目录、迁移DDL、模块边界、鉴权/凭据/基线/worker/部署与测试要求"}
+{"file": ".trellis/tasks/10-13-xianbao-needs-matching/research/xianbao-live-samples.md", "reason": "线报酷 meta/feed/zdm 实测响应结构、21 个频道清单、zhidemai 与 zdm 去重边界、限流字段"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "规范化外部边界、共享契约和跨层数据一致性"}
+{"file": ".trellis/tasks/10-13-xianbao-needs-matching/research/repo-inventory.md", "reason": "从零应用，不把Trellis模板当业务代码或既有规范"}
+{"file": ".trellis/tasks/10-13-xianbao-needs-matching/research/xianbao-source.md", "reason": "开放频道、两个feed结构、限流和快照覆盖限制"}
+{"file": ".trellis/tasks/10-13-xianbao-needs-matching/research/jev-api-compatibility.md", "reason": "仅接TypeSafe System One Choice，不接兼容聊天或生成字段"}
+{"file": ".trellis/tasks/10-13-xianbao-needs-matching/research/notification-channels.md", "reason": "Bark官方url/group字段依据，后续渠道决策优先于历史建议"}
+{"file": ".trellis/tasks/10-13-xianbao-needs-matching/research/feishu-notifications.md", "reason": "飞书群Webhook签名、富文本、业务码及幂等限制"}
