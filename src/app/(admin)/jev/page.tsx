@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
+import { DryRunPanel } from "@/components/DryRunPanel";
 import type { JevConfigDto, TestResultDto } from "@/components/api-types";
 
 type SecretAction = "keep" | "replace" | "clear";
@@ -172,6 +173,8 @@ export default function JevPage() {
           测试只做单次调用，不会回放历史线报；真实语义效果需要在你的凭据环境下验证。
         </span>
       </div>
+
+      <DryRunPanel />
     </div>
   );
 }

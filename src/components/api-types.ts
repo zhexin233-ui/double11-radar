@@ -105,6 +105,25 @@ export interface BulletinDetailDto {
   deliveries: DeliveryDto[];
 }
 
+export interface DryRunNeedResultDto {
+  needId: string;
+  needName: string;
+  needNote: string;
+  needVersion: number;
+  result: "matched" | "not_matched" | "uncertain" | "failed";
+  probabilities: Record<string, number> | null;
+  confidence: number | null;
+  error: string | null;
+}
+
+export interface DryRunResultDto {
+  configVersion: number;
+  model: string;
+  ruleVersion: string;
+  needsCount: number;
+  results: DryRunNeedResultDto[];
+}
+
 export interface StatusDto {
   worker: {
     workerStartedAt: string | null;

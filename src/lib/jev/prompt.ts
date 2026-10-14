@@ -68,15 +68,39 @@ export function buildQuestions(needs: Need[]): BuiltQuestions {
   return { questions, needByQuestionId };
 }
 
+/** 构造 state 所需的字段（线报与试判共用）。 */
+export interface StateFields {
+  title: string;
+  content?: string | null;
+  category?: string | null;
+  brand?: string | null;
+  mall?: string | null;
+  price?: number | null;
+}
+
+/** 由字段构造 state：只包含有值的字段，正文作为数据提供。 */
+export function buildStateFromFields(fields: StateFields): string {
+  const state: Record<string, string | number> = { 线报标题: fields.title };
+  if (fields.content) state.正文 = fields.content;
+  if (fields.category) state.品类 = fields.category;
+  if (fields.brand) state.品牌 = fields.brand;
+  if (fields.mall) state.商城 = fields.mall;
+  if (fields.price !== null && fields.price !== undefined) {
+    state.价格 = fields.price;
+  }
+  return JSON.stringify(state);
+}
+
 /** 构造 state：只包含有值的字段，正文作为数据提供。 */
 export function buildState(bulletin: Bulletin): string {
-  const state: Record<string, string | number> = { 线报标题: bulletin.title };
-  if (bulletin.content) state.正文 = bulletin.content;
-  if (bulletin.category) state.品类 = bulletin.category;
-  if (bulletin.brand) state.品牌 = bulletin.brand;
-  if (bulletin.mall) state.商城 = bulletin.mall;
-  if (bulletin.price !== null) state.价格 = bulletin.price;
-  return JSON.stringify(state);
+  return buildStateFromFields({
+    title: bulletin.title,
+    content: bulletin.content,
+    category: bulletin.category,
+    brand: bulletin.brand,
+    mall: bulletin.mall,
+    price: bulletin.price,
+  });
 }
 
 export interface ParsedAnswer {
