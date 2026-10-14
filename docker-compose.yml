@@ -13,7 +13,6 @@
 
 x-app: &app
   image: xianbao-needs-matching:local
-  build: .
   env_file: .env
   environment:
     DATA_DIR: /data
@@ -24,6 +23,9 @@ x-app: &app
 services:
   web:
     <<: *app
+    # 只在这里声明 build：两个服务使用同一镜像，避免 compose 为 web/worker
+    # 各构建一遍（在单核 NAS 上会成倍拉长构建时间并争抢 CPU）。
+    build: .
     command: ["node_modules/.bin/next", "start", "-p", "3000"]
     ports:
       - "${PORT:-3000}:3000"
