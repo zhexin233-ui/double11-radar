@@ -83,3 +83,22 @@ describe("线报酷客户端", () => {
     expect(calls[1]).toContain("type=zdm");
   });
 });
+
+describe("线报酷网络失败信息同样中文化", () => {
+  it("普通网络失败不回传英文原始信息", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    let message = "（未抛出错误）";
+    try {
+      await fetchFeed(
+        { id: "haodan", alias: "haodan", origin: "feed" },
+        { baseUrl: "https://example.test", fetchImpl },
+      );
+    } catch (caught) {
+      message = caught instanceof Error ? caught.message : String(caught);
+    }
+    expect(message).toContain("无法连接线报酷接口");
+    expect(message).not.toContain("fetch failed");
+  });
+});
