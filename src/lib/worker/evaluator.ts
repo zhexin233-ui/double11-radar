@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { claimJob, completeJob, failJob } from "@/lib/db/repos/jobs";
+import { claimJob, completeJob, failJob, getJob } from "@/lib/db/repos/jobs";
 import { getBulletin } from "@/lib/db/repos/bulletins";
 import {
   listEvaluationsByBulletin,
@@ -17,7 +17,11 @@ import {
   parseAnswers,
 } from "@/lib/jev/prompt";
 import { createNotificationAndDeliveries } from "@/lib/notify/dispatch";
-import { getJevRuntimeConfig, getJevConfigView } from "@/lib/service/config";
+import {
+  getJevConfig,
+  getJevConfigView,
+  getJevRuntimeConfig,
+} from "@/lib/service/config";
 import { patchRuntimeState } from "@/lib/worker/runtime-state";
 import { RULE_VERSION } from "@/lib/domain/constants";
 import type { AppEnv } from "@/lib/env";
@@ -142,33 +146,42 @@ export async function runEvaluatorOnce(
     uncertain: 0,
     failed: 0,
   };
+  const errors: string[] = [];
 
-  for (let i = 0; i < 3; i += 1) {
+  // 每轮重新读取调度设置，网页改完立即生效，无需重启 worker。
+  const { concurrency, jobsPerRound } = getJevConfig(db);
+
+  // 先同步领取：claimJob 是带事务的同步操作，先领满再并发执行可避免竞态。
+  const claimed: string[] = [];
+  for (let i = 0; i < jobsPerRound; i += 1) {
     const job = claimJob(db, "evaluator", LEASE_MS, now, "evaluate");
     if (!job) break;
+    claimed.push(job.id);
+  }
+
+  /** 处理一个已领取的任务（含解析、跳过基线与失败分类）。 */
+  const processJob = async (jobId: string): Promise<void> => {
+    const job = getJob(db, jobId);
+    if (!job) return;
     let payload: { bulletinId?: string };
     try {
       payload = JSON.parse(job.payload) as { bulletinId?: string };
     } catch {
       completeJob(db, job.id);
-      continue;
+      return;
     }
     if (!payload.bulletinId) {
       completeJob(db, job.id);
-      continue;
+      return;
     }
     const bulletin = getBulletin(db, payload.bulletinId);
     if (!bulletin || bulletin.baseline) {
       completeJob(db, job.id);
-      continue;
+      return;
     }
 
     try {
-      const outcome = await evaluateJob(
-        db,
-        payload.bulletinId,
-        deps,
-      );
+      const outcome = await evaluateJob(db, payload.bulletinId, deps);
       completeJob(db, job.id);
       stats.processed += 1;
       stats.matched += outcome.matched;
@@ -182,15 +195,34 @@ export async function runEvaluatorOnce(
         error.code !== null &&
         JE_CONFIG_ERROR_CODES.has(error.code);
       failJob(db, job.id, message, now, { permanentRetry: isConfigError });
-      patchRuntimeState(db, {
-        lastError: `判断失败：${message}`,
-        lastErrorAt: now.toISOString(),
-        lastErrorStage: "evaluate",
-      });
+      errors.push(`判断失败：${message}`);
       stats.failed += 1;
     }
-  }
+  };
 
-  patchRuntimeState(db, { lastEvaluateAt: now.toISOString() });
+  // 受限并发执行：最多 concurrency 条执行线，每条线串行取下一个任务。
+  // 队列取用是同步的（检查与 shift 之间没有 await），因此不会重复取到同一任务。
+  const queue = [...claimed];
+  const laneCount = Math.max(1, Math.min(concurrency, queue.length));
+  await Promise.all(
+    Array.from({ length: laneCount }, async () => {
+      for (;;) {
+        const jobId = queue.shift();
+        if (!jobId) break;
+        await processJob(jobId);
+      }
+    }),
+  );
+
+  patchRuntimeState(db, {
+    lastEvaluateAt: now.toISOString(),
+    ...(errors.length > 0
+      ? {
+          lastError: errors[0],
+          lastErrorAt: now.toISOString(),
+          lastErrorStage: "evaluate",
+        }
+      : {}),
+  });
   return stats;
 }

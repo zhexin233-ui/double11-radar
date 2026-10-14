@@ -157,6 +157,13 @@ web 与 worker 必须共用同一个 `DATA_DIR`、`APP_ENCRYPTION_KEY`、`ADMIN_
 - 响应 `answers[questionId]`：校验类型为 choice 且 chosen ∈ 三态；未知 choice、结构不符、缺答案 → 该 need 记 `failed`（不伪造命中）。
 - 输出仅使用 chosen / probabilities / confidence；**不要求也不解析自由文本理由**。
 - 超时使用 `timeoutMs`（配置项，默认 20000）；网络/HTTP/解析失败有限重试（job max_attempts=5，指数退避）。
+- 调度参数（同一 `settings('jev')` 命名空间，网页可配，**每轮重新读取、无需重启**）：
+  - `concurrency`：同时进行的 Jev 请求数上限，默认 `1`（严格串行），范围 `1..MAX_JE_CONCURRENCY(8)`；
+  - `jobsPerRound`：每轮最多领取并处理的判断任务数，默认 `3`，范围 `1..MAX_JOBS_PER_ROUND(50)`。
+  - 写入时收敛到边界，读取时对脏值（非数字）回退到默认值，避免配置把 worker 卡死。
+  - 实现：`runEvaluatorOnce` 先**同步**领取（claimJob 是带事务的同步操作，先领满避免并发竞态），
+    再用 `concurrency` 条执行线消费队列；队列取用处检查与 `shift` 之间没有 `await`，不会重复取同一任务。
+  - 一个 Jev 请求携带全部启用需求作为 questions，因此需求数不放大请求数。
 - `prompt.ts` 负责构造 questions 与从 answers 得到 `ChoiceOutcome`；单测覆盖未知 choice、缺答案、类型不符、超时。
 - 程序模板说明：`该线报被 Jev 判为符合需求：<需求名>`，并在 UI 明确标注为「程序生成的分类说明」，不得表述为模型生成的解释。
 
