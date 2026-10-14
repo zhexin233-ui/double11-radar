@@ -115,6 +115,9 @@ export interface StatusDto {
     lastError: string | null;
     lastErrorAt: string | null;
     lastErrorStage: string | null;
+    rateLimitBackoffUntil: string | null;
+    rateLimitRemaining: number | null;
+    rateLimitResetAt: string | null;
     heartbeatFresh: boolean;
     running: boolean;
   };
