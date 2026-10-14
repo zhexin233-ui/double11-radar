@@ -72,6 +72,7 @@ function makeCollectorDeps(extra?: typeof FEED_HAODAN_NEW_ITEM): {
           ...options,
           fetchImpl: fetchImpl as unknown as typeof fetch,
         }),
+      requestSpacingMs: 0,
     },
   };
 }
@@ -143,6 +144,7 @@ describe("worker 采集基线与恢复（AC4/AC12）", () => {
             ...options,
             fetchImpl: fetchImpl as unknown as typeof fetch,
           }),
+        requestSpacingMs: 0,
         now: () => new Date("2026-10-14T01:00:00.000Z"),
       };
       const result = await runCollectorOnce(ctx.db, ENV, deps);
@@ -375,7 +377,72 @@ describe("worker 判断与投递（mock 传输层，未做真实接口验证）"
       expect(job.status).toBe("pending");
       expect(job.attempts).toBe(1);
       expect(job.last_error).toContain("Jev 未配置");
+      // 配置问题走永久重试：下次尝试时间被推迟而不是置 dead
+      const runAt = (
+        ctx.db.prepare("SELECT run_at FROM jobs LIMIT 1").get() as { run_at: string }
+      ).run_at;
+      expect(new Date(runAt).getTime()).toBeGreaterThan(Date.parse("2026-10-14T01:00:00.000Z"));
       expect(listNeeds(ctx.db)).toHaveLength(1);
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("配置错误的判断任务可自动恢复（AC12）", () => {
+  it("Jev 未配置时任务不置 dead，配置正确后会再次尝试", async () => {
+    const ctx = createTestDb();
+    try {
+      syncChannelsFromCatalog(
+        ctx.db,
+        [{ id: "haodan", name: "好单线报", alias: "haodan", origin: "feed" }],
+        { mode: "custom", customIds: ["haodan"] },
+      );
+      createNeed(ctx.db, { name: "抽纸" });
+      const t1 = new Date("2026-10-14T01:00:00.000Z");
+      await runCollectorOnce(ctx.db, ENV, { ...makeCollectorDeps().deps, now: () => t1 });
+      await runCollectorOnce(ctx.db, ENV, {
+        ...makeCollectorDeps(FEED_HAODAN_NEW_ITEM).deps,
+        now: () => new Date(t1.getTime() + 120_000),
+      });
+
+      // 反复失败远超 max_attempts，但因为是配置问题，任务必须保持 pending 而不是 dead
+      let at = new Date(t1.getTime() + 200_000);
+      for (let i = 0; i < 8; i += 1) {
+        await runEvaluatorOnce(ctx.db, ENV, {
+          callSystemOne: vi.fn() as never,
+          now: () => at,
+        });
+        at = new Date(at.getTime() + 10 * 60_000);
+      }
+      const job = ctx.db
+        .prepare("SELECT status, attempts, last_error FROM jobs LIMIT 1")
+        .get() as { status: string; attempts: number; last_error: string };
+      expect(job.status).toBe("pending");
+      expect(job.attempts).toBe(8);
+      expect(job.last_error).toContain("Jev 未配置");
+
+      // 配置好 Jev（此处仍用 mock 传输层成功返回）后，同一任务能被再次领取并完成
+      saveJevConfig(ctx.db, { apiKey: "sk-configured" }, KEY);
+      const callSystemOne = vi.fn(
+        async (_config: unknown, request: { questions: Record<string, unknown> }) => ({
+          answers: Object.fromEntries(
+            Object.keys(request.questions).map((id) => [
+              id,
+              { type: "choice", choice: "matched" },
+            ]),
+          ),
+        }),
+      );
+      const recovered = await runEvaluatorOnce(ctx.db, ENV, {
+        callSystemOne: callSystemOne as never,
+        now: () => at,
+      });
+      expect(recovered.matched).toBe(1);
+      const after = ctx.db
+        .prepare("SELECT status FROM jobs LIMIT 1")
+        .get() as { status: string };
+      expect(after.status).toBe("succeeded");
     } finally {
       ctx.close();
     }

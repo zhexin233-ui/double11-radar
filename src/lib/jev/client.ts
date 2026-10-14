@@ -19,17 +19,27 @@ export const DEFAULT_JE_TIMEOUT_MS = 20000;
 export class JevError extends Error {
   readonly status: number | null;
   readonly retryable: boolean;
+  /** 机器可读的错误分类，用于区分"配置问题（可自动恢复）"与"数据/结构问题"。 */
+  readonly code: string | null;
 
   constructor(
     message: string,
-    options: { status?: number | null; retryable?: boolean } = {},
+    options: {
+      status?: number | null;
+      retryable?: boolean;
+      code?: string | null;
+    } = {},
   ) {
     super(message);
     this.name = "JevError";
     this.status = options.status ?? null;
     this.retryable = options.retryable ?? true;
+    this.code = options.code ?? null;
   }
 }
+
+/** Jev 错误分类：这两类属于配置问题，用户配置正确后应能自动恢复。 */
+export const JE_CONFIG_ERROR_CODES = new Set(["not_configured", "auth"]);
 
 export interface SystemOneRequest {
   state: string;
@@ -79,9 +89,11 @@ export async function callSystemOne(
 
   const text = await response.text();
   if (!response.ok) {
+    const isAuthError = response.status === 401 || response.status === 403;
     throw new JevError(`Jev 返回 HTTP ${response.status}`, {
       status: response.status,
       retryable: response.status >= 500 || response.status === 429,
+      code: isAuthError ? "auth" : null,
     });
   }
 

@@ -6,7 +6,11 @@ import {
   upsertEvaluation,
 } from "@/lib/db/repos/evaluations";
 import { listEnabledNeeds } from "@/lib/db/repos/needs";
-import { callSystemOne, JevError } from "@/lib/jev/client";
+import {
+  callSystemOne,
+  JE_CONFIG_ERROR_CODES,
+  JevError,
+} from "@/lib/jev/client";
 import {
   buildQuestions,
   buildState,
@@ -60,6 +64,7 @@ async function evaluateJob(
   if (!jevRuntime) {
     throw new JevError("Jev 未配置 API 密钥，请在网页配置后重试", {
       retryable: true,
+      code: "not_configured",
     });
   }
   const configVersion = getJevConfigView(db).version;
@@ -171,7 +176,12 @@ export async function runEvaluatorOnce(
       if (outcome.result === "failed") stats.failed += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      failJob(db, job.id, message, now);
+      // 配置问题（未配置密钥/密钥无效）保持可重试，用户配置正确后自动恢复。
+      const isConfigError =
+        error instanceof JevError &&
+        error.code !== null &&
+        JE_CONFIG_ERROR_CODES.has(error.code);
+      failJob(db, job.id, message, now, { permanentRetry: isConfigError });
       patchRuntimeState(db, {
         lastError: `判断失败：${message}`,
         lastErrorAt: now.toISOString(),
