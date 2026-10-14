@@ -108,7 +108,19 @@ export interface JevConfig {
   baseUrl: string;
   model: string;
   timeoutMs: number;
+  /** 同时进行的 Jev 请求数上限（1 = 严格串行）。 */
+  concurrency: number;
+  /** 每轮最多领取并处理的判断任务数。 */
+  jobsPerRound: number;
 }
+
+/** 并发上限：默认串行，允许小幅提高，但不放任打满上游。 */
+export const MIN_JE_CONCURRENCY = 1;
+export const MAX_JE_CONCURRENCY = 8;
+export const MIN_JOBS_PER_ROUND = 1;
+export const MAX_JOBS_PER_ROUND = 50;
+export const DEFAULT_JE_CONCURRENCY = 1;
+export const DEFAULT_JE_JOBS_PER_ROUND = 3;
 
 export interface JevConfigView {
   config: JevConfig;
@@ -120,7 +132,23 @@ const DEFAULT_JE_CONFIG: JevConfig = {
   baseUrl: DEFAULT_JE_BASE_URL,
   model: DEFAULT_JE_MODEL,
   timeoutMs: DEFAULT_JE_TIMEOUT_MS,
+  concurrency: DEFAULT_JE_CONCURRENCY,
+  jobsPerRound: DEFAULT_JE_JOBS_PER_ROUND,
 };
+
+/** 把整数限制在 [min, max]；非法值回退到 fallback。 */
+function clampInt(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const rounded = Math.round(value);
+  if (rounded < min) return min;
+  if (rounded > max) return max;
+  return rounded;
+}
 
 export function getJevConfig(db: Database.Database): JevConfig {
   const record = getSetting<Partial<JevConfig>>(db, JE_SETTING_NAMESPACE);
@@ -138,6 +166,18 @@ export function getJevConfig(db: Database.Database): JevConfig {
       typeof value.timeoutMs === "number" && value.timeoutMs > 0
         ? value.timeoutMs
         : DEFAULT_JE_CONFIG.timeoutMs,
+    concurrency: clampInt(
+      value.concurrency,
+      MIN_JE_CONCURRENCY,
+      MAX_JE_CONCURRENCY,
+      DEFAULT_JE_CONFIG.concurrency,
+    ),
+    jobsPerRound: clampInt(
+      value.jobsPerRound,
+      MIN_JOBS_PER_ROUND,
+      MAX_JOBS_PER_ROUND,
+      DEFAULT_JE_CONFIG.jobsPerRound,
+    ),
   };
 }
 
@@ -157,6 +197,8 @@ export interface SaveJevConfigInput {
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
+  concurrency?: number;
+  jobsPerRound?: number;
   apiKey?: SecretInput;
 }
 
@@ -179,6 +221,24 @@ export function saveJevConfig(
       typeof input.timeoutMs === "number" && input.timeoutMs > 0
         ? input.timeoutMs
         : current.timeoutMs,
+    concurrency:
+      input.concurrency === undefined
+        ? current.concurrency
+        : clampInt(
+            input.concurrency,
+            MIN_JE_CONCURRENCY,
+            MAX_JE_CONCURRENCY,
+            current.concurrency,
+          ),
+    jobsPerRound:
+      input.jobsPerRound === undefined
+        ? current.jobsPerRound
+        : clampInt(
+            input.jobsPerRound,
+            MIN_JOBS_PER_ROUND,
+            MAX_JOBS_PER_ROUND,
+            current.jobsPerRound,
+          ),
   };
   setSetting(db, JE_SETTING_NAMESPACE, next);
   applySecretInput(db, SECRET_NAMESPACES.jevApiKey, input.apiKey, key);

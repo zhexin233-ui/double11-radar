@@ -45,10 +45,23 @@ export interface SecretStateDto {
 }
 
 export interface JevConfigDto {
-  config: { baseUrl: string; model: string; timeoutMs: number };
+  config: {
+    baseUrl: string;
+    model: string;
+    timeoutMs: number;
+    concurrency: number;
+    jobsPerRound: number;
+  };
   apiKey: SecretStateDto;
   version: number;
 }
+
+/**
+ * 并发与每轮任务数的界面提示边界。
+ * 服务端是唯一权威（会校验并 clamp），这里只用于输入框提示，不做业务判断。
+ */
+export const JE_CONCURRENCY_RANGE = { min: 1, max: 8 } as const;
+export const JE_JOBS_PER_ROUND_RANGE = { min: 1, max: 50 } as const;
 
 export interface NotifyConfigDto {
   config: {

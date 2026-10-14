@@ -4,7 +4,12 @@ import { useState } from "react";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import { DryRunPanel } from "@/components/DryRunPanel";
-import type { JevConfigDto, TestResultDto } from "@/components/api-types";
+import {
+  JE_CONCURRENCY_RANGE,
+  JE_JOBS_PER_ROUND_RANGE,
+  type JevConfigDto,
+  type TestResultDto,
+} from "@/components/api-types";
 
 type SecretAction = "keep" | "replace" | "clear";
 
@@ -16,6 +21,8 @@ function JevForm(props: {
   const [baseUrl, setBaseUrl] = useState(props.view.config.baseUrl);
   const [model, setModel] = useState(props.view.config.model);
   const [timeoutMs, setTimeoutMs] = useState(props.view.config.timeoutMs);
+  const [concurrency, setConcurrency] = useState(props.view.config.concurrency);
+  const [jobsPerRound, setJobsPerRound] = useState(props.view.config.jobsPerRound);
   const [apiKeyAction, setApiKeyAction] = useState<SecretAction>("keep");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -24,7 +31,13 @@ function JevForm(props: {
     event.preventDefault();
     setBusy(true);
     try {
-      const payload: Record<string, unknown> = { baseUrl, model, timeoutMs };
+      const payload: Record<string, unknown> = {
+        baseUrl,
+        model,
+        timeoutMs,
+        concurrency,
+        jobsPerRound,
+      };
       if (apiKeyAction === "clear") payload.apiKey = { clear: true };
       else if (apiKeyAction === "replace") payload.apiKey = apiKey;
       await apiSend<JevConfigDto>("/api/settings/jev", "PUT", payload);
@@ -67,6 +80,42 @@ function JevForm(props: {
           onChange={(event) => setTimeoutMs(Number(event.target.value))}
         />
       </label>
+
+      <div className="grid-2">
+        <label>
+          Jev 并发数
+          <input
+            type="number"
+            min={JE_CONCURRENCY_RANGE.min}
+            max={JE_CONCURRENCY_RANGE.max}
+            value={concurrency}
+            onChange={(event) => setConcurrency(Number(event.target.value))}
+          />
+          <span className="muted small">
+            上限 {JE_CONCURRENCY_RANGE.max}，1 = 严格串行（默认）。同时进行的 Jev 请求数，
+            调高可加快判断，但会同时向 Jev 施加更多压力。
+          </span>
+        </label>
+        <label>
+          每轮任务数
+          <input
+            type="number"
+            min={JE_JOBS_PER_ROUND_RANGE.min}
+            max={JE_JOBS_PER_ROUND_RANGE.max}
+            value={jobsPerRound}
+            onChange={(event) => setJobsPerRound(Number(event.target.value))}
+          />
+          <span className="muted small">
+            上限 {JE_JOBS_PER_ROUND_RANGE.max}，默认 3。worker 每 2 秒触发一轮，
+            每轮最多领取并处理这么多条线报；实际吞吐还受并发数与单次调用耗时限制。
+          </span>
+        </label>
+      </div>
+
+      <p className="muted small">
+        这两项保存后<strong>立即生效</strong>（worker 每轮重新读取），不需要重启容器。
+        一个 Jev 请求会携带全部启用需求，因此增加需求不会增加请求数。
+      </p>
 
       <fieldset>
         <legend>
