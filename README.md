@@ -44,7 +44,7 @@ docker compose logs -f worker
 | `ADMIN_PASSWORD` | 是 | 管理员登录密码。明文只来自部署配置，数据库只保存 scrypt 哈希。 |
 | `DATA_DIR` | 否 | 持久化目录，默认 `/data`；SQLite 位于 `$DATA_DIR/xianbao.db`。 |
 | `COOKIE_SECURE` | 否 | 局域网 HTTP 首次部署请保持 `false`；经反向代理提供 HTTPS 时设为 `true`。 |
-| `PORT` | 否 | web 发布端口，默认 `3000`。 |
+| `PORT` | 否 | **宿主机侧** web 发布端口，默认 `3000`。只影响端口映射的左侧，容器内固定监听 `3000`。 |
 | `XIANBAO_API_BASE` | 否 | 线报酷基地址，默认官方地址。 |
 
 web 与 worker 必须使用**完全相同的** `DATA_DIR`、`APP_ENCRYPTION_KEY`、`ADMIN_PASSWORD`。

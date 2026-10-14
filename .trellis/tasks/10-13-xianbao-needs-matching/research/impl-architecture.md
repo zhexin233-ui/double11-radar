@@ -83,7 +83,7 @@ Dockerfile  docker-compose.yml  .env.example  README.md
 | `APP_ENCRYPTION_KEY` | 是 | base64 32 字节，用于 AES-256-GCM；启动缺失时给出中文错误并退出 |
 | `ADMIN_PASSWORD` | 是 | 部署配置的管理员明文密码；启动/首次使用时 scrypt 哈希写入 DB，DB 只存哈希 |
 | `COOKIE_SECURE` | 否 | `true` 时 Cookie 加 Secure；默认 false 以便局域网 HTTP 首次部署 |
-| `PORT` | 否 | web 端口，默认 3000 |
+| `PORT` | 否 | 宿主机侧 web 发布端口，默认 3000（仅 compose 端口映射左侧使用；容器内固定监听 3000，应用不读取该变量） |
 | `XIANBAO_API_BASE` | 否 | 默认 `https://new.xianbao.fun` |
 | `APP_ENCRYPTION_KEY` 必须在 `docker-compose.yml` 与 `.env.example` 中说明生成方式（`openssl rand -base64 32`）。 |
 

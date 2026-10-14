@@ -17,8 +17,6 @@ export interface AppEnv {
   adminPassword: string;
   /** Cookie 是否加 Secure。 */
   cookieSecure: boolean;
-  /** web 端口。 */
-  port: number;
   /** 线报酷 API 基地址。 */
   xianbaoApiBase: string;
 }
@@ -28,7 +26,6 @@ const RawEnvSchema = z.object({
   APP_ENCRYPTION_KEY: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
   COOKIE_SECURE: z.string().optional(),
-  PORT: z.string().optional(),
   XIANBAO_API_BASE: z.string().optional(),
 });
 
@@ -37,7 +34,6 @@ export type EnvSource = Record<string, string | undefined>;
 
 const DEFAULT_DATA_DIR = "/data";
 const DEFAULT_XIANBAO_API_BASE = "https://new.xianbao.fun";
-const DEFAULT_PORT = 3000;
 
 function isTruthy(value: string | undefined): boolean {
   if (!value) return false;
@@ -93,17 +89,11 @@ export function loadEnv(source: EnvSource = process.env): AppEnv {
   }
   const encryptionKey = decodeEncryptionKey(rawKey);
 
-  const parsedPort = raw.PORT?.trim() ? Number(raw.PORT.trim()) : DEFAULT_PORT;
-  if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
-    throw new Error(`环境变量 PORT 必须是 1-65535 的整数（当前 ${raw.PORT}）`);
-  }
-
   return {
     dataDir,
     encryptionKey,
     adminPassword,
     cookieSecure: isTruthy(raw.COOKIE_SECURE),
-    port: parsedPort,
     xianbaoApiBase: raw.XIANBAO_API_BASE?.trim() || DEFAULT_XIANBAO_API_BASE,
   };
 }
