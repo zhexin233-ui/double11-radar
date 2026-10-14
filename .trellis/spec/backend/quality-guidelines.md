@@ -41,6 +41,31 @@ All four must pass before a task is considered implemented.
 | `setState` directly in an effect body | Next 16 React Compiler rule; cascading renders | `useApiResource` / keyed form components |
 | `window.location.href = "/..."` | Blocked by eslint rule | `window.location.replace()` |
 
+## Convention: 验收 / 诊断端点必须复用生产链路且不可写库
+
+**What**：任何为了验收或排查而新增的端点（例如 `POST /api/settings/jev/dry-run`）必须
+复用生产使用的同一套构造与解析代码，并且不得写入业务表。
+
+**Why**：如果验收工具自己实现一份判定逻辑，它验证的就不是生产行为；如果它会写库，
+验收动作本身就会污染判断记录、通知或投递状态，让"线上结果"不可信。
+
+**Example**：
+
+```ts
+// src/lib/service/dry-run.ts —— 复用 buildQuestions / parseAnswers / callSystemOne
+const { questions, needByQuestionId } = buildQuestions(needs);
+const response = await call(config, { state, model, questions });
+const answers = parseAnswers(response, Object.keys(questions));
+// 只返回结果；不调用 upsertEvaluation / createNotificationAndDeliveries
+```
+
+**断言要求**：验收端点的测试必须断言 `evaluations` / `notifications` / `deliveries` / `jobs`
+计数在调用前后均为 0（见 `tests/service/dry-run.test.ts`）。
+
+**相关**：`spec/backend/error-handling.md`（失败分类）、`frontend/component-guidelines.md`（面板文案）。
+
+---
+
 ## Testing conventions
 
 - `tests/helpers/db.ts` creates a migrated temp database; `tests/setup.ts` sets env vars and the

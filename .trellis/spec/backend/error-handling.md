@@ -17,6 +17,33 @@ Every route is wrapped by `handleRoute`. It converts `HttpError` into
 `{ ok: false, error: { code, message } }` with a Chinese `message`, and logs + returns
 `INTERNAL_ERROR`/500 for anything else. Handlers therefore throw instead of building responses.
 
+### Validation errors must always be Chinese
+
+Zod's built-in messages are English (`Invalid input: expected string, received undefined`).
+Because every API message in this project is Simplified Chinese, routes must not return
+`issue.message` directly. Use the shared helper, which passes through custom Chinese messages
+and otherwise falls back to a field-scoped Chinese hint:
+
+```ts
+// src/lib/http/json.ts
+export function invalidBodyError(error: z.ZodError): HttpError;
+
+// src/app/api/needs/route.ts
+const body = CreateSchema.safeParse(await req.json().catch(() => null));
+if (!body.success) throw invalidBodyError(body.error);
+```
+
+Customize the schema anyway so the message names the field in the user's language:
+
+```ts
+name: z.string({ error: "请填写需求名称" }).trim().min(1, "需求名称不能为空")
+```
+
+Required tests: `tests/http/json.test.ts` — a missing-field case must return the Chinese custom
+message, and a schema without custom messages must still return a Chinese fallback.
+
+---
+
 ## 2. External adapters — typed errors with retry classification
 
 | Adapter | Error | Retry signal |
@@ -27,6 +54,30 @@ Every route is wrapped by `handleRoute`. It converts `HttpError` into
 | 飞书 | `SendResult.retryable` | `19021/19022/19024` → `false` (config); `11232`/5xx → `true` |
 
 Adapters must not throw raw `TypeError` from `fetch`; they catch, wrap, and classify.
+
+**Adapter messages are Chinese and actionable; raw exception text goes to server logs only.**
+Network failures from `fetch` surface as English (`fetch failed`, `The operation was aborted.`),
+which is unreadable for the operator and can leak environment detail. Each adapter therefore maps
+its failure to a Chinese, actionable sentence and logs the original:
+
+```ts
+// src/lib/jev/client.ts
+export function describeJevNetworkFailure(error: unknown, baseUrl: string, timeoutMs: number): string;
+// -> "调用 Jev 超时（20000 毫秒）：请检查服务地址与网络，或在页面调大超时时间"
+// -> "无法连接 Jev 服务（https://api.typesafe.ai）：请检查服务地址、NAS 出网与代理设置"
+
+// src/lib/sources/xianbao/client.ts
+export function describeXianbaoNetworkFailure(error: unknown, timeoutMs: number): string;
+
+// call site
+} catch (error) {
+  console.error("[jev] 调用失败：", error);            // 原始异常只进日志
+  throw new JevError(describeJevNetworkFailure(error, config.baseUrl, timeoutMs), { retryable: true });
+}
+```
+
+Required tests: `tests/jev/client.test.ts` and `tests/sources/client.test.ts` assert the message is
+Chinese and does **not** contain `fetch failed`.
 
 ## 3. Worker — swallow per unit, record status, never exit
 
