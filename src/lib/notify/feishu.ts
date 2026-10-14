@@ -1,5 +1,7 @@
+import { describeNetworkFailure } from "@/lib/http/network-error";
 import { genFeishuSign } from "@/lib/notify/feishu-sign";
 import {
+  NOTIFY_TIMEOUT_MS,
   notificationBodyLines,
   notificationTitle,
   type NotifyMessage,
@@ -83,11 +85,19 @@ export async function sendFeishu(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    return failure(`飞书请求失败：${detail}`);
+    console.error("[feishu] 投递失败：", error);
+    // 注意：不把 Webhook 地址写进消息——它本身是凭据。
+    return failure(
+      describeNetworkFailure(error, {
+        service: "飞书机器人",
+        timeoutMs: NOTIFY_TIMEOUT_MS,
+        timeoutHint: "请检查 NAS 出网情况与飞书服务状态",
+        unreachableHint: "请检查 Webhook 地址、NAS 出网与飞书侧的白名单设置",
+      }),
+    );
   }
 
   const text = await response.text();

@@ -39,6 +39,9 @@ export interface SendDependencies {
 
 export const BARK_GROUP = "线报需求匹配";
 
+/** 推送渠道单次投递超时（毫秒）。 */
+export const NOTIFY_TIMEOUT_MS = 15000;
+
 export function notificationTitle(message: NotifyMessage): string {
   if (message.needs.length === 1) {
     return `命中需求：${message.needs[0]}`;

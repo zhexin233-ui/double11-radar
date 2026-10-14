@@ -84,7 +84,7 @@ describe("网络失败信息必须中文化且可操作（不泄露英文原始�
       callSystemOne({ ...config, timeoutMs: 1234 }, request, { fetchImpl }),
     ).rejects.toMatchObject({
       name: "JevError",
-      message: expect.stringContaining("超时（1234 毫秒）"),
+      message: expect.stringContaining("Jev 服务调用超时（1234 毫秒）"),
     });
   });
 
@@ -98,7 +98,7 @@ describe("网络失败信息必须中文化且可操作（不泄露英文原始�
     } catch (caught) {
       message = caught instanceof Error ? caught.message : String(caught);
     }
-    expect(message).toContain("无法连接 Jev 服务");
+    expect(message).toContain("Jev 服务无法连接");
     expect(message).not.toContain("fetch failed");
     expect(/[\u4e00-\u9fff]/.test(message)).toBe(true);
   });

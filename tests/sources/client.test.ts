@@ -98,7 +98,7 @@ describe("线报酷网络失败信息同样中文化", () => {
     } catch (caught) {
       message = caught instanceof Error ? caught.message : String(caught);
     }
-    expect(message).toContain("无法连接线报酷接口");
+    expect(message).toContain("线报酷接口无法连接");
     expect(message).not.toContain("fetch failed");
   });
 });

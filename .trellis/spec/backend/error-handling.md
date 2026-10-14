@@ -57,27 +57,35 @@ Adapters must not throw raw `TypeError` from `fetch`; they catch, wrap, and clas
 
 **Adapter messages are Chinese and actionable; raw exception text goes to server logs only.**
 Network failures from `fetch` surface as English (`fetch failed`, `The operation was aborted.`),
-which is unreadable for the operator and can leak environment detail. Each adapter therefore maps
-its failure to a Chinese, actionable sentence and logs the original:
+which is unreadable for the operator and can leak environment detail. All four adapters
+(Jev / 线报酷 / Bark / 飞书) share one mapping helper, and log the original exception:
 
 ```ts
-// src/lib/jev/client.ts
-export function describeJevNetworkFailure(error: unknown, baseUrl: string, timeoutMs: number): string;
-// -> "调用 Jev 超时（20000 毫秒）：请检查服务地址与网络，或在页面调大超时时间"
-// -> "无法连接 Jev 服务（https://api.typesafe.ai）：请检查服务地址、NAS 出网与代理设置"
+// src/lib/http/network-error.ts —— 单一实现，四个适配器共用
+export function describeNetworkFailure(
+  error: unknown,
+  descriptor: { service: string; timeoutMs: number; target?: string | null; timeoutHint?: string; unreachableHint?: string },
+): string;
 
-// src/lib/sources/xianbao/client.ts
-export function describeXianbaoNetworkFailure(error: unknown, timeoutMs: number): string;
+// 输出形状（超时 / 连不上）
+// "Jev 服务调用超时（20000 毫秒）：请检查服务地址与网络，或在页面调大超时时间"
+// "Jev 服务无法连接（https://api.typesafe.ai）：请检查服务地址、NAS 出网与代理设置"
+// "线报酷接口无法连接：请检查 NAS 出网与 DNS/代理设置"
+// "Bark 服务无法连接（https://api.day.app）：请检查服务地址、NAS 出网与设备 Key 是否正确"
 
-// call site
+// call site（以 Bark 为例）
 } catch (error) {
-  console.error("[jev] 调用失败：", error);            // 原始异常只进日志
-  throw new JevError(describeJevNetworkFailure(error, config.baseUrl, timeoutMs), { retryable: true });
+  console.error("[bark] 投递失败：", error);           // 原始异常只进日志
+  return failure(describeNetworkFailure(error, { service: "Bark 服务", target: config.serverUrl, timeoutMs: NOTIFY_TIMEOUT_MS }));
 }
 ```
 
-Required tests: `tests/jev/client.test.ts` and `tests/sources/client.test.ts` assert the message is
-Chinese and does **not** contain `fetch failed`.
+> **Warning**: `target` 只能传非敏感地址。飞书 Webhook URL 本身是凭据，
+> 因此飞书适配器**不传 target**——否则它会出现在投递记录的 `error` 字段和网页上。
+
+Required tests: `tests/jev/client.test.ts`、`tests/sources/client.test.ts`、`tests/notify/bark.test.ts`
+与 `tests/notify/feishu.test.ts` 断言消息为中文、不含 `fetch failed`，
+且飞书用例额外断言消息中不含 Webhook 地址。
 
 ## 3. Worker — swallow per unit, record status, never exit
 
