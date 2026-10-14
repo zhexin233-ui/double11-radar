@@ -18,6 +18,11 @@ export interface RuntimeState {
   lastError: string | null;
   lastErrorAt: string | null;
   lastErrorStage: string | null;
+  /** 站点限流额度耗尽时的全局暂停截止时间（UTC ISO8601）。 */
+  rateLimitBackoffUntil: string | null;
+  /** 最近一次响应头里的剩余额度，用于展示与判断。 */
+  rateLimitRemaining: number | null;
+  rateLimitResetAt: string | null;
 }
 
 export const EMPTY_RUNTIME_STATE: RuntimeState = {
@@ -30,6 +35,9 @@ export const EMPTY_RUNTIME_STATE: RuntimeState = {
   lastError: null,
   lastErrorAt: null,
   lastErrorStage: null,
+  rateLimitBackoffUntil: null,
+  rateLimitRemaining: null,
+  rateLimitResetAt: null,
 };
 
 export function getRuntimeState(db: Database.Database): RuntimeState {

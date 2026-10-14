@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import {
   fetchFeed as defaultFetchFeed,
   fetchMeta as defaultFetchMeta,
+  type RateLimitInfo,
   type XianbaoError,
 } from "@/lib/sources/xianbao/client";
 import { insertBulletinIfAbsent, hasActiveRecordInOtherNs } from "@/lib/db/repos/bulletins";
@@ -30,8 +31,17 @@ import type { ChannelState } from "@/lib/domain/types";
  */
 
 const META_CACHE_SECONDS = 600;
-/** 保守的全局限流预算：线报酷为 60 次/分钟/IP/接口。 */
-export const REQUEST_BUDGET_PER_MINUTE = 50;
+/**
+ * 保守的全局限流预算（次/分钟）。
+ *
+ * 文档写的是 60 次/分钟/IP/接口（实测 `x-ratelimit-limit: 60`，并返回
+ * `X-RateLimit-Remaining/Reset`）。实测同时发现：错误重试会让实际消耗超过稳态预算，
+ * 从而在窗口内触发 429。因此稳态目标取额度的一半（30/分钟）作为重试余量，
+ * 并对频道请求保留轮内最小间隔与全局暂停。
+ */
+export const REQUEST_BUDGET_PER_MINUTE = 30;
+/** 同一轮内两次频道请求之间的最小间隔，用于削峰。 */
+export const MIN_REQUEST_SPACING_MS = 1200;
 const MIN_POLL_INTERVAL_SECONDS = 10;
 const DEFAULT_POLL_INTERVAL_SECONDS = 30;
 const MAX_CHANNELS_PER_ROUND = 6;
@@ -40,6 +50,44 @@ export interface CollectorDeps {
   fetchMeta?: typeof defaultFetchMeta;
   fetchFeed?: typeof defaultFetchFeed;
   now?: () => Date;
+  /** 测试可设为 0 跳过轮内间隔。 */
+  requestSpacingMs?: number;
+}
+
+/** 剩余额度低于该值时，把全局采集暂停到窗口重置。 */
+export const RATE_LIMIT_LOW_WATERMARK = 5;
+
+/** 依据限流响应头计算全局暂停截止时间；无需暂停时返回 null。 */
+export function computeRateLimitBackoff(input: {
+  remaining: number | null;
+  resetAt: string | null;
+  now: Date;
+}): string | null {
+  const { remaining, resetAt, now } = input;
+  if (remaining === null) return null;
+  if (remaining > RATE_LIMIT_LOW_WATERMARK) return null;
+  if (resetAt) {
+    const resetMs = Date.parse(resetAt);
+    if (!Number.isNaN(resetMs) && resetMs > now.getTime()) {
+      return new Date(resetMs).toISOString();
+    }
+  }
+  return new Date(now.getTime() + 60_000).toISOString();
+}
+
+/** 当前是否处于限流暂停期。 */
+export function isRateLimitPaused(
+  backoffUntil: string | null,
+  now: Date,
+): boolean {
+  if (!backoffUntil) return false;
+  const until = Date.parse(backoffUntil);
+  return !Number.isNaN(until) && until > now.getTime();
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export interface CollectorRoundResult {
@@ -48,6 +96,8 @@ export interface CollectorRoundResult {
   enqueued: number;
   errors: number;
   metaSynced: boolean;
+  /** 本轮因全局限流暂停而未发起任何请求。 */
+  rateLimited: boolean;
 }
 
 /** 依据选中频道数与缓存时间计算每频道最小轮询间隔（秒）。 */
@@ -113,7 +163,12 @@ async function pollChannel(
   nowIso: string,
   now: Date,
   intervalSeconds: number,
-): Promise<{ baseline: number; enqueued: number; ok: boolean }> {
+): Promise<{
+  baseline: number;
+  enqueued: number;
+  ok: boolean;
+  rateLimit: RateLimitInfo | null;
+}> {
   const fetchFeed = deps.fetchFeed ?? defaultFetchFeed;
   const channelRef = {
     id: channel.id,
@@ -158,6 +213,8 @@ async function pollChannel(
             kind: "evaluate",
             payloadKey: `evaluate:${result.id}`,
             payload: { bulletinId: result.id },
+            // 沿用本轮注入的时钟，保证调度时间可预测、可测试。
+            runAt: nowIso,
           });
           if (job.created) enqueued += 1;
         }
@@ -173,16 +230,26 @@ async function pollChannel(
       lastSuccessAt: nowIso,
       cacheTtlSeconds: feed.cacheTtlSeconds ?? undefined,
     });
-    return { baseline: baselineCount, enqueued, ok: true };
+    return {
+      baseline: baselineCount,
+      enqueued,
+      ok: true,
+      rateLimit: feed.rateLimit,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const retryAt = new Date(now.getTime() + errorRetryDelayMs(error)).toISOString();
+    // 失败重试不得早于稳态预算间隔，否则重试流量会叠加到正常轮询上。
+    const retryDelayMs = Math.max(
+      errorRetryDelayMs(error),
+      intervalSeconds * 1000,
+    );
+    const retryAt = new Date(now.getTime() + retryDelayMs).toISOString();
     markChannelError(db, channel.id, {
       error: message,
       lastErrorAt: nowIso,
       nextPollAt: retryAt,
     });
-    return { baseline: 0, enqueued: 0, ok: false };
+    return { baseline: 0, enqueued: 0, ok: false, rateLimit: null };
   }
 }
 
@@ -193,6 +260,20 @@ export async function runCollectorOnce(
 ): Promise<CollectorRoundResult> {
   const now = deps.now?.() ?? new Date();
   const nowIso = now.toISOString();
+
+  // 全局限流暂停：额度耗尽时不在窗口内继续消耗请求。
+  const before = getRuntimeState(db);
+  if (isRateLimitPaused(before.rateLimitBackoffUntil, now)) {
+    return {
+      polled: 0,
+      baseline: 0,
+      enqueued: 0,
+      errors: 0,
+      metaSynced: false,
+      rateLimited: true,
+    };
+  }
+
   const metaSynced = await syncMetaIfDue(db, env, deps, nowIso, now);
 
   const selected = listChannels(db).filter((c) => c.selected && c.available);
@@ -208,11 +289,17 @@ export async function runCollectorOnce(
     enqueued: 0,
     errors: 0,
     metaSynced,
+    rateLimited: false,
   };
+
+  const observed: RateLimitInfo[] = [];
 
   for (const channel of due) {
     const nextPollAt = new Date(now.getTime() + intervalSeconds * 1000).toISOString();
     if (!tryClaimChannelPoll(db, channel.id, nowIso, nextPollAt)) continue;
+    if (result.polled > 0) {
+      await delay(deps.requestSpacingMs ?? MIN_REQUEST_SPACING_MS);
+    }
     const outcome = await pollChannel(
       db,
       env,
@@ -226,10 +313,30 @@ export async function runCollectorOnce(
     result.baseline += outcome.baseline;
     result.enqueued += outcome.enqueued;
     if (!outcome.ok) result.errors += 1;
+    if (outcome.rateLimit) observed.push(outcome.rateLimit);
   }
+
+  // 依据本次观察到的剩余额度，决定是否全局暂停到窗口重置。
+  const lowest = observed.reduce<RateLimitInfo | null>((acc, info) => {
+    if (info.remaining === null) return acc;
+    if (!acc || acc.remaining === null || info.remaining < acc.remaining) return info;
+    return acc;
+  }, null);
+
+  const backoffUntil = lowest
+    ? computeRateLimitBackoff({
+        remaining: lowest.remaining,
+        resetAt: lowest.resetAt,
+        now,
+      })
+    : null;
 
   patchRuntimeState(db, {
     lastCollectAt: nowIso,
+    ...(lowest
+      ? { rateLimitRemaining: lowest.remaining, rateLimitResetAt: lowest.resetAt }
+      : {}),
+    ...(backoffUntil ? { rateLimitBackoffUntil: backoffUntil } : {}),
     ...(result.errors > 0
       ? {
           lastError: `${result.errors} 个频道采集失败`,

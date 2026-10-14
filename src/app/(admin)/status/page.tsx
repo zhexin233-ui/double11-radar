@@ -60,6 +60,14 @@ export default function StatusPage() {
             <dd>{formatTime(worker.lastEvaluateAt)}</dd>
             <dt>最后投递</dt>
             <dd>{formatTime(worker.lastDeliverAt)}</dd>
+            <dt>采集限流</dt>
+            <dd className={worker.rateLimitBackoffUntil ? "warning" : "muted"}>
+              {worker.rateLimitBackoffUntil
+                ? `已暂停采集至 ${formatTime(worker.rateLimitBackoffUntil)}（额度剩余 ${worker.rateLimitRemaining ?? "未知"}）`
+                : worker.rateLimitRemaining === null
+                  ? "未观察到限流头"
+                  : `额度剩余 ${worker.rateLimitRemaining}`}
+            </dd>
             <dt>最近错误</dt>
             <dd className={worker.lastError ? "error" : "muted"}>
               {worker.lastError ?? "无"}

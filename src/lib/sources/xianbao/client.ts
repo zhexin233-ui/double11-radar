@@ -56,6 +56,32 @@ export interface XianbaoClientOptions {
   signal?: AbortSignal;
 }
 
+/** 站点返回的限流信息（实测响应头 `X-RateLimit-*`）。 */
+export interface RateLimitInfo {
+  limit: number | null;
+  remaining: number | null;
+  /** 窗口重置时间（UTC ISO8601），由 `X-RateLimit-Reset`（Unix 秒）换算。 */
+  resetAt: string | null;
+}
+
+function parseNumericHeader(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readRateLimit(headers: Headers): RateLimitInfo {
+  const resetSeconds = parseNumericHeader(headers.get("x-ratelimit-reset"));
+  return {
+    limit: parseNumericHeader(headers.get("x-ratelimit-limit")),
+    remaining: parseNumericHeader(headers.get("x-ratelimit-remaining")),
+    resetAt:
+      resetSeconds !== null && resetSeconds > 0
+        ? new Date(resetSeconds * 1000).toISOString()
+        : null,
+  };
+}
+
 function parseRetryAfter(header: string | null): number | null {
   if (!header) return null;
   const trimmed = header.trim();
@@ -134,7 +160,7 @@ async function request(
       { status: response.status, code: String(envelope.data.code) },
     );
   }
-  return { data: envelope.data.data, meta: envelope.data.meta };
+  return { data: envelope.data.data, meta: envelope.data.meta, rateLimit: readRateLimit(response.headers) };
 }
 
 export interface MetaResult {
@@ -189,6 +215,7 @@ export async function fetchMeta(
 export interface FeedResult {
   items: NormalizedBulletin[];
   cacheTtlSeconds: number | null;
+  rateLimit: RateLimitInfo | null;
 }
 
 /** 拉取单个频道的最新快照（不做分页或历史补齐）。 */
@@ -209,12 +236,20 @@ export async function fetchFeed(
   const raw = (await request(
     `${baseUrl}/api/v1/feed?${params.toString()}`,
     options,
-  )) as { data: unknown; meta?: { cache_ttl?: number } };
+  )) as {
+    data: unknown;
+    meta?: { cache_ttl?: number };
+    rateLimit: RateLimitInfo | null;
+  };
 
   const items =
     channel.origin === "zdm"
       ? normalizeZdmItems(raw.data)
       : normalizeFeedItems(raw.data, channel);
 
-  return { items, cacheTtlSeconds: raw.meta?.cache_ttl ?? null };
+  return {
+    items,
+    cacheTtlSeconds: raw.meta?.cache_ttl ?? null,
+    rateLimit: raw.rateLimit ?? null,
+  };
 }
