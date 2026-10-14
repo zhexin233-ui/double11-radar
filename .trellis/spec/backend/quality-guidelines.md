@@ -48,3 +48,37 @@ All four must pass before a task is considered implemented.
 - Name tests with the acceptance criterion they cover: `"基线语义（AC4）"`.
 - Mock only the transport. Assertions must state that mock verification is not real-interface
   verification.
+
+---
+
+## Gotcha: 必须固定包管理器版本，否则镜像构建会失败
+
+**Symptom**：`pnpm install --frozen-lockfile` 在容器内报
+`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，本地 `pnpm install` 却正常。
+
+**Cause**：`package.json` 未声明 `packageManager` 时，`corepack enable` 会安装**最新**的 pnpm
+（实测拉到 12.x）。新版 pnpm 默认启用 `minimumReleaseAge` 供应链策略，会拒绝锁文件中"刚发布
+几小时"的传递依赖（实测为 `caniuse-lite`）。
+
+**Fix**：在 `package.json` 固定版本，使镜像与本地使用同一个 pnpm：
+
+```json
+{
+  "packageManager": "pnpm@10.13.1",
+  "engines": { "node": ">=22", "pnpm": ">=10.13.1 <11" }
+}
+```
+
+**Prevention**：升级 pnpm 时同步更新 `packageManager` 与锁文件，并在 Docker 里重新验证
+`pnpm install --frozen-lockfile`；不要用 `--no-frozen-lockfile` 或放宽策略来"绕过"该报错。
+
+## Gotcha: 调试进程会污染出口 IP 的限流额度
+
+**Symptom**：容器内采集持续出现 429，但代码预算明显低于官方额度。
+
+**Cause**：额度按**出口 IP** 计。此前遗留的宿主调试进程（`tsx src/worker/main.ts`）在同一个
+公网 IP 上并行轮询 20 个频道，叠加后超过 60 次/分钟。
+
+**Prevention**：调试结束后确认子进程已退出
+（`ps -eo pid,ppid,command | grep 'src/worker/main.ts'`）；不要在同一出口 IP 上同时运行两个
+采集进程。`pnpm worker` 会派生子进程，只杀 `pnpm` 父进程不足以停止它。

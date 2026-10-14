@@ -69,6 +69,18 @@ Rules:
 - `payload_key` must embed the stable identity (`evaluate:<id>`, `deliver:<id>`) so a replayed
   round cannot create a duplicate.
 - A `succeeded` delivery is never re-claimable — local replay must not resend.
+- **Config errors must not kill the job.** `failJob(db, id, error, now, { permanentRetry: true })`
+  keeps `status = 'pending'`, sets `run_at = now + CONFIG_ERROR_RETRY_SECONDS` (300s) and only
+  accumulates `attempts` for observability. Use it for failures the operator will fix in the UI
+  (Jev not configured, invalid credentials); otherwise queued bulletins would permanently stay
+  un-evaluated after the operator fixes the configuration.
+
+```ts
+// src/lib/worker/evaluator.ts
+const isConfigError =
+  error instanceof JevError && error.code !== null && JE_CONFIG_ERROR_CODES.has(error.code);
+failJob(db, job.id, message, now, { permanentRetry: isConfigError });
+```
 
 ## Good / Base / Bad
 

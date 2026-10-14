@@ -51,6 +51,16 @@ These guides help you **ask the right questions before coding**.
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
 
+### When Scheduling Against A Rate-Limited API
+
+- [ ] Did you measure the real limit and headers instead of trusting the doc?
+- [ ] Is steady-state consumption below the quota, with headroom for retries?
+- [ ] Can a retry storm exceed the quota (failures retried faster than the steady interval)?
+- [ ] Is there a global pause when the remaining quota is exhausted?
+- [ ] Is the quota per IP? If so, do you know what else shares that IP?
+
+→ Spec: `spec/backend/error-handling.md`（限流与退避 code-spec）
+
 ### When Touching An External Boundary Or Persistence
 
 - [ ] Did you add a new external payload (HTTP API, webhook) or a new column/table?
