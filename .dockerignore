@@ -1,0 +1,22 @@
+# 构建与运行上下文裁剪
+.git
+.gitignore
+.next
+node_modules
+data
+*.db
+*.db-wal
+*.db-shm
+*.log
+.env
+.env.local
+.trellis
+.agents
+.claude
+.codex
+.cursor
+.pi
+.DS_Store
+coverage
+tsconfig.tsbuildinfo
+next-env.d.ts

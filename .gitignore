@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# typescript incremental build info
+*.tsbuildinfo
+
+# build output
+dist/
+
+# runtime data (SQLite + secrets)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# os
+.DS_Store
+
+# test / coverage
+coverage/

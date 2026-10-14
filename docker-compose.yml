@@ -1,0 +1,51 @@
+# 线报需求匹配与推送 —— 本地 NAS 部署
+#
+# 同一镜像启动两个服务：
+#   web    —— 网页与 API，只发布局域网端口
+#   worker —— 独立后台进程（采集 / 判断 / 投递），不开放端口
+#
+# 使用：cp .env.example .env → 编辑 .env → docker compose up -d --build
+#
+# 说明：
+# - 两个服务共享同一个数据卷与同一份 .env（DATA_DIR / APP_ENCRYPTION_KEY / ADMIN_PASSWORD 必须一致）。
+# - worker 依赖 web 健康后再启动，确保数据库迁移先由单一服务完成；
+#   迁移本身是幂等且用 BEGIN IMMEDIATE 串行化的，重复执行安全。
+
+x-app: &app
+  image: xianbao-needs-matching:local
+  build: .
+  env_file: .env
+  environment:
+    DATA_DIR: /data
+  volumes:
+    - xianbao-data:/data
+  restart: unless-stopped
+
+services:
+  web:
+    <<: *app
+    command: ["node_modules/.bin/next", "start", "-p", "3000"]
+    ports:
+      - "${PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    <<: *app
+    command: ["node_modules/.bin/tsx", "src/worker/main.ts"]
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  xianbao-data:
