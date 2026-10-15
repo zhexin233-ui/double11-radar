@@ -68,8 +68,13 @@ async function request<T>(
   return body.data;
 }
 
-export function apiGet<T>(path: string): Promise<T> {
-  return request<T>(path, { method: "GET" });
+export function apiGet<T>(path: string, options: { signal?: AbortSignal } = {}): Promise<T> {
+  return request<T>(path, {
+    method: "GET",
+    // 管理页数据必须每次实时读取，不使用浏览器/代理缓存。
+    cache: "no-store",
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
 }
 
 export function apiSend<T>(

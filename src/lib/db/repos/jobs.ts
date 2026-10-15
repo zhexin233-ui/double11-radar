@@ -138,11 +138,74 @@ export function claimJob(
   return id ? getJob(db, id) : null;
 }
 
-export function completeJob(db: Database.Database, id: string): void {
-  db.prepare(
-    `UPDATE jobs SET status = 'succeeded', lease_owner = NULL, lease_until = NULL,
-       last_error = NULL, updated_at = ? WHERE id = ?`,
-  ).run(new Date().toISOString(), id);
+export function completeJob(
+  db: Database.Database,
+  id: string,
+  owner?: string | null,
+): boolean {
+  const result = owner
+    ? db
+        .prepare(
+          `UPDATE jobs SET status = 'succeeded', lease_owner = NULL, lease_until = NULL,
+             last_error = NULL, updated_at = ?
+           WHERE id = ? AND lease_owner = ? AND status = 'leased'`,
+        )
+        .run(new Date().toISOString(), id, owner)
+    : db
+        .prepare(
+          `UPDATE jobs SET status = 'succeeded', lease_owner = NULL, lease_until = NULL,
+             last_error = NULL, updated_at = ? WHERE id = ?`,
+        )
+        .run(new Date().toISOString(), id);
+  return result.changes === 1;
+}
+
+/**
+ * 本次租约是否仍属于该 owner（且任务仍处于已领取状态）。
+ * 判断/通知等业务写入前必须核对，避免旧租约的结果覆盖新 owner 的判断。
+ */
+export function isJobOwnedBy(
+  db: Database.Database,
+  id: string,
+  owner: string,
+): boolean {
+  const row = db
+    .prepare("SELECT 1 AS ok FROM jobs WHERE id = ? AND lease_owner = ? AND status = 'leased'")
+    .get(id, owner) as { ok: number } | undefined;
+  return row !== undefined;
+}
+
+/**
+ * 把任务放回队列等待重试，但**不**累计普通尝试次数。
+ *
+ * 用于「没有发出上游请求」的可恢复情况：容量暂满、共享退避、无可用 Key、
+ * 进程已失去 job ownership 等。这些都不是线报本身的失败，不应耗尽 max_attempts。
+ * 返回是否命中该 owner（命中才真正重排）。
+ */
+export function requeueJob(
+  db: Database.Database,
+  id: string,
+  owner: string | null,
+  error: string,
+  runAt: Date,
+  now: Date = new Date(),
+): boolean {
+  const result = owner
+    ? db
+        .prepare(
+          `UPDATE jobs SET status = 'pending', last_error = @error, run_at = @runAt,
+             lease_owner = NULL, lease_until = NULL, updated_at = @nowIso
+           WHERE id = @id AND lease_owner = @owner AND status = 'leased'`,
+        )
+        .run({ id, owner, error, runAt: runAt.toISOString(), nowIso: now.toISOString() })
+    : db
+        .prepare(
+          `UPDATE jobs SET status = 'pending', last_error = @error, run_at = @runAt,
+             lease_owner = NULL, lease_until = NULL, updated_at = @nowIso
+           WHERE id = @id`,
+        )
+        .run({ id, error, runAt: runAt.toISOString(), nowIso: now.toISOString() });
+  return result.changes === 1;
 }
 
 /** 配置错误的固定重排间隔（秒）：不置 dead，等待用户配置正确后自动恢复。 */
@@ -161,12 +224,17 @@ export function failJob(
   id: string,
   error: string,
   now: Date = new Date(),
-  options: { permanentRetry?: boolean } = {},
+  options: { permanentRetry?: boolean; owner?: string | null } = {},
 ): { status: JobStatus; attempts: number; runAt: string } {
   const job = getJob(db, id);
   if (!job) throw new Error(`任务不存在：${id}`);
   const attempts = job.attempts + 1;
   const nowIso = now.toISOString();
+  // 有 owner 时必须仍持有该次租约，否则旧调用不得改写新 owner 的任务状态。
+  const ownerGuard = options.owner
+    ? " AND lease_owner = @owner AND status = 'leased'"
+    : "";
+  const ownerParams = options.owner ? { owner: options.owner } : {};
 
   if (options.permanentRetry) {
     const runAt = new Date(
@@ -175,8 +243,8 @@ export function failJob(
     db.prepare(
       `UPDATE jobs SET status = 'pending', attempts = @attempts, last_error = @error,
          run_at = @runAt, lease_owner = NULL, lease_until = NULL, updated_at = @nowIso
-       WHERE id = @id`,
-    ).run({ id, attempts, error, runAt, nowIso });
+       WHERE id = @id${ownerGuard}`,
+    ).run({ id, attempts, error, runAt, nowIso, ...ownerParams });
     return { status: "pending", attempts, runAt };
   }
 
@@ -184,8 +252,8 @@ export function failJob(
     db.prepare(
       `UPDATE jobs SET status = 'dead', attempts = @attempts, last_error = @error,
          lease_owner = NULL, lease_until = NULL, updated_at = @nowIso
-       WHERE id = @id`,
-    ).run({ id, attempts, error, nowIso });
+       WHERE id = @id${ownerGuard}`,
+    ).run({ id, attempts, error, nowIso, ...ownerParams });
     return { status: "dead", attempts, runAt: job.runAt };
   }
   const backoffSeconds = Math.min(2 ** attempts, 300);
@@ -193,8 +261,8 @@ export function failJob(
   db.prepare(
     `UPDATE jobs SET status = 'pending', attempts = @attempts, last_error = @error,
        run_at = @runAt, lease_owner = NULL, lease_until = NULL, updated_at = @nowIso
-     WHERE id = @id`,
-  ).run({ id, attempts, error, runAt, nowIso });
+     WHERE id = @id${ownerGuard}`,
+  ).run({ id, attempts, error, runAt, nowIso, ...ownerParams });
   return { status: "pending", attempts, runAt };
 }
 

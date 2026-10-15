@@ -7,6 +7,12 @@ import {
   setSetting,
 } from "@/lib/db/repos/settings";
 import {
+  createJevKey,
+  getJevKey,
+  listJevKeys,
+  updateJevKey,
+} from "@/lib/db/repos/jev-keys";
+import {
   applyChannelSelection,
   DEFAULT_CHANNEL_SELECTION,
   getChannelSelection,
@@ -15,6 +21,10 @@ import {
   type ChannelCatalogEntry,
   type ChannelSelection,
 } from "@/lib/db/repos/channels";
+import {
+  LEGACY_JEV_KEY_ID,
+  LEGACY_JEV_KEY_NAMESPACE,
+} from "@/lib/db/migrations";
 import {
   DEFAULT_JE_BASE_URL,
   DEFAULT_JE_MODEL,
@@ -188,7 +198,8 @@ export function getJevConfigView(
   const record = getSetting(db, JE_SETTING_NAMESPACE);
   return {
     config: getJevConfig(db),
-    apiKey: readSecretStateMasked(db, SECRET_NAMESPACES.jevApiKey, key),
+    // 兼容层：旧单 Key 字段映射到迁移后固定的兼容 Key。
+    apiKey: readSecretStateMasked(db, LEGACY_JEV_KEY_NAMESPACE, key),
     version: record?.version ?? 0,
   };
 }
@@ -240,24 +251,118 @@ export function saveJevConfig(
             current.jobsPerRound,
           ),
   };
-  setSetting(db, JE_SETTING_NAMESPACE, next);
-  applySecretInput(db, SECRET_NAMESPACES.jevApiKey, input.apiKey, key);
+  // 基础配置与兼容 Key 的密文/元数据必须在同一事务内落库；
+  // 只改普通配置时不得重置 Key 计数或误启用已禁用的 Key。
+  const run = db.transaction(() => {
+    setSetting(db, JE_SETTING_NAMESPACE, next);
+    applyLegacyJevKeyInput(db, input.apiKey, key);
+  });
+  run.immediate();
   return getJevConfigView(db, key);
 }
 
-/** 供 worker 使用：返回包含明文凭据的运行时配置；密钥缺失时返回 null。 */
+/**
+ * 兼容层：把旧单 `apiKey` 三态映射到固定的兼容 Key。
+ * 保存新密钥等价于「替换并启用」；清除则同时停用该 Key。
+ */
+function applyLegacyJevKeyInput(
+  db: Database.Database,
+  input: SecretInput,
+  key?: Buffer,
+): boolean {
+  if (input === null || input === undefined) return false;
+  if (typeof input === "object") {
+    if (input.clear === true) {
+      const existing = getJevKey(db, LEGACY_JEV_KEY_ID);
+      if (!existing) return false;
+      const cleared = clearSecret(db, existing.secretNamespace);
+      updateJevKey(db, existing.id, {
+        enabled: false,
+        disabledReason: "密钥已清除，请替换后再启用",
+        consecutiveFailures: 0,
+        bumpGeneration: true,
+      });
+      return cleared;
+    }
+    return false;
+  }
+  const value = input.trim();
+  if (value === "") return false;
+  const existing =
+    getJevKey(db, LEGACY_JEV_KEY_ID) ??
+    createJevKey(db, {
+      id: LEGACY_JEV_KEY_ID,
+      label: "兼容单密钥",
+      secretNamespace: LEGACY_JEV_KEY_NAMESPACE,
+    });
+  setSecret(db, existing.secretNamespace, value, key);
+  updateJevKey(db, existing.id, {
+    enabled: true,
+    consecutiveFailures: 0,
+    disabledReason: null,
+    lastError: null,
+    cooldownUntil: null,
+    bumpGeneration: true,
+  });
+  return true;
+}
+
+// ── Jev 运行时 Key ───────────────────────────────────────────────────────────
+
+/** 调度使用的运行时 Key：已启用且密文可解密，仅在服务端持有明文。 */
+export interface JevRuntimeKey {
+  id: string;
+  label: string;
+  generation: number;
+  apiKey: string;
+}
+
+/**
+ * 列出可参与调度的 Key。解密失败属于本地配置错误：只跳过并记录日志，
+ * **不**计作上游失败，也不会因此禁用 Key。
+ */
+export function listJevRuntimeKeys(
+  db: Database.Database,
+  key?: Buffer,
+): JevRuntimeKey[] {
+  const runtime: JevRuntimeKey[] = [];
+  for (const row of listJevKeys(db)) {
+    if (!row.enabled) continue;
+    let apiKey: string | null = null;
+    try {
+      apiKey = getSecret(db, row.secretNamespace, key);
+    } catch (error) {
+      console.error(`[config] 凭据 ${row.secretNamespace} 无法解密：`, error);
+      continue;
+    }
+    if (!apiKey) continue;
+    runtime.push({
+      id: row.id,
+      label: row.label,
+      generation: row.generation,
+      apiKey,
+    });
+  }
+  return runtime;
+}
+
+/**
+ * 供 worker / 测试使用的单 Key 兼容视图：优先兼容 Key，否则取第一个可用 Key。
+ * 池内没有任何可用 Key 时返回 null。
+ */
 export function getJevRuntimeConfig(
   db: Database.Database,
   key?: Buffer,
 ): (JevConfig & { apiKey: string }) | null {
-  const config = getJevConfig(db);
-  const apiKey = getSecret(db, SECRET_NAMESPACES.jevApiKey, key);
-  if (!apiKey) return null;
-  return { ...config, apiKey };
+  const runtimeKeys = listJevRuntimeKeys(db, key);
+  if (runtimeKeys.length === 0) return null;
+  const preferred =
+    runtimeKeys.find((candidate) => candidate.id === LEGACY_JEV_KEY_ID) ??
+    runtimeKeys[0];
+  return { ...getJevConfig(db), apiKey: preferred.apiKey };
 }
 
 // ── 采集频道选择 ─────────────────────────────────────────────────────────────
-
 export { getChannelSelection, saveChannelSelection, applyChannelSelection };
 export type { ChannelSelection, ChannelCatalogEntry };
 export { DEFAULT_CHANNEL_SELECTION };

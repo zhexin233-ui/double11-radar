@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../helpers/db";
 import { makeNormalized } from "../helpers/bulletins";
-import { insertBulletinIfAbsent } from "@/lib/db/repos/bulletins";
+import {
+  getBulletinDisplayStatus,
+  insertBulletinIfAbsent,
+} from "@/lib/db/repos/bulletins";
+import { enqueueJob } from "@/lib/db/repos/jobs";
 import { upsertEvaluation } from "@/lib/db/repos/evaluations";
-import { describeBulletin, listBulletinDetails } from "@/lib/service/bulletins";
+import {
+  describeBulletin,
+  listBulletinDetails,
+  parseBulletinListQuery,
+} from "@/lib/service/bulletins";
+import { HttpError } from "@/lib/http/json";
 
 function seedEvaluation(
   ctx: ReturnType<typeof createTestDb>,
@@ -103,6 +112,209 @@ describe("线报状态投影（AC12：故障与「没有匹配」必须可区分
       );
       const page = listBulletinDetails(ctx.db, { baseline: false });
       expect(page.items[0].bulletin.price).toBeNull();
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+/**
+ * 记录页状态筛选与分页（AC7）。
+ *
+ * 状态判定的唯一 owner 是仓库层 SQL；这里验证筛选在分页之前执行、
+ * items/total 使用同一判定、失败 job 无 evaluation 也能筛到，以及排序稳定。
+ */
+describe("记录页状态筛选与分页（AC7）", () => {
+  type Ctx = ReturnType<typeof createTestDb>;
+
+  function seedResult(
+    ctx: Ctx,
+    bulletinId: string,
+    result: "matched" | "not_matched" | "uncertain" | "failed",
+    needId = "need-1",
+  ): void {
+    upsertEvaluation(ctx.db, {
+      bulletinId,
+      needId,
+      needName: `需求 ${needId}`,
+      needNote: "",
+      needVersion: 1,
+      configVersion: 1,
+      ruleVersion: "r1",
+      result,
+      probabilities: null,
+      confidence: null,
+      rawAnswer: "{}",
+      error: result === "failed" ? "模型调用失败" : null,
+    });
+  }
+
+  function seedBulletin(
+    ctx: Ctx,
+    sourceId: string,
+    result?: "matched" | "not_matched" | "uncertain" | "failed",
+    baseline = false,
+  ): string {
+    const { id } = insertBulletinIfAbsent(
+      ctx.db,
+      makeNormalized({ sourceId, title: `样例 ${sourceId}` }),
+      { baseline },
+    );
+    if (result) seedResult(ctx, id, result);
+    return id;
+  }
+
+  it("六种展示状态与优先级判定", () => {
+    const ctx = createTestDb();
+    try {
+      const baseline = seedBulletin(ctx, "b-base", undefined, true);
+      const pending = seedBulletin(ctx, "b-pending");
+      const matched = seedBulletin(ctx, "b-matched", "matched");
+      const failed = seedBulletin(ctx, "b-failed", "failed");
+      const uncertain = seedBulletin(ctx, "b-uncertain", "uncertain");
+      const notMatched = seedBulletin(ctx, "b-not", "not_matched");
+
+      expect(getBulletinDisplayStatus(ctx.db, baseline)).toBe("baseline");
+      expect(getBulletinDisplayStatus(ctx.db, pending)).toBe("pending");
+      expect(getBulletinDisplayStatus(ctx.db, matched)).toBe("matched");
+      expect(getBulletinDisplayStatus(ctx.db, failed)).toBe("failed");
+      expect(getBulletinDisplayStatus(ctx.db, uncertain)).toBe("uncertain");
+      expect(getBulletinDisplayStatus(ctx.db, notMatched)).toBe("not_matched");
+
+      // 优先级：matched > failed > uncertain > 其它已判断 > pending
+      const mixed = seedBulletin(ctx, "b-mixed");
+      seedResult(ctx, mixed, "matched", "need-a");
+      seedResult(ctx, mixed, "failed", "need-b");
+      expect(getBulletinDisplayStatus(ctx.db, mixed)).toBe("matched");
+
+      const failedOver = seedBulletin(ctx, "b-failed-over");
+      seedResult(ctx, failedOver, "failed", "need-a");
+      seedResult(ctx, failedOver, "uncertain", "need-b");
+      expect(getBulletinDisplayStatus(ctx.db, failedOver)).toBe("failed");
+
+      const uncertainOver = seedBulletin(ctx, "b-uncertain-over");
+      seedResult(ctx, uncertainOver, "uncertain", "need-a");
+      seedResult(ctx, uncertainOver, "not_matched", "need-b");
+      expect(getBulletinDisplayStatus(ctx.db, uncertainOver)).toBe("uncertain");
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("evaluate job 失败但未落 evaluation 时也显示为处理失败", () => {
+    const ctx = createTestDb();
+    try {
+      const id = seedBulletin(ctx, "b-job-failed");
+      enqueueJob(ctx.db, {
+        kind: "evaluate",
+        payloadKey: `evaluate:${id}`,
+        payload: { bulletinId: id },
+      });
+      ctx.db
+        .prepare(
+          "UPDATE jobs SET status = 'dead', last_error = '模型调用失败' WHERE payload_key = ?",
+        )
+        .run(`evaluate:${id}`);
+      expect(getBulletinDisplayStatus(ctx.db, id)).toBe("failed");
+
+      // 成功重试清空 last_error 后回落为 pending（尚无 evaluation）
+      ctx.db
+        .prepare(
+          "UPDATE jobs SET status = 'succeeded', last_error = NULL WHERE payload_key = ?",
+        )
+        .run(`evaluate:${id}`);
+      expect(getBulletinDisplayStatus(ctx.db, id)).toBe("pending");
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("状态筛选在分页之前执行，items 与 total 使用同一定义且排除基线", () => {
+    const ctx = createTestDb();
+    try {
+      for (let i = 0; i < 55; i += 1) seedBulletin(ctx, `m-${i}`, "matched");
+      for (let i = 0; i < 5; i += 1) seedBulletin(ctx, `f-${i}`, "failed");
+      // 基线条目即使有 matched 判断也必须被 baseline:false 排除
+      seedBulletin(ctx, "base-1", "matched", true);
+
+      const page1 = listBulletinDetails(ctx.db, {
+        status: "matched",
+        limit: 50,
+        offset: 0,
+        baseline: false,
+      });
+      expect(page1.total).toBe(55);
+      expect(page1.items).toHaveLength(50);
+      expect(page1.items.every((item) => item.status === "matched")).toBe(true);
+
+      const page2 = listBulletinDetails(ctx.db, {
+        status: "matched",
+        limit: 50,
+        offset: 50,
+        baseline: false,
+      });
+      expect(page2.total).toBe(55);
+      expect(page2.items).toHaveLength(5);
+      expect(page2.items.every((item) => item.status === "matched")).toBe(true);
+
+      const failedPage = listBulletinDetails(ctx.db, {
+        status: "failed",
+        limit: 50,
+        offset: 0,
+        baseline: false,
+      });
+      expect(failedPage.total).toBe(5);
+      expect(failedPage.items.every((item) => item.status === "failed")).toBe(true);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("解析列表查询参数：缺省全部、非法 status 抛中文错误、limit/offset 回退", () => {
+    const empty = parseBulletinListQuery(new URLSearchParams());
+    expect(empty.status).toBeUndefined();
+    expect(empty.limit).toBe(50);
+    expect(empty.offset).toBe(0);
+    expect(empty.baseline).toBe(false);
+
+    expect(
+      parseBulletinListQuery(new URLSearchParams({ status: "matched" })).status,
+    ).toBe("matched");
+
+    const fallback = parseBulletinListQuery(
+      new URLSearchParams({ limit: "abc", offset: "x" }),
+    );
+    expect(fallback.limit).toBe(50);
+    expect(fallback.offset).toBe(0);
+
+    const parsed = parseBulletinListQuery(
+      new URLSearchParams({ limit: "10", offset: "20" }),
+    );
+    expect(parsed.limit).toBe(10);
+    expect(parsed.offset).toBe(20);
+
+    let caught: unknown;
+    try {
+      parseBulletinListQuery(new URLSearchParams({ status: "bogus" }));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(HttpError);
+    expect((caught as HttpError).code).toBe("INVALID_BODY");
+    expect((caught as Error).message).toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it("同一发布时间按 id 倒序稳定排序", () => {
+    const ctx = createTestDb();
+    try {
+      const ids = [
+        seedBulletin(ctx, "s-1"),
+        seedBulletin(ctx, "s-2"),
+        seedBulletin(ctx, "s-3"),
+      ];
+      const page = listBulletinDetails(ctx.db, { baseline: false, limit: 50, offset: 0 });
+      const returned = page.items.map((item) => item.bulletin.id);
+      expect(returned).toEqual([...ids].sort().reverse());
     } finally {
       ctx.close();
     }
