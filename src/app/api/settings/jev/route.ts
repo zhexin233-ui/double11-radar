@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  getJevConfigView,
   MAX_JE_CONCURRENCY,
   MAX_JOBS_PER_ROUND,
   MIN_JE_CONCURRENCY,
@@ -8,7 +7,8 @@ import {
   saveJevConfig,
   type SecretInput,
 } from "@/lib/service/config";
-import { HttpError, handleRoute, ok, requireSameOrigin } from "@/lib/http/json";
+import { getJevSettingsView } from "@/lib/service/jev-keys";
+import { handleRoute, invalidBodyError, ok, requireSameOrigin } from "@/lib/http/json";
 import { requireAuth } from "@/lib/http/server";
 
 const SecretInputSchema = z.union([
@@ -43,7 +43,8 @@ const PutSchema = z.object({
 
 export const GET = handleRoute(async (req) => {
   const db = requireAuth(req);
-  return ok(getJevConfigView(db));
+  // 基础配置 + 旧单 Key 兼容掩码 + 多 Key 列表（只返回掩码状态，绝无明文）。
+  return ok(getJevSettingsView(db));
 });
 
 export const PUT = handleRoute(async (req) => {
@@ -51,7 +52,8 @@ export const PUT = handleRoute(async (req) => {
   const db = requireAuth(req);
   const body = PutSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
-    throw new HttpError("INVALID_BODY", "Jev 配置不合法", 400);
+    // 透传字段级中文提示，避免只丢一个笼统的 INVALID_BODY。
+    throw invalidBodyError(body.error);
   }
   const view = saveJevConfig(db, {
     baseUrl: body.data.baseUrl,

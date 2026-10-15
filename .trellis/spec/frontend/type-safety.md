@@ -28,6 +28,28 @@ exactly two places: the server projection and `api-types.ts`.
    re-derive validation rules.
 4. Never assert `as` on a fetched value. If `apiGet<T>` is insufficient, extend `api-types.ts`.
 
+## Jev Key / 用量 / 记录筛选 DTO（`src/components/api-types.ts`）
+
+Key 池、费用统计与记录页筛选的客户端契约集中在 `api-types.ts`：
+
+- `JevKeyDto`：`id` / `label` / `generation` / `enabled` / `disabledReason` /
+  `consecutiveFailures` / `lastError` / `lastUsedAt` / `createdAt` / `updatedAt` / `secretState`，
+  **绝不含明文**。
+- `JevSettingsDto extends JevConfigDto`：额外 `keys: JevKeyDto[]`；`apiKey` 仍是兼容掩码。
+- `JevUsageDto` = `{ summary; byKey; recent }`：`summary` / `byKey` 同时给整数纳美元
+  （`knownCostNanos` 等）与格式化美元（`knownCostUsd`）；每条 `recent` 记录含 `estimatedUsd`
+  字符串，未知为 `null`。
+- `JevRequestStatusDto` / `JevCostStatusDto` / `JevRequestPurposeDto` 与服务端枚举一致
+  （`in_flight|succeeded|failed|interrupted` / `known|unknown` / `evaluate|test|dry_run`）。
+- `BulletinFilterStatusDto` 与仓库层 `BULLETIN_FILTER_STATUSES` / `isBulletinFilterStatus` 接受
+  的值一一对应，不含 `baseline`；`BULLETIN_FILTER_OPTIONS` = 全部 + 五种非基线状态。
+- 常量：`BULLETIN_PAGE_SIZE = 50`、`BULLETIN_AUTO_REFRESH_MS = 5000`、
+  `JE_KEY_FAILURE_THRESHOLD = 3`。
+
+> **Warning**: 金额一律用 `estimatedUsd` / `knownCostUsd` 字符串展示，未知为 `null`，
+> **绝不显示为 $0.00**（极小正费用也必须可见）。状态/筛选枚举不要在组件里另写一套映射，
+> 直接复用 `api-types.ts` 的 DTO 与常量。
+
 ## Gotcha
 
 > `SecretStateDto.unreadable` exists because a rotated `APP_ENCRYPTION_KEY` makes stored secrets

@@ -3,9 +3,9 @@
   "name": "jev-key-pool-usage-records",
   "title": "Jev 多密钥并发、费用统计与线报记录筛选刷新",
   "description": "支持多 API Key 并发、失败三次禁用、核验需求批处理与美元费用统计；线报列表状态筛选及可启用的五秒自动刷新。",
-  "status": "planning",
-  "dev_type": null,
-  "scope": null,
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "jev",
   "package": null,
   "priority": "P2",
   "creator": "yang",
@@ -21,6 +21,15 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "notes": "用户已确认连续三次实际请求失败自动禁用，成功清零，包含超时/429/5xx。完整规划已呈现并校验，用户要求在别的会话执行，当前不启动实施。新会话收到明确批准现有方案的启动词后按handoff.md进入实施，不重建任务或重复确认相同规则。",
+  "meta": {
+    "failure_policy": "consecutive_all_request_failures",
+    "failure_threshold": 3,
+    "plan_approved": "true",
+    "plan_ready": true,
+    "execution_deferred_to_another_session": "false",
+    "handoff_file": ".trellis/tasks/10-14-jev-key-pool-usage-records/handoff.md",
+    "plan_approved_at": "2026-10-14",
+    "implementation_session": "pi"
+  }
 }

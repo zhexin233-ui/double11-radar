@@ -1,1 +1,11 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"核验存量升级、事务、并发owner及投递幂等"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"核验实际失败计数、中文错误及可恢复配置问题"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"请求账本/错误不得泄漏明文凭据"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查与测试要求"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"页面与动态API构建核验"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"共享轮询清理、重叠与旧响应"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"跨层DTO与unknown解析"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"数据流与消费者遗漏检查"}
+{"file":".trellis/tasks/10-14-jev-key-pool-usage-records/research/current-behavior.md","reason":"当前行为与回归点"}
+{"file":".trellis/tasks/10-14-jev-key-pool-usage-records/research/pricing-models.md","reason":"计费单位与模型费率证据"}
+{"file":".trellis/tasks/10-14-jev-key-pool-usage-records/research/pricing-responses-python.md","reason":"缺失用量不可计零的官方依据"}

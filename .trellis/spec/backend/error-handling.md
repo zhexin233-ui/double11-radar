@@ -55,6 +55,35 @@ message, and a schema without custom messages must still return a Chinese fallba
 
 Adapters must not throw raw `TypeError` from `fetch`; they catch, wrap, and classify.
 
+### Jev 适配器与统一请求服务的边界
+
+`src/lib/jev/client.ts` 只做传输与响应边界，**不做** Key 选择、失败计数或账本：
+
+- 成功时返回归一化的 `usage`（`input_tokens`/`output_tokens`，缺失即 `null`）、响应 `model`
+  与 `x-typesafe-request-id`（`SystemOneResponse`）；
+- 失败时把可核实的用量/模型/request id 挂在 `JevError` 上（`usage`/`responseModel`/
+  `upstreamRequestId`）；非 2xx 只从符合 usage 契约的字段读取，其他正文不能冒充用量；
+- 结构不合法（缺 `answers`、非 JSON）仍是可分类错误（`retryable = false`），且保留已报告用量，
+  避免漏记已发生的输入费用。
+
+统一请求服务 `src/lib/service/jev-requests.ts` 负责容量、Key 选择、失败计数与账本，并在
+**没有发出上游请求**时抛 `JevCallBlockedError extends JevError`：
+
+```ts
+export type JevBlockReason =
+  | "not_configured" | "no_key" | "busy" | "cooldown"
+  | "key_disabled" | "key_unreadable" | "key_missing";
+
+export class JevCallBlockedError extends JevError {
+  readonly reason: JevBlockReason;
+  /** 配置类问题：恢复后应自动继续 */
+  get isConfigProblem(): boolean;
+}
+```
+
+阻塞（容量满、共享退避、无可用 Key、指定 Key 已禁用/不可解密/不存在）**不计失败、不计费**；
+worker 用 `requeueJob` 延后重排，配置类问题用 `failJob(..., { permanentRetry: true })`。
+
 **Adapter messages are Chinese and actionable; raw exception text goes to server logs only.**
 Network failures from `fetch` surface as English (`fetch failed`, `The operation was aborted.`),
 which is unreadable for the operator and can leak environment detail. All four adapters
@@ -111,6 +140,10 @@ caught inside the collector. A failed unit:
 | Jev answered with an unknown choice | `Evaluation.result = "failed"` — **never** `matched` |
 | Jev has no API key / key is rejected (401/403) | job stays `pending` with 300s backoff (`permanentRetry`), so it recovers after the user fixes the config |
 | Jev returns an unparseable structure | job retries up to `max_attempts`, then `dead` and visible in 运行状态 |
+| Jev 全池不可用 / 容量满 / 共享退避中 | 任务保持 `pending`，`last_error` 为中文说明；**绝不**当作「没有匹配」 |
+| `POST /api/settings/jev/test` 未配置 | `400 JE_NOT_CONFIGURED`（中文） |
+| `POST /api/settings/jev/test` 其它阻塞（容量/退避/指定 Key 禁用） | `409 JE_UNAVAILABLE`（中文），未发出请求、不计费 |
+| `GET /api/bulletins` 非法 `status` | `400 INVALID_BODY`（中文，列出 `pending/matched/uncertain/failed/not_matched`） |
 
 ## Don't: turn a failure into "no match"
 

@@ -35,6 +35,48 @@ describe("Jev 客户端（mock 验证，未做真实接口验证）", () => {
     );
   });
 
+  it("归一化 usage：缺失/非法为 null，合法为非负整数（AC5）", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        model: "jev-1.13.0",
+        answers: { q1: { type: "choice", choice: "matched" } },
+        usage: { input_tokens: 1000, output_tokens: null },
+      }),
+    );
+    const response = await callSystemOne(config, request, { fetchImpl });
+    expect(response.model).toBe("jev-1.13.0");
+    expect(response.usage).toEqual({ inputTokens: 1000, outputTokens: null });
+  });
+
+  it("缺少 answers 视为结构非法并抛错，不当作没有匹配", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ model: "jev-latest" }));
+    await expect(callSystemOne(config, request, { fetchImpl })).rejects.toMatchObject({
+      name: "JevError",
+      retryable: false,
+    });
+  });
+
+  it("失败响应里可核实的 usage 与 request id 会挂在 JevError 上", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ usage: { input_tokens: 500 } }), {
+          status: 429,
+          headers: {
+            "retry-after": "7",
+            "x-typesafe-request-id": "req-429",
+          },
+        }),
+    );
+    await expect(callSystemOne(config, request, { fetchImpl })).rejects.toMatchObject({
+      name: "JevError",
+      status: 429,
+      retryable: true,
+      retryAfterMs: 7000,
+      upstreamRequestId: "req-429",
+      usage: { inputTokens: 500, outputTokens: null },
+    });
+  });
+
   it("HTTP 非 2xx 抛 JevError", async () => {
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 500 }));
     await expect(callSystemOne(config, request, { fetchImpl })).rejects.toBeInstanceOf(
@@ -67,11 +109,12 @@ describe("Jev 客户端（mock 验证，未做真实接口验证）", () => {
     expect(JSON.stringify(result)).not.toContain("secret-key");
   });
 
-  it("连接测试失败时返回错误信息而不是抛出", async () => {
+  it("连接测试失败时抛出 JevError（由上层统一服务先记账再转中文结果）", async () => {
     const fetchImpl = vi.fn(async () => new Response("", { status: 401 }));
-    const result = await testJevConnection(config, { fetchImpl });
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain("401");
+    await expect(testJevConnection(config, { fetchImpl })).rejects.toMatchObject({
+      name: "JevError",
+      message: expect.stringContaining("401"),
+    });
   });
 });
 

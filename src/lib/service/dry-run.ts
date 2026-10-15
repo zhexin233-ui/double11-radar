@@ -1,25 +1,30 @@
 import type Database from "better-sqlite3";
 import { listEnabledNeeds } from "@/lib/db/repos/needs";
-import { callSystemOne, JevError } from "@/lib/jev/client";
+import { callSystemOne } from "@/lib/jev/client";
 import {
   buildQuestions,
   buildStateFromFields,
   parseAnswers,
   type StateFields,
 } from "@/lib/jev/prompt";
-import { getJevConfigView, getJevRuntimeConfig } from "@/lib/service/config";
+import { getJevConfigView } from "@/lib/service/config";
+import {
+  JevCallBlockedError,
+  callJevWithLedger,
+} from "@/lib/service/jev-requests";
 import { RULE_VERSION } from "@/lib/domain/constants";
 import type { ChoiceOutcome } from "@/lib/domain/types";
 
 /**
  * 需求试判（dry-run）——仅用于验收。
  *
- * 复用与生产完全相同的 questions 构造与答案解析，调真实 Jev，但：
- * - **不写** evaluations / notifications / deliveries；
+ * 复用与生产完全相同的 questions 构造、统一请求服务与答案解析，调真实 Jev，但：
+ * - **不写** evaluations / notifications / deliveries / jobs；
  * - 不影响采集、基线、任务队列与投递状态；
  * - 不修改任何配置。
  *
- * 由于真实线报只能被动等待，这个入口用于立即验证语义正反例（AC5/AC6）。
+ * 本期新增的唯一副作用是调用账本（`jev_requests`）：试判同样是实际付费调用，
+ * 必须进入费用统计，否则统计会低估真实用量。
  */
 
 export interface DryRunInput extends StateFields {
@@ -48,6 +53,7 @@ export interface DryRunResult {
 export interface DryRunDependencies {
   callSystemOne?: typeof callSystemOne;
   fetchImpl?: typeof fetch;
+  now?: () => Date;
 }
 
 export async function runJevDryRun(
@@ -68,14 +74,6 @@ export async function runJevDryRun(
     };
   }
 
-  const runtime = getJevRuntimeConfig(db);
-  if (!runtime) {
-    throw new JevError("Jev 未配置 API 密钥，请先在页面保存配置", {
-      retryable: true,
-      code: "not_configured",
-    });
-  }
-
   const { questions, needByQuestionId } = buildQuestions(needs);
   const state = buildStateFromFields({
     title: input.title,
@@ -86,20 +84,23 @@ export async function runJevDryRun(
     price: input.price ?? null,
   });
 
-  const call = deps.callSystemOne ?? callSystemOne;
-  const response = await call(
+  // 与生产判断共用统一服务：容量、Key 选择、失败计数与用量账本行为完全一致。
+  const outcome = await callJevWithLedger(
+    db,
+    { purpose: "dry_run", state, questions },
     {
-      baseUrl: runtime.baseUrl,
-      apiKey: runtime.apiKey,
-      model: runtime.model,
-      timeoutMs: runtime.timeoutMs,
+      ...(deps.callSystemOne ? { callSystemOne: deps.callSystemOne } : {}),
+      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
     },
-    { state, model: runtime.model, questions },
-    deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
   );
 
+  // 没有发出上游请求的阻塞（容量满/退避/无可用 Key）要明确报错，不能静默返回空结果。
+  if (outcome.status === "blocked") throw new JevCallBlockedError(outcome.block);
+  if (outcome.status === "failed") throw outcome.error;
+
   const questionIds = Object.keys(questions);
-  const answers = parseAnswers(response, questionIds);
+  const answers = parseAnswers(outcome.response, questionIds);
 
   const results: DryRunNeedResult[] = [];
   for (const questionId of questionIds) {
@@ -120,7 +121,7 @@ export async function runJevDryRun(
 
   return {
     configVersion,
-    model: runtime.model,
+    model: outcome.response.model ?? "",
     ruleVersion: RULE_VERSION,
     needsCount: needs.length,
     results,

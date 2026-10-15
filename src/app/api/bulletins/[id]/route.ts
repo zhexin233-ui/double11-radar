@@ -1,5 +1,4 @@
-import { getBulletin } from "@/lib/db/repos/bulletins";
-import { describeBulletin } from "@/lib/service/bulletins";
+import { getBulletinDetail } from "@/lib/service/bulletins";
 import { HttpError, handleRoute, ok } from "@/lib/http/json";
 import { requireAuth } from "@/lib/http/server";
 
@@ -9,9 +8,10 @@ type Ctx = { params: Promise<{ id: string }> };
 export const GET = handleRoute<Ctx>(async (req, ctx) => {
   const db = requireAuth(req);
   const { id } = await ctx.params;
-  const bulletin = getBulletin(db, id);
-  if (!bulletin) {
+  // bulletin 行与判断/投递/通知投影在同一只读事务内读取。
+  const detail = getBulletinDetail(db, id);
+  if (!detail) {
     throw new HttpError("NOT_FOUND", "线报不存在", 404);
   }
-  return ok(describeBulletin(db, bulletin));
+  return ok(detail);
 });

@@ -1,1 +1,12 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/backend/index.md","reason":"后端安全与模块边界"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"SQLite增量迁移、事务、租约与幂等"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"中文错误、配置恢复与外部退避"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"注入I/O与完成检查"}
+{"file":".trellis/spec/frontend/index.md","reason":"客户端服务端边界与凭据编辑"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"复用useApiResource实现安全轮询"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"API DTO集中定义"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"新Key/账本/状态契约跨层一致性"}
+{"file":".trellis/tasks/10-14-jev-key-pool-usage-records/research/current-behavior.md","reason":"已核验调用合并、现有消费者与租约风险"}
+{"file":".trellis/tasks/10-14-jev-key-pool-usage-records/research/pricing-models.md","reason":"官方费率、当前模型与输入上限"}
+{"file":".trellis/tasks/10-14-jev-key-pool-usage-records/research/pricing-responses-python.md","reason":"用量缺失与request ID官方协议"}
+{"file":".trellis/tasks/10-14-jev-key-pool-usage-records/research/pricing-help-errors.md","reason":"429/529退避与Retry-After"}

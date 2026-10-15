@@ -63,6 +63,95 @@ export interface JevConfigDto {
 export const JE_CONCURRENCY_RANGE = { min: 1, max: 8 } as const;
 export const JE_JOBS_PER_ROUND_RANGE = { min: 1, max: 50 } as const;
 
+/** 单个 Jev API Key 的展示状态（绝不含明文密钥）。 */
+export interface JevKeyDto {
+  id: string;
+  label: string;
+  generation: number;
+  enabled: boolean;
+  disabledReason: string | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  secretState: SecretStateDto;
+}
+
+/** `/api/settings/jev` 的完整响应：基础配置 + 兼容掩码 + Key 列表。 */
+export interface JevSettingsDto extends JevConfigDto {
+  keys: JevKeyDto[];
+}
+
+/** 连续失败达到该次数会自动禁用 Key（与服务端常量一致）。 */
+export const JE_KEY_FAILURE_THRESHOLD = 3;
+
+export type JevRequestPurposeDto = "evaluate" | "test" | "dry_run";
+export type JevRequestStatusDto =
+  | "in_flight"
+  | "succeeded"
+  | "failed"
+  | "interrupted";
+export type JevCostStatusDto = "known" | "unknown";
+
+export interface JevUsageRequestDto {
+  id: string;
+  startedAt: string;
+  finishedAt: string | null;
+  purpose: JevRequestPurposeDto;
+  purposeLabel: string;
+  status: JevRequestStatusDto;
+  statusLabel: string;
+  keyId: string | null;
+  keyLabel: string | null;
+  bulletinId: string | null;
+  requestedModel: string;
+  responseModel: string | null;
+  httpStatus: number | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  costStatus: JevCostStatusDto;
+  unknownReason: string | null;
+  estimatedUsdNanos: number | null;
+  /** 已知费用的格式化美元字符串；未知为 null（不能显示为 $0.00）。 */
+  estimatedUsd: string | null;
+  priceVersion: string | null;
+}
+
+export interface JevUsageSummaryDto {
+  statsStartedAt: string | null;
+  totalRequests: number;
+  pendingCount: number;
+  knownRequestCount: number;
+  unknownCostCount: number;
+  failedCount: number;
+  inputTokensKnown: number;
+  outputTokensKnown: number;
+  knownCostNanos: number;
+  knownCostUsd: string;
+}
+
+export interface JevUsageByKeyDto {
+  keyId: string | null;
+  keyLabel: string | null;
+  requestCount: number;
+  /** 已计价调用数；`in_flight` 不计入（它既不是已计价也不是「费用未知」）。 */
+  knownRequestCount: number;
+  knownCostNanos: number;
+  knownCostUsd: string;
+  unknownCostCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  failedCount: number;
+}
+
+export interface JevUsageDto {
+  summary: JevUsageSummaryDto;
+  byKey: JevUsageByKeyDto[];
+  recent: { items: JevUsageRequestDto[]; total: number };
+}
+
 export interface NotifyConfigDto {
   config: {
     bark: { enabled: boolean; serverUrl: string };
@@ -198,6 +287,33 @@ export const STATUS_LABELS: Record<BulletinDetailDto["status"], string> = {
   failed: "处理失败",
   not_matched: "没有匹配",
 };
+
+/** 记录页状态筛选值（空串=全部；基线不在筛选范围内）。 */
+export type BulletinFilterStatusDto =
+  | "pending"
+  | "matched"
+  | "uncertain"
+  | "failed"
+  | "not_matched";
+
+/** 记录页筛选下拉选项：全部 + 五种非基线状态。 */
+export const BULLETIN_FILTER_OPTIONS: ReadonlyArray<{
+  value: "" | BulletinFilterStatusDto;
+  label: string;
+}> = [
+  { value: "", label: "全部" },
+  { value: "pending", label: STATUS_LABELS.pending },
+  { value: "matched", label: STATUS_LABELS.matched },
+  { value: "uncertain", label: STATUS_LABELS.uncertain },
+  { value: "failed", label: STATUS_LABELS.failed },
+  { value: "not_matched", label: STATUS_LABELS.not_matched },
+];
+
+/** 记录页每页条数（与服务端默认一致）。 */
+export const BULLETIN_PAGE_SIZE = 50;
+
+/** 记录页自动刷新间隔（毫秒）；默认关闭，由用户显式开启。 */
+export const BULLETIN_AUTO_REFRESH_MS = 5000;
 
 export const DELIVERY_LABELS: Record<DeliveryDto["status"], string> = {
   pending: "待发送",

@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
 import { reclaimExpiredLeases } from "@/lib/db/repos/jobs";
+import { reclaimExpiredRequestReservations } from "@/lib/db/repos/jev-requests";
 import { ensureAdminCredential } from "@/lib/auth/password";
 import { loadEnv, type AppEnv } from "@/lib/env";
 import { runCollectorOnce } from "@/lib/worker/collector";
@@ -72,6 +73,8 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
       "collector",
       () => {
         reclaimExpiredLeases(db);
+        // 超期请求预留转为 interrupted：释放容量、费用未知，不伪造零账单。
+        reclaimExpiredRequestReservations(db);
         return runCollectorOnce(db, env);
       },
       reportError,

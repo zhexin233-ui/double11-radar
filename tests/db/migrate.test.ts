@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
 import { migrate } from "@/lib/db/migrate";
-import { createTestDb } from "../helpers/db";
+import {
+  LEGACY_JEV_KEY_ID,
+  LEGACY_JEV_KEY_NAMESPACE,
+  LEGACY_JEV_SECRET_NAMESPACE,
+  migrations,
+} from "@/lib/db/migrations";
+import { getDb, closeDb } from "@/lib/db/client";
+import {
+  getSecret,
+  hasSecret,
+  setSecret,
+} from "@/lib/db/repos/settings";
+import { getJevKey, listJevKeys } from "@/lib/db/repos/jev-keys";
+import { createTestDb, testKey } from "../helpers/db";
 
 const EXPECTED_TABLES = [
   "schema_migrations",
@@ -16,6 +33,8 @@ const EXPECTED_TABLES = [
   "notifications",
   "evaluations",
   "deliveries",
+  "jev_api_keys",
+  "jev_requests",
 ];
 
 describe("db/migrate", () => {
@@ -42,7 +61,7 @@ describe("db/migrate", () => {
       const versions = ctx.db
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((row) => row.version)).toEqual([1]);
+      expect(versions.map((row) => row.version)).toEqual([1, 2]);
     } finally {
       ctx.close();
     }
@@ -63,6 +82,50 @@ describe("db/migrate", () => {
         .prepare("SELECT price FROM bulletins WHERE id = 'b1'")
         .get() as { price: number | null };
       expect(row.price).toBeNull();
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("V2 把旧单密钥密文原样迁移到兼容 Key 且只创建一次（AC2）", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xianbao-v2-"));
+    const dbPath = path.join(dir, "test.db");
+    const key = testKey();
+    try {
+      // 仅应用 V1，模拟旧版本数据库。
+      const db = getDb(dbPath);
+      migrate(db, [migrations[0]]);
+      setSecret(db, LEGACY_JEV_SECRET_NAMESPACE, "sk-legacy-secret", key);
+
+      // 升级到 V2：数据迁移在同一事务内执行。
+      expect(migrate(db).applied).toEqual([2]);
+      expect(listJevKeys(db)).toHaveLength(1);
+      expect(getJevKey(db, LEGACY_JEV_KEY_ID)?.enabled).toBe(true);
+      expect(getSecret(db, LEGACY_JEV_KEY_NAMESPACE, key)).toBe("sk-legacy-secret");
+      // 旧 namespace 已被清除，且不解密、不重加密。
+      expect(hasSecret(db, LEGACY_JEV_SECRET_NAMESPACE)).toBe(false);
+
+      // 再次迁移（模拟另一个进程启动）不重复创建、不改变密文。
+      expect(migrate(db).applied).toEqual([]);
+      expect(listJevKeys(db)).toHaveLength(1);
+      expect(getSecret(db, LEGACY_JEV_KEY_NAMESPACE, key)).toBe("sk-legacy-secret");
+
+      // 第二个连接（模拟 web/worker 并发启动）读到已应用版本，V2 不重复执行。
+      const second = new Database(dbPath);
+      second.pragma("busy_timeout = 5000");
+      expect(migrate(second).applied).toEqual([]);
+      expect(listJevKeys(second)).toHaveLength(1);
+      second.close();
+    } finally {
+      closeDb();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("无旧密钥的新库不创建空兼容 Key", () => {
+    const ctx = createTestDb();
+    try {
+      expect(listJevKeys(ctx.db)).toEqual([]);
     } finally {
       ctx.close();
     }

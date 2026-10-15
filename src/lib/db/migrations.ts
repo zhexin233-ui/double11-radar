@@ -1,7 +1,10 @@
+import type Database from "better-sqlite3";
+
 /**
  * 数据库迁移定义。
  *
- * 字段名是跨模块契约，修改需同步 research/impl-architecture.md 第 4 节。
+ * 字段名是跨模块契约，修改需同步 `.trellis/tasks/10-14-jev-key-pool-usage-records/design.md`
+ * 第 2 节以及读写它的仓库（`src/lib/db/repos/*`）。
  * 全部时间以 UTC ISO8601 字符串存储；布尔值以 INTEGER 0/1 存储。
  */
 
@@ -9,7 +12,19 @@ export interface Migration {
   version: number;
   name: string;
   sql: string;
+  /**
+   * 可选的数据迁移，在同一个 `BEGIN IMMEDIATE` 事务内、`sql` 之后执行。
+   * 只用于无法用纯 SQL 表达的搬迁（例如把旧单密钥密文移动到 Key 池 namespace）。
+   */
+  run?: (db: Database.Database) => void;
 }
+
+/** 旧版单密钥的密文 namespace（V1 唯一写入的 Jev 凭据位置）。 */
+export const LEGACY_JEV_SECRET_NAMESPACE = "jev.apiKey";
+/** 迁移后旧单密钥在 Key 池中的固定 id，兼容层始终映射到它。 */
+export const LEGACY_JEV_KEY_ID = "legacy-default";
+/** 旧单密钥迁移后的密文 namespace（与旧 namespace 区分，避免误读）。 */
+export const LEGACY_JEV_KEY_NAMESPACE = "jev.key.legacy-default";
 
 const V1_INIT = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -170,10 +185,109 @@ CREATE INDEX IF NOT EXISTS idx_deliveries_status ON deliveries(status, updated_a
 CREATE INDEX IF NOT EXISTS idx_channels_next_poll ON channels(selected, available, next_poll_at);
 `;
 
+/**
+ * V2：Jev 多密钥池与调用账本。
+ *
+ * - `jev_api_keys`：密钥元数据（label/generation/健康计数），密文仍存 `secrets`；
+ * - `jev_requests`：每一次**实际**上游调用（含后台/连接测试/试判与每次重试）的账本；
+ *   `result_recorded_at` 保证真实结果只能落账一次，租约回收后迟到结果可补写同一行。
+ */
+const V2_KEYS_AND_LEDGER = `
+CREATE TABLE IF NOT EXISTS jev_api_keys (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  secret_namespace TEXT NOT NULL UNIQUE,
+  generation INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  disabled_reason TEXT,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  last_used_at TEXT,
+  cooldown_until TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS jev_requests (
+  id TEXT PRIMARY KEY,
+  upstream_request_id TEXT,
+  key_id TEXT,
+  key_label TEXT,
+  key_generation INTEGER,
+  purpose TEXT NOT NULL,
+  bulletin_id TEXT,
+  job_id TEXT,
+  requested_model TEXT NOT NULL,
+  response_model TEXT,
+  provider_origin TEXT,
+  config_version INTEGER,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  lease_until TEXT,
+  result_recorded_at TEXT,
+  http_status INTEGER,
+  error_code TEXT,
+  error_message TEXT,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  price_version TEXT,
+  input_rate_nanos_per_token INTEGER,
+  estimated_usd_nanos INTEGER,
+  cost_status TEXT NOT NULL DEFAULT 'unknown',
+  unknown_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_jev_requests_status_lease ON jev_requests(status, lease_until);
+CREATE INDEX IF NOT EXISTS idx_jev_requests_key ON jev_requests(key_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_jev_requests_started ON jev_requests(started_at);
+CREATE INDEX IF NOT EXISTS idx_jev_requests_result ON jev_requests(result_recorded_at);
+`;
+
+/**
+ * 把 V1 的单密钥密文原样搬到 Key 池兼容 namespace，并登记默认启用的旧 Key 元数据。
+ * 不解密、不重加密、不写日志；没有旧密钥时不创建空条目。
+ */
+function migrateLegacyJevKey(db: Database.Database): void {
+  const legacy = db
+    .prepare("SELECT ciphertext, updated_at FROM secrets WHERE namespace = ?")
+    .get(LEGACY_JEV_SECRET_NAMESPACE) as
+    | { ciphertext: string; updated_at: string }
+    | undefined;
+  if (!legacy) return;
+
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT OR IGNORE INTO jev_api_keys (
+       id, label, secret_namespace, generation, enabled, consecutive_failures,
+       created_at, updated_at
+     ) VALUES (?, ?, ?, 1, 1, 0, ?, ?)`,
+  ).run(
+    LEGACY_JEV_KEY_ID,
+    "旧版单密钥（迁移）",
+    LEGACY_JEV_KEY_NAMESPACE,
+    legacy.updated_at ?? now,
+    now,
+  );
+  db.prepare(
+    `INSERT OR IGNORE INTO secrets (namespace, ciphertext, updated_at)
+     SELECT ?, ciphertext, updated_at FROM secrets WHERE namespace = ?`,
+  ).run(LEGACY_JEV_KEY_NAMESPACE, LEGACY_JEV_SECRET_NAMESPACE);
+  db.prepare("DELETE FROM secrets WHERE namespace = ?").run(
+    LEGACY_JEV_SECRET_NAMESPACE,
+  );
+}
+
 export const migrations: Migration[] = [
   {
     version: 1,
     name: "init",
     sql: V1_INIT,
+  },
+  {
+    version: 2,
+    name: "jev_key_pool_and_request_ledger",
+    sql: V2_KEYS_AND_LEDGER,
+    run: migrateLegacyJevKey,
   },
 ];

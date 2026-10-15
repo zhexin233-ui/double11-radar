@@ -160,3 +160,73 @@ export interface SessionRecord {
   expiresAt: string;
   lastSeenAt: string;
 }
+
+// ── Jev 多密钥池与调用账本 ──────────────────────────────────────────────────
+
+/** 一次 Jev 请求的来源。 */
+export type JevRequestPurpose = "evaluate" | "test" | "dry_run";
+
+/**
+ * 调用账本状态。
+ * `interrupted` 表示进程中断导致租约过期、尚无真实结果；
+ * 迟到的真实响应仍可把它转为 `succeeded`/`failed` 并补写用量一次。
+ */
+export type JevRequestStatus =
+  | "in_flight"
+  | "succeeded"
+  | "failed"
+  | "interrupted";
+
+/** 费用是否可估算。`unknown` 绝不能显示为 $0。 */
+export type JevCostStatus = "known" | "unknown";
+
+/** Jev API Key 元数据（密文存 `secrets`，此处只保留非敏感字段）。 */
+export interface JevApiKey {
+  id: string;
+  label: string;
+  secretNamespace: string;
+  /** 每次替换/手动恢复都会自增；用于隔离旧请求的迟到结果。 */
+  generation: number;
+  enabled: boolean;
+  /** 自动/手动禁用原因（中文，展示给管理员）。 */
+  disabledReason: string | null;
+  /** 同一 generation 内连续的实际请求失败次数；成功一次清零。 */
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastUsedAt: string | null;
+  cooldownUntil: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 一次实际 Jev 上游调用的账本记录。 */
+export interface JevRequest {
+  id: string;
+  upstreamRequestId: string | null;
+  keyId: string | null;
+  keyLabel: string | null;
+  keyGeneration: number | null;
+  purpose: JevRequestPurpose;
+  bulletinId: string | null;
+  jobId: string | null;
+  requestedModel: string;
+  responseModel: string | null;
+  providerOrigin: string | null;
+  configVersion: number | null;
+  status: JevRequestStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  leaseUntil: string | null;
+  /** 真实结果完成时刻；非空表示该行已记账、不会被二次累计。 */
+  resultRecordedAt: string | null;
+  httpStatus: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  priceVersion: string | null;
+  inputRateNanosPerToken: number | null;
+  estimatedUsdNanos: number | null;
+  costStatus: JevCostStatus;
+  unknownReason: string | null;
+}

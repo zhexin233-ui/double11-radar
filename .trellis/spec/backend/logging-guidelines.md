@@ -25,6 +25,17 @@ Live status is **not** taken from logs: it is persisted in `settings('runtime')`
   `SendResult`/`JevTestResult` shapes.
 - `loadEnv()`, whose errors already name the variable but never its value.
 
+## 调用账本与费用统计
+
+`jev_requests` 账本与 `/api/settings/jev/usage` 投影同样面向管理员，遵循相同的敏感边界：
+
+- **不写**明文密钥、`Authorization` 头或任何可还原的凭据；账本只存非敏感
+  `key_id`/`key_label`/`key_generation` 快照（Key 删除后历史仍保留）。
+- `error_message` 必须是清洗后的中文说明，**不得包含可还原的凭据**；允许包含服务地址
+  （非敏感）。失败分类放 `error_code`/`http_status`。
+- 用量与费用（`input_tokens`/`estimated_usd_nanos` 等）是账本字段，不是日志；费用为
+  公布费率估算，不得在日志或页面表述为服务商实付账单。
+
 ## Leveling
 
 - `console.error` — operator action required (config error, dead job, migration failure).
