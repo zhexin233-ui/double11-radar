@@ -103,3 +103,36 @@
 
 - 需要真实凭据验收时：多 Key 并发与「连续 3 次失败禁用」在真实 Jev 环境复核；多 Key 是否共享账号额度官方未核实
 - 自动按 Token 拆批（上游 64k/32k 上下文限制）留待确有需求且拿到可靠 tokenizer 时单独规划
+
+## Session 3: 本地 Docker 环境升级上线（数据卷备份 → 重建镜像 → 启动核验）
+
+**Date**: 2026-10-15
+**Task**: （无 Trellis 任务，纯运维收尾）
+**Branch**: `main`
+
+### Summary
+
+把已提交的多密钥/费用统计版本真正部署到本地 Docker：先备份数据卷，再重建镜像并启动 web/worker，核验 V2 迁移、旧密钥进入 Key 池、健康检查与新路由。升级前镜像与数据库都还是旧的（无任何容器运行）。
+
+### Main Changes
+
+- 备份数据卷 `11jev_xianbao-data` 到 `~/xianbao-backups/11jev-data-20261015-065111.tar.gz`（761K，`integrity_check: ok`，SHA256 已记录）；`.env` 未被读取或修改（备份动作被敏感路径策略拦截，APP_ENCRYPTION_KEY 保持原值）
+- `docker compose up -d --build`：新版镜像 `ab9a20572187`（构建 52 秒），web `Up (healthy)`、worker `Up`
+- 迁移核验：`schema_migrations` = [1,2]，新增 `jev_api_keys` / `jev_requests`；`secrets` 中旧 `jev.apiKey` 已迁为 `jev.key.legacy-default`，Key 池出现「旧版单密钥（迁移）」（enabled、generation 1）
+- 路由核验：`/api/health` 200、`/login` 200、`/api/settings/jev` 与 `/api/settings/jev/usage` 未登录 401（新路由已生效）
+- 数据核验：线报 1359 → 1578（持续采集），evaluations 1988 条保留完整
+
+### 观测与结论
+
+- 运行状态页仍显示「Jev 服务无法连接」是**升级前遗留**的 `lastError`（`lastErrorAt = 2026-10-14T14:51:33Z`），本次启动未产生新错误
+- 调用账本为空属正常：两个需求（抽纸、至本卸妆膏）当前都是 `enabled=0`，判断任务按既有语义直接完成、不发起 Jev 调用（升级后 204 个任务 succeeded、attempts=0、0 条 evaluations）
+- 启用需求后才会产生真实付费调用并写入费用区
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在网页按需重新启用需求；启用前费用区会显示「尚无调用记录 / 暂无可计价调用」
+- 若需回退：`docker compose down` → 用上面的 tar 还原卷 → 以同一 `APP_ENCRYPTION_KEY` 启动旧版本
