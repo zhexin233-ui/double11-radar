@@ -11,6 +11,10 @@ import {
   type BulletinDetailDto,
   type BulletinFilterStatusDto,
 } from "@/components/api-types";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Section } from "@/components/ui/Section";
+import { TableScroll } from "@/components/ui/TableScroll";
+import { Feedback } from "@/components/ui/Feedback";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -60,111 +64,116 @@ export default function BulletinsPage() {
   const hasNext = data ? offset + data.items.length < data.total : false;
 
   return (
-    <div className="stack">
-      <div className="row">
-        <h1 style={{ margin: 0 }}>线报记录</h1>
-        <button type="button" className="ghost" onClick={() => void reload()}>
-          刷新
-        </button>
-        <button
-          type="button"
-          className="ghost"
-          aria-pressed={autoRefresh}
-          onClick={() => setAutoRefresh((value) => !value)}
-        >
-          自动刷新：{autoRefresh ? "开启" : "关闭"}（5 秒）
-        </button>
-      </div>
-      <p className="muted small">
-        只显示已过基线的线报。状态区分「明确匹配」「待确认（信息不足）」「处理失败」与「没有匹配」；
-        「处理失败」是模型或调用异常，不代表没有命中。自动刷新默认关闭，开启后每 5 秒刷新一次，
-        慢请求不会叠加。
-      </p>
+    <div className="page">
+      <PageHeader
+        title="线报记录"
+        lead="只显示已过基线的线报，按状态区分「明确匹配」「待确认（信息不足）」「处理失败」与「没有匹配」；「处理失败」是模型或调用异常，不代表没有命中。"
+      />
 
-      <div className="row">
-        <label>
-          状态筛选
-          <select
-            value={status}
-            onChange={(event) => {
-              const next = event.target.value;
-              if (!isFilterStatus(next)) return;
-              setStatus(next);
-              setPage(0);
-            }}
-          >
-            {BULLETIN_FILTER_OPTIONS.map((option) => (
-              <option key={option.value || "all"} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <Section>
+        <div className="toolbar" style={{ marginBottom: "var(--sp-5)" }}>
+          <div className="toolbar-start">
+            <div className="field-inline">
+              <label htmlFor="status-filter">状态筛选</label>
+              <select
+                id="status-filter"
+                value={status}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (!isFilterStatus(next)) return;
+                  setStatus(next);
+                  setPage(0);
+                }}
+              >
+                {BULLETIN_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="toolbar-end">
+            <button type="button" className="btn-ghost" onClick={() => void reload()}>
+              刷新
+            </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              aria-pressed={autoRefresh}
+              onClick={() => setAutoRefresh((value) => !value)}
+            >
+              自动刷新：{autoRefresh ? "开启" : "关闭"}（5 秒）
+            </button>
+          </div>
+        </div>
 
-      {error ? <p className="error">{error}</p> : null}
-      {loading ? <p className="muted">正在加载…</p> : null}
+        {error ? <Feedback kind="error">加载失败：{error}</Feedback> : null}
+        {loading && !data ? <Feedback kind="loading">正在加载…</Feedback> : null}
 
-      <section className="card">
         {data && data.items.length === 0 ? (
-          <p className="muted">
+          <p className="empty">
             {status
               ? "当前筛选下没有记录，可切换其它状态查看。"
               : "暂无记录。首次启动会先建立基线，只处理之后出现的新线报。"}
           </p>
         ) : null}
+
         {data && data.items.length > 0 ? (
-          <table>
-            <thead>
-              <tr>
-                <th>状态</th>
-                <th>线报</th>
-                <th>命中需求</th>
-                <th>价格</th>
-                <th>时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((item) => (
-                <tr key={item.bulletin.id}>
-                  <td>
-                    <span className={`badge ${item.status}`}>
-                      {STATUS_LABELS[item.status]}
-                    </span>
-                  </td>
-                  <td>
-                    <Link href={`/bulletins/${item.bulletin.id}`}>
-                      {item.bulletin.title}
-                    </Link>
-                    <div className="muted small">
-                      {item.bulletin.sourceNs}
-                      {item.bulletin.category ? ` · ${item.bulletin.category}` : ""}
-                    </div>
-                  </td>
-                  <td className="small">
-                    {item.matchedNeeds.length ? item.matchedNeeds.join("、") : "—"}
-                  </td>
-                  <td className="small">
-                    {item.bulletin.price === null ? "" : `${item.bulletin.price} 元`}
-                  </td>
-                  <td className="small">{formatTime(item.bulletin.publishedAt)}</td>
+          <TableScroll label="线报记录列表">
+            <table>
+              <thead>
+                <tr>
+                  <th>状态</th>
+                  <th>线报</th>
+                  <th>命中需求</th>
+                  <th>价格</th>
+                  <th>时间</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.items.map((item) => (
+                  <tr key={item.bulletin.id}>
+                    <td>
+                      <span className={`badge ${item.status}`}>
+                        {STATUS_LABELS[item.status]}
+                      </span>
+                    </td>
+                    <td>
+                      <Link href={`/bulletins/${item.bulletin.id}`}>
+                        {item.bulletin.title}
+                      </Link>
+                      <div className="muted small">
+                        {item.bulletin.sourceNs}
+                        {item.bulletin.category ? ` · ${item.bulletin.category}` : ""}
+                      </div>
+                    </td>
+                    <td className="small">
+                      {item.matchedNeeds.length ? item.matchedNeeds.join("、") : "—"}
+                    </td>
+                    <td className="small">
+                      {item.bulletin.price === null ? "" : `${item.bulletin.price} 元`}
+                    </td>
+                    <td className="small">{formatTime(item.bulletin.publishedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         ) : null}
+
         {data && data.total > 0 ? (
-          <div className="row" style={{ justifyContent: "space-between" }}>
+          <div className="toolbar" style={{ marginTop: "var(--sp-5)" }}>
             <span className="muted small">
               共 {data.total} 条
               {data.items.length > 0
                 ? `，当前显示第 ${offset + 1}–${offset + data.items.length} 条`
                 : ""}
             </span>
-            <span className="row">
+            <span className="toolbar-end">
               <button
                 type="button"
-                className="ghost"
+                className="btn-ghost"
                 disabled={page === 0}
                 onClick={() => setPage((value) => Math.max(0, value - 1))}
               >
@@ -172,7 +181,7 @@ export default function BulletinsPage() {
               </button>
               <button
                 type="button"
-                className="ghost"
+                className="btn-ghost"
                 disabled={!hasNext}
                 onClick={() => setPage((value) => value + 1)}
               >
@@ -181,7 +190,7 @@ export default function BulletinsPage() {
             </span>
           </div>
         ) : null}
-      </section>
+      </Section>
     </div>
   );
 }

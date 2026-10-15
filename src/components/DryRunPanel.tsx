@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { apiSend, errorMessage } from "@/components/api-client";
-import {
-  EVALUATION_LABELS,
-  type DryRunResultDto,
-} from "@/components/api-types";
+import { EVALUATION_LABELS, type DryRunResultDto } from "@/components/api-types";
+import { Section } from "@/components/ui/Section";
+import { TableScroll } from "@/components/ui/TableScroll";
+import { Feedback } from "@/components/ui/Feedback";
 
 /**
  * 需求试判面板（仅验收用）。
@@ -64,147 +64,143 @@ export function DryRunPanel() {
   }
 
   return (
-    <section className="card stack">
-      <div>
-        <h2 style={{ marginBottom: 4 }}>需求试判（仅验收用）</h2>
-        <p className="muted small">
+    <Section
+      id="jev-dry-run"
+      className="anchor-target"
+      title="需求试判（仅验收用）"
+      description={
+        <>
           粘贴一段线报样例，用与生产相同的问题与解析逻辑调用真实 Jev，
           逐需求显示三态结果。<strong>不会写入判断记录，也不会发送任何通知</strong>；
           真实线报只能被动等待，这个入口用于立即验证语义正反例。
-        </p>
-      </div>
-
-      <div className="row small">
-        {EXAMPLES.map((example) => (
-          <button
-            key={example.label}
-            type="button"
-            className="ghost"
-            onClick={() => {
-              setTitle(example.title);
-              setContent(example.content);
-              setResult(null);
-              setError(null);
-            }}
-          >
-            {example.label}
-          </button>
-        ))}
-      </div>
-
-      <form className="stack" onSubmit={run}>
-        <label>
-          线报标题（必填）
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            style={{ width: "100%" }}
-            maxLength={500}
-            required
-          />
-        </label>
-        <label>
-          正文（可选）
-          <textarea
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            rows={3}
-            style={{ width: "100%" }}
-            maxLength={5000}
-          />
-        </label>
-        <div className="grid-2">
-          <label>
-            品类（可选）
-            <input
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              style={{ width: "100%" }}
-            />
-          </label>
-          <label>
-            品牌（可选）
-            <input
-              value={brand}
-              onChange={(event) => setBrand(event.target.value)}
-              style={{ width: "100%" }}
-            />
-          </label>
-          <label>
-            商城（可选）
-            <input
-              value={mall}
-              onChange={(event) => setMall(event.target.value)}
-              style={{ width: "100%" }}
-            />
-          </label>
-          <label>
-            价格（可选，留空表示来源未提供）
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
-              style={{ width: "100%" }}
-            />
-          </label>
+        </>
+      }
+    >
+      <div className="stack">
+        <div className="row small">
+          {EXAMPLES.map((example) => (
+            <button
+              key={example.label}
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setTitle(example.title);
+                setContent(example.content);
+                setResult(null);
+                setError(null);
+              }}
+            >
+              {example.label}
+            </button>
+          ))}
         </div>
-        <div className="row">
-          <button type="submit" className="primary" disabled={busy || !title.trim()}>
-            {busy ? "试判中…" : "运行试判"}
-          </button>
-          <span className="muted small">
-            价格留空会作为「来源未提供」传入，不会被当成 0 元。
-          </span>
-        </div>
-      </form>
 
-      {error ? <p className="error">试判失败：{error}</p> : null}
+        <form className="stack" onSubmit={run}>
+          <label className="field">
+            线报标题（必填）
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={500}
+              required
+            />
+          </label>
+          <label className="field">
+            正文（可选）
+            <textarea
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              rows={3}
+              maxLength={5000}
+            />
+          </label>
+          <div className="grid-2">
+            <label className="field">
+              品类（可选）
+              <input
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              品牌（可选）
+              <input value={brand} onChange={(event) => setBrand(event.target.value)} />
+            </label>
+            <label className="field">
+              商城（可选）
+              <input value={mall} onChange={(event) => setMall(event.target.value)} />
+            </label>
+            <label className="field">
+              价格（可选，留空表示来源未提供）
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={price}
+                onChange={(event) => setPrice(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="row">
+            <button type="submit" className="btn-primary" disabled={busy || !title.trim()}>
+              {busy ? "试判中…" : "运行试判"}
+            </button>
+            <span className="muted small">
+              价格留空会作为「来源未提供」传入，不会被当成 0 元。
+            </span>
+          </div>
+        </form>
 
-      {result ? (
-        result.needsCount === 0 ? (
-          <div className="notice">还没有启用的需求，请先在「需求清单」中添加并启用。</div>
-        ) : (
-          <>
-            <p className="muted small">
-              使用模型 {result.model || "—"}，规则版本 {result.ruleVersion}，配置版本{" "}
-              {result.configVersion}，共 {result.needsCount} 个启用需求。
+        {error ? <Feedback kind="error">试判失败：{error}</Feedback> : null}
+
+        {result ? (
+          result.needsCount === 0 ? (
+            <p className="notice" style={{ margin: 0 }}>
+              还没有启用的需求，请先在「需求清单」中添加并启用。
             </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>需求</th>
-                  <th>结果</th>
-                  <th>置信度</th>
-                  <th>概率</th>
-                  <th>说明 / 错误</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.results.map((item) => (
-                  <tr key={item.needId}>
-                    <td>
-                      {item.needName}
-                      {item.needNote ? (
-                        <div className="muted small">备注：{item.needNote}</div>
-                      ) : null}
-                    </td>
-                    <td>
-                      <span className={`badge ${item.result}`}>
-                        {EVALUATION_LABELS[item.result]}
-                      </span>
-                    </td>
-                    <td className="small">{item.confidence ?? "—"}</td>
-                    <td className="small">{formatProbabilities(item.probabilities)}</td>
-                    <td className="small error">{item.error ?? ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )
-      ) : null}
-    </section>
+          ) : (
+            <div className="stack">
+              <p className="muted small" style={{ margin: 0 }}>
+                使用模型 {result.model || "—"}，规则版本 {result.ruleVersion}，配置版本{" "}
+                {result.configVersion}，共 {result.needsCount} 个启用需求。
+              </p>
+              <TableScroll label="需求试判结果" minTableWidth={820}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>需求</th>
+                      <th>结果</th>
+                      <th>置信度</th>
+                      <th>概率</th>
+                      <th>说明 / 错误</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.results.map((item) => (
+                      <tr key={item.needId}>
+                        <td>
+                          {item.needName}
+                          {item.needNote ? (
+                            <div className="muted small">备注：{item.needNote}</div>
+                          ) : null}
+                        </td>
+                        <td>
+                          <span className={`badge ${item.result}`}>
+                            {EVALUATION_LABELS[item.result]}
+                          </span>
+                        </td>
+                        <td className="small">{item.confidence ?? "—"}</td>
+                        <td className="small">{formatProbabilities(item.probabilities)}</td>
+                        <td className="small error">{item.error ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableScroll>
+            </div>
+          )
+        ) : null}
+      </div>
+    </Section>
   );
 }

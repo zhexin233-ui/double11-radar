@@ -8,6 +8,9 @@ import type {
   SecretStateDto,
   TestResultDto,
 } from "@/components/api-types";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Section } from "@/components/ui/Section";
+import { Feedback } from "@/components/ui/Feedback";
 
 type SecretAction = "keep" | "replace" | "clear";
 
@@ -47,9 +50,10 @@ function SecretField(props: {
         <input
           type="password"
           placeholder={props.placeholder}
+          aria-label={props.placeholder}
           value={props.value}
           onChange={(event) => props.onValue(event.target.value)}
-          style={{ width: "100%" }}
+          style={{ width: "100%", marginTop: "var(--sp-3)" }}
         />
       ) : null}
     </fieldset>
@@ -76,7 +80,10 @@ function PushForm(props: {
   const [signingAction, setSigningAction] = useState<SecretAction>("keep");
   const [signingSecret, setSigningSecret] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
 
   async function test(channel: "bark" | "feishu") {
     setBusy(true);
@@ -88,10 +95,16 @@ function PushForm(props: {
       const label = channel === "bark" ? "Bark" : "飞书";
       setNotice(
         result.ok
-          ? `${label} 测试发送成功（接口返回成功，不代表设备已读）。`
-          : `${label} 测试发送失败：${result.error ?? "未知原因"}${
-              result.bizCode ? `（业务码 ${result.bizCode}）` : ""
-            }`,
+          ? {
+              kind: "success",
+              text: `${label} 测试发送成功（接口返回成功，不代表设备已读）。`,
+            }
+          : {
+              kind: "error",
+              text: `${label} 测试发送失败：${result.error ?? "未知原因"}${
+                result.bizCode ? `（业务码 ${result.bizCode}）` : ""
+              }`,
+            },
       );
     } catch (caught) {
       props.onError(errorMessage(caught));
@@ -130,98 +143,109 @@ function PushForm(props: {
 
   return (
     <form className="stack" onSubmit={save}>
-      <section className="card stack">
-        <h2>Bark</h2>
-        <label className="row">
-          <input
-            type="checkbox"
-            checked={barkEnabled}
-            onChange={(event) => setBarkEnabled(event.target.checked)}
-          />
-          启用 Bark 推送
-        </label>
-        <label>
-          服务地址
-          <input
-            type="url"
-            value={barkServer}
-            onChange={(event) => setBarkServer(event.target.value)}
-            style={{ width: "100%" }}
-          />
-        </label>
-        <SecretField
-          label="设备 Key"
-          state={props.view.bark.deviceKey}
-          action={deviceKeyAction}
-          value={deviceKey}
-          onAction={setDeviceKeyAction}
-          onValue={setDeviceKey}
-          placeholder="Bark 设备 Key"
-        />
-        <button type="button" className="ghost" disabled={busy} onClick={() => void test("bark")}>
-          测试 Bark
-        </button>
-      </section>
+      <div className="grid-2">
+        <Section title="Bark" headingLevel={2}>
+          <div className="stack">
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={barkEnabled}
+                onChange={(event) => setBarkEnabled(event.target.checked)}
+              />
+              启用 Bark 推送
+            </label>
+            <label className="field">
+              服务地址
+              <input
+                type="url"
+                value={barkServer}
+                onChange={(event) => setBarkServer(event.target.value)}
+              />
+            </label>
+            <SecretField
+              label="设备 Key"
+              state={props.view.bark.deviceKey}
+              action={deviceKeyAction}
+              value={deviceKey}
+              onAction={setDeviceKeyAction}
+              onValue={setDeviceKey}
+              placeholder="Bark 设备 Key"
+            />
+            <div className="row">
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={busy}
+                onClick={() => void test("bark")}
+              >
+                测试 Bark
+              </button>
+            </div>
+          </div>
+        </Section>
 
-      <section className="card stack">
-        <h2>飞书群机器人</h2>
-        <label className="row">
-          <input
-            type="checkbox"
-            checked={feishuEnabled}
-            onChange={(event) => setFeishuEnabled(event.target.checked)}
-          />
-          启用飞书推送
-        </label>
-        <SecretField
-          label="Webhook 地址"
-          state={props.view.feishu.webhook}
-          action={webhookAction}
-          value={webhook}
-          onAction={setWebhookAction}
-          onValue={setWebhook}
-          placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
-        />
-        <label className="row">
-          <input
-            type="checkbox"
-            checked={signingEnabled}
-            onChange={(event) => setSigningEnabled(event.target.checked)}
-          />
-          开启签名校验（需同时配置签名密钥）
-        </label>
-        <SecretField
-          label="签名密钥"
-          state={props.view.feishu.signingSecret}
-          action={signingAction}
-          value={signingSecret}
-          onAction={setSigningAction}
-          onValue={setSigningSecret}
-          placeholder="飞书签名密钥"
-        />
-        <label>
-          关键词前缀（可选，会写入通知标题，用于通过关键词校验）
-          <input
-            value={keywordPrefix}
-            onChange={(event) => setKeywordPrefix(event.target.value)}
-            style={{ width: "100%" }}
-            maxLength={100}
-          />
-        </label>
-        <button
-          type="button"
-          className="ghost"
-          disabled={busy}
-          onClick={() => void test("feishu")}
-        >
-          测试飞书
-        </button>
-      </section>
+        <Section title="飞书群机器人" headingLevel={2}>
+          <div className="stack">
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={feishuEnabled}
+                onChange={(event) => setFeishuEnabled(event.target.checked)}
+              />
+              启用飞书推送
+            </label>
+            <SecretField
+              label="Webhook 地址"
+              state={props.view.feishu.webhook}
+              action={webhookAction}
+              value={webhook}
+              onAction={setWebhookAction}
+              onValue={setWebhook}
+              placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+            />
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={signingEnabled}
+                onChange={(event) => setSigningEnabled(event.target.checked)}
+              />
+              开启签名校验（需同时配置签名密钥）
+            </label>
+            <SecretField
+              label="签名密钥"
+              state={props.view.feishu.signingSecret}
+              action={signingAction}
+              value={signingSecret}
+              onAction={setSigningAction}
+              onValue={setSigningSecret}
+              placeholder="飞书签名密钥"
+            />
+            <label className="field">
+              关键词前缀（可选，会写入通知标题，用于通过关键词校验）
+              <input
+                value={keywordPrefix}
+                onChange={(event) => setKeywordPrefix(event.target.value)}
+                maxLength={100}
+              />
+            </label>
+            <div className="row">
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={busy}
+                onClick={() => void test("feishu")}
+              >
+                测试飞书
+              </button>
+            </div>
+          </div>
+        </Section>
+      </div>
 
-      {notice ? <div className="notice">{notice}</div> : null}
+      {notice ? <Feedback kind={notice.kind}>{notice.text}</Feedback> : null}
 
       <div className="row">
-        <button type="submit" className="primary" disabled={busy}>
+        <button type="submit" className="btn-primary" disabled={busy}>
           保存配置
         </button>
       </div>
@@ -236,19 +260,34 @@ export default function PushPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  if (error) return <p className="error">加载失败：{error}</p>;
-  if (loading || !data) return <p className="muted">正在加载…</p>;
+  if (error && !data) {
+    return (
+      <div className="page">
+        <PageHeader title="推送渠道" />
+        <Feedback kind="error">加载失败：{error}</Feedback>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="page">
+        <PageHeader title="推送渠道" />
+        <Feedback kind="loading">正在加载…</Feedback>
+      </div>
+    );
+  }
 
   return (
-    <div className="stack">
-      <h1>推送渠道</h1>
-      <p className="muted small">
-        首版 Bark 固定一个设备、飞书固定一个群机器人。两者独立启停，命中的线报会发送到所有已启用渠道；
-        一个渠道失败只重试该渠道，已成功渠道不会重复发送。
-      </p>
+    <div className="page">
+      <PageHeader
+        title="推送渠道"
+        lead="首版 Bark 固定一个设备、飞书固定一个群机器人。两者独立启停，命中的线报会发送到所有已启用渠道；一个渠道失败只重试该渠道，已成功渠道不会重复发送。"
+      />
 
-      {actionError ? <p className="error">{actionError}</p> : null}
-      {saved ? <div className="notice">推送渠道配置已保存。</div> : null}
+      {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
+      {saved ? <Feedback kind="success">推送渠道配置已保存。</Feedback> : null}
+      {error ? <Feedback kind="error">刷新失败：{error}（下方为上次成功数据）</Feedback> : null}
 
       <PushForm
         key={data.version}

@@ -11,6 +11,9 @@ import {
   STATUS_LABELS,
   type BulletinDetailDto,
 } from "@/components/api-types";
+import { Section } from "@/components/ui/Section";
+import { TableScroll } from "@/components/ui/TableScroll";
+import { Feedback } from "@/components/ui/Feedback";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -54,26 +57,48 @@ export default function BulletinDetailPage() {
     }
   }
 
-  if (error) return <p className="error">加载失败：{error}</p>;
-  if (loading || !detail) return <p className="muted">正在加载…</p>;
+  if (error && !detail) {
+    return (
+      <div className="page">
+        <p>
+          <Link href="/bulletins">← 返回线报记录</Link>
+        </p>
+        <Feedback kind="error">加载失败：{error}</Feedback>
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="page">
+        <p>
+          <Link href="/bulletins">← 返回线报记录</Link>
+        </p>
+        <Feedback kind="loading">正在加载…</Feedback>
+      </div>
+    );
+  }
 
   const { bulletin } = detail;
 
   return (
-    <div className="stack">
-      <p>
-        <Link href="/bulletins">← 返回线报记录</Link>
-      </p>
-      <h1>{bulletin.title}</h1>
-      <div className="row">
-        <span className={`badge ${detail.status}`}>{STATUS_LABELS[detail.status]}</span>
-        <span className="muted small">{bulletin.sourceNs}</span>
-      </div>
+    <div className="page">
+      <header className="page-header">
+        <p style={{ marginBottom: "var(--sp-4)" }}>
+          <Link href="/bulletins">← 返回线报记录</Link>
+        </p>
+        <h1 style={{ overflowWrap: "anywhere" }}>{bulletin.title}</h1>
+        <div className="page-actions">
+          <span className={`badge ${detail.status}`}>{STATUS_LABELS[detail.status]}</span>
+          <span className="muted small">{bulletin.sourceNs}</span>
+        </div>
+      </header>
 
-      {actionError ? <p className="error">{actionError}</p> : null}
-      {notice ? <div className="notice">{notice}</div> : null}
+      {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
+      {notice ? <Feedback kind="success">{notice}</Feedback> : null}
+      {error ? <Feedback kind="error">刷新失败：{error}（下方为上次成功数据）</Feedback> : null}
 
-      <section className="card">
+      <Section title="来源与原文">
         <dl className="facts">
           <dt>原始链接</dt>
           <dd>
@@ -98,16 +123,15 @@ export default function BulletinDetailPage() {
         </dl>
         {bulletin.content ? (
           <>
-            <h3>正文</h3>
+            <h3 style={{ marginTop: "var(--sp-7)" }}>正文</h3>
             <pre>{bulletin.content}</pre>
           </>
         ) : null}
-      </section>
+      </Section>
 
-      <section className="card">
-        <h2>命中需求与分类说明</h2>
+      <Section title="命中需求与分类说明">
         {detail.matchedNeeds.length === 0 ? (
-          <p className="muted">
+          <p className="muted" style={{ margin: 0 }}>
             {detail.status === "failed"
               ? "本次判断存在处理失败，不能视为「没有匹配」。"
               : detail.status === "uncertain"
@@ -115,105 +139,111 @@ export default function BulletinDetailPage() {
                 : "没有命中任何启用需求。"}
           </p>
         ) : (
-          <>
-            <p>命中需求：{detail.matchedNeeds.join("、")}</p>
-            <p className="muted small">
+          <div className="stack">
+            <p style={{ margin: 0 }}>命中需求：{detail.matchedNeeds.join("、")}</p>
+            <p className="muted small" style={{ margin: 0 }}>
               以下为<strong>程序生成的分类说明</strong>（不是模型生成的理由）：
             </p>
             <pre>{detail.explanation}</pre>
-          </>
+          </div>
         )}
-      </section>
+      </Section>
 
-      <section className="card">
-        <h2>逐需求判断</h2>
+      <Section title="逐需求判断">
         {detail.evaluations.length === 0 ? (
-          <p className="muted">尚无判断记录（可能仍在队列中）。</p>
+          <p className="muted" style={{ margin: 0 }}>
+            尚无判断记录（可能仍在队列中）。
+          </p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>需求</th>
-                <th>结果</th>
-                <th>置信度</th>
-                <th>概率</th>
-                <th>说明 / 错误</th>
-                <th>时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.evaluations.map((evaluation) => (
-                <tr key={evaluation.id}>
-                  <td>
-                    {evaluation.needName}
-                    <div className="muted small">v{evaluation.needVersion}</div>
-                  </td>
-                  <td>
-                    <span className={`badge ${evaluation.result}`}>
-                      {EVALUATION_LABELS[evaluation.result]}
-                    </span>
-                  </td>
-                  <td className="small">{evaluation.confidence ?? "—"}</td>
-                  <td className="small">{formatProbabilities(evaluation.probabilities)}</td>
-                  <td className="small error">{evaluation.error ?? ""}</td>
-                  <td className="small">{formatTime(evaluation.updatedAt)}</td>
+          <TableScroll label="逐需求判断列表">
+            <table>
+              <thead>
+                <tr>
+                  <th>需求</th>
+                  <th>结果</th>
+                  <th>置信度</th>
+                  <th>概率</th>
+                  <th>说明 / 错误</th>
+                  <th>时间</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {detail.evaluations.map((evaluation) => (
+                  <tr key={evaluation.id}>
+                    <td>
+                      {evaluation.needName}
+                      <div className="muted small">v{evaluation.needVersion}</div>
+                    </td>
+                    <td>
+                      <span className={`badge ${evaluation.result}`}>
+                        {EVALUATION_LABELS[evaluation.result]}
+                      </span>
+                    </td>
+                    <td className="small">{evaluation.confidence ?? "—"}</td>
+                    <td className="small">{formatProbabilities(evaluation.probabilities)}</td>
+                    <td className="small error">{evaluation.error ?? ""}</td>
+                    <td className="small">{formatTime(evaluation.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         )}
-      </section>
+      </Section>
 
-      <section className="card">
-        <h2>投递状态</h2>
+      <Section title="投递状态">
         {detail.deliveries.length === 0 ? (
-          <p className="muted">没有渠道投递记录（可能两个渠道都关闭，或尚未命中）。</p>
+          <p className="muted" style={{ margin: 0 }}>
+            没有渠道投递记录（可能两个渠道都关闭，或尚未命中）。
+          </p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>渠道</th>
-                <th>状态</th>
-                <th>尝试</th>
-                <th>HTTP / 业务码</th>
-                <th>失败原因</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.deliveries.map((delivery) => (
-                <tr key={delivery.id}>
-                  <td>{delivery.channel === "bark" ? "Bark" : "飞书"}</td>
-                  <td>
-                    <span className={`badge ${delivery.status}`}>
-                      {DELIVERY_LABELS[delivery.status]}
-                    </span>
-                  </td>
-                  <td className="small">{delivery.attempts}</td>
-                  <td className="small">
-                    {delivery.httpStatus ?? "—"} / {delivery.bizCode ?? "—"}
-                  </td>
-                  <td className="small error">{delivery.error ?? ""}</td>
-                  <td>
-                    {delivery.status === "succeeded" ? (
-                      <span className="muted small">无需重试</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="ghost"
-                        disabled={busy}
-                        onClick={() => void retry(delivery.id)}
-                      >
-                        重试该渠道
-                      </button>
-                    )}
-                  </td>
+          <TableScroll label="渠道投递列表">
+            <table>
+              <thead>
+                <tr>
+                  <th>渠道</th>
+                  <th>状态</th>
+                  <th>尝试</th>
+                  <th>HTTP / 业务码</th>
+                  <th>失败原因</th>
+                  <th>操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {detail.deliveries.map((delivery) => (
+                  <tr key={delivery.id}>
+                    <td>{delivery.channel === "bark" ? "Bark" : "飞书"}</td>
+                    <td>
+                      <span className={`badge ${delivery.status}`}>
+                        {DELIVERY_LABELS[delivery.status]}
+                      </span>
+                    </td>
+                    <td className="small">{delivery.attempts}</td>
+                    <td className="small">
+                      {delivery.httpStatus ?? "—"} / {delivery.bizCode ?? "—"}
+                    </td>
+                    <td className="small error">{delivery.error ?? ""}</td>
+                    <td>
+                      {delivery.status === "succeeded" ? (
+                        <span className="muted small">无需重试</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          disabled={busy}
+                          onClick={() => void retry(delivery.id)}
+                        >
+                          重试该渠道
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         )}
-      </section>
+      </Section>
     </div>
   );
 }

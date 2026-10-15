@@ -22,8 +22,13 @@ export default async function AdminLayout({
 
   return (
     <div>
+      <a className="skip-link" href="#main-content">
+        跳至正文
+      </a>
       <AdminNav />
-      <main>{children}</main>
+      <main className="admin-main" id="main-content" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   );
 }
