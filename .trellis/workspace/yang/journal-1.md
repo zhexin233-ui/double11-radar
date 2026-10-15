@@ -157,3 +157,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: Apple 官网式全站布局重构
+
+**Date**: 2026-10-15
+**Task**: Apple 官网式全站布局重构
+**Branch**: `main`
+
+### Summary
+
+按 Apple 官网式视觉重构登录与全部管理页：重建 globals.css 令牌与壳层，新增 src/components/ui/ 展示原语（PageHeader/Section/TableScroll/Feedback），导航路径段激活+aria-current+跳至正文。保留业务语义（四态判断、凭据三态、未知费用、只投递未成功渠道）。隔离环境（独立临时库/端口 3311/生产构建）完成 4 视口 32 张截图与 21/21 交互矩阵；只读子代理核验发现并修复 2 处回归（.btn-ghost.danger 配色、测试失败误用成功样式）。lint/typecheck/test(201)/build 全绿，API 全动态。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7655d31` | (see git log) |
+| `b0d491e` | (see git log) |
+
+### Status
+
+[OK] **Completed**
