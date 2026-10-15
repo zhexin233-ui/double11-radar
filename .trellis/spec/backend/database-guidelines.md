@@ -28,9 +28,10 @@ export function migrate(db, list = migrations): { applied: number[] }
 - Wrapped in `db.transaction(...).immediate()` → `BEGIN IMMEDIATE`, so two processes starting at
   once serialize instead of racing.
 - Called from `src/instrumentation.ts` (web) and from `startWorker()` (worker). Idempotent.
-- **Field names are a cross-module contract.** Changing a column means updating the current
-  task's `design.md` 第 2 节（`.trellis/tasks/10-14-jev-key-pool-usage-records/design.md`）
-  and every repo that reads it.
+- **Field names are a cross-module contract.** Changing a column means updating the archived
+  design of record's `design.md` 第 2 节
+  （`.trellis/tasks/archive/2026-10/10-14-jev-key-pool-usage-records/design.md`）and every
+  repo that reads it.
 
 ## Conventions
 
@@ -78,9 +79,9 @@ Rules:
 
 ```ts
 // src/lib/worker/evaluator.ts
-const isConfigError =
-  error instanceof JevError && error.code !== null && JE_CONFIG_ERROR_CODES.has(error.code);
-failJob(db, job.id, message, now, { permanentRetry: isConfigError });
+if (error instanceof JevCallBlockedError && error.isConfigProblem) {
+  failJob(db, job.id, error.message, now, { permanentRetry: true, owner });
+}
 ```
 
 ## Good / Base / Bad
@@ -93,7 +94,7 @@ failJob(db, job.id, message, now, { permanentRetry: isConfigError });
 ## Jev Key 池与调用账本（code-spec）
 
 V2 增量迁移新增两张表（`src/lib/db/migrations.ts` 的 `V2_KEYS_AND_LEDGER`），保留 V1 不动。
-字段名与列语义是跨模块契约，改动需同步本任务 `design.md` 第 2 节与所有读取的仓库。
+字段名与列语义是跨模块契约，改动需同步归档设计文档 `design.md` 第 2 节与所有读取的仓库。
 
 ### 表契约
 

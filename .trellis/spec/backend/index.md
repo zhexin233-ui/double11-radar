@@ -10,11 +10,12 @@ The backend is one pnpm package: Next.js App Router route handlers (`src/app/api
 server-only libraries under `src/lib/**`, and an independent worker process entry
 (`src/worker/main.ts`). SQLite (better-sqlite3, synchronous) is the only store.
 
-The current approved design lives in `.trellis/tasks/10-14-jev-key-pool-usage-records/`:
+The approved design of record for the current backend is archived at
+`.trellis/tasks/archive/2026-10/10-14-jev-key-pool-usage-records/`:
 `prd.md` (requirements + acceptance criteria), `design.md` (technical design) and
 `research/current-behavior.md` + `research/pricing-*.md` (engineering contract: DDL,
-module boundaries, 官方费率与用量契约). 本任务同时是 **Jev Key 池、统一调用账本、费用估算
-与记录页状态筛选/自动刷新** 的当前设计来源。更早的线报匹配设计已归档到
+module boundaries, 官方费率与用量契约). 该归档设计是 **Jev Key 池、统一调用账本、费用估算
+与记录页状态筛选/自动刷新** 的来源。更早的线报匹配设计同样已归档到
 `.trellis/tasks/archive/2026-10/10-13-xianbao-needs-matching/`，只作历史参考。
 
 ---

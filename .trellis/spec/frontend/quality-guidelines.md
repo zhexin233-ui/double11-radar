@@ -12,6 +12,16 @@
 | `@next/next/no-location-assign-relative-destination` | Use `window.location.replace("/login")`, not `.href = "/login"` |
 | `react-hooks/exhaustive-deps` | Keep `useApiResource`'s dependency array exact |
 
+## Example: the 401 redirect rule
+
+```ts
+// src/components/api-client.ts
+if (response.status === 401 && typeof window !== "undefined") {
+  // 会话过期时回到登录页；用 replace 避免在历史记录里留下受保护页面。
+  window.location.replace("/login");
+}
+```
+
 ## Copy conventions
 
 - All user-facing copy is Simplified Chinese.

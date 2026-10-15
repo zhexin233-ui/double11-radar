@@ -16,6 +16,21 @@
 Live status is **not** taken from logs: it is persisted in `settings('runtime')`
 (`src/lib/worker/runtime-state.ts`) and exposed by `GET /api/status`.
 
+## Example: route catch logging
+
+```ts
+// src/lib/http/json.ts
+try {
+  return await handler(req, ctx);
+} catch (error) {
+  if (error instanceof HttpError) {
+    return fail(error.code, error.message, error.status);
+  }
+  console.error("[api] 未处理异常:", error);
+  return fail("INTERNAL_ERROR", "服务器内部错误", 500);
+}
+```
+
 ## Never log
 
 - Credentials or any value that can be reversed into one: Jev API key, Bark device key,

@@ -3,7 +3,8 @@ import type Database from "better-sqlite3";
 /**
  * 数据库迁移定义。
  *
- * 字段名是跨模块契约，修改需同步 `.trellis/tasks/10-14-jev-key-pool-usage-records/design.md`
+ * 字段名是跨模块契约，修改需同步
+ * `.trellis/tasks/archive/2026-10/10-14-jev-key-pool-usage-records/design.md`
  * 第 2 节以及读写它的仓库（`src/lib/db/repos/*`）。
  * 全部时间以 UTC ISO8601 字符串存储；布尔值以 INTEGER 0/1 存储。
  */

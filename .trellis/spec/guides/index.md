@@ -34,8 +34,8 @@ These guides help you **ask the right questions before coding**.
 - [ ] Data format changes between layers
 - [ ] Multiple consumers need the same data
 - [ ] You're not sure where to put some logic
-- [ ] You are adding an event kind, JSONL record, RPC payload, or config field
-- [ ] UI / command code starts casting raw payload fields directly
+- [ ] You are adding an enum value, a new column, a new API field, or a config field
+- [ ] UI code starts casting raw payload fields directly
 
 → Read [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md)
 
@@ -47,7 +47,7 @@ These guides help you **ask the right questions before coding**.
 - [ ] **You're modifying any constant or config**
 - [ ] **You're creating a new utility/helper function** ← Search first!
 - [ ] Two files read the same untyped payload field with local casts
-- [ ] Multiple branches update the same derived state from `kind` / `action`
+- [ ] Multiple branches update the same derived state from `status` / `purpose`
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
 

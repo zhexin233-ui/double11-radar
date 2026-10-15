@@ -52,10 +52,12 @@ All four must pass before a task is considered implemented.
 **Example**：
 
 ```ts
-// src/lib/service/dry-run.ts —— 复用 buildQuestions / parseAnswers / callSystemOne
+// src/lib/service/dry-run.ts —— 复用 buildQuestions / parseAnswers / callJevWithLedger
 const { questions, needByQuestionId } = buildQuestions(needs);
-const response = await call(config, { state, model, questions });
-const answers = parseAnswers(response, Object.keys(questions));
+const outcome = await callJevWithLedger(db, { purpose: "dry_run", state, questions });
+if (outcome.status === "blocked") throw new JevCallBlockedError(outcome.block);
+if (outcome.status === "failed") throw outcome.error;
+const answers = parseAnswers(outcome.response, Object.keys(questions));
 // 只返回结果；不调用 upsertEvaluation / createNotificationAndDeliveries
 ```
 

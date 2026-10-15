@@ -60,11 +60,12 @@ grep -r "keyword" .
 
 ### Pattern 4: Repeated Payload Field Extraction
 
-**Bad**: Multiple consumers cast the same JSON/event fields locally:
+**Bad**: Multiple consumers cast the same payload fields locally:
 
 ```typescript
-const description = (ev as { description?: string }).description;
-const context = (ev as { context?: ContextEntry[] }).context;
+// a page or component re-declaring the wire shape
+const status = (item as { status?: string }).status;
+const price = (item as { price?: number }).price;
 ```
 
 This is duplicated contract logic even when the code is only two lines. Each
@@ -73,9 +74,10 @@ consumer now has its own definition of what a valid payload means.
 **Good**: Put the decoder, type guard, or projection next to the data owner:
 
 ```typescript
-if (isThreadEvent(ev)) {
-  renderThreadEvent(ev);
-}
+// decoding belongs to the adapter: src/lib/sources/xianbao/normalize.ts
+// projection belongs to the service: src/lib/service/bulletins.ts
+// the page only reads the mirrored DTO from src/components/api-types.ts
+{STATUS_LABELS[detail.status]}
 ```
 
 **Rule**: If the same untyped payload field is read in 2+ places, create a
@@ -105,31 +107,26 @@ When you've made similar changes to multiple files:
 2. **Search**: Run grep to find any missed
 3. **Consider**: Should this be abstracted?
 
-### Reducers Should Use Exhaustive Structure
+### One Switch Per Status Enum
 
-When state is derived from action-like values (`action`, `kind`, `status`,
-`phase`), prefer a reducer with one `switch` over scattered `if/else` updates.
+When state is derived from a status-like value (`status`, `result`, `purpose`), prefer one
+`switch` / one lookup map over scattered `if/else` branches.
 
 ```typescript
-// BAD - action-specific state transitions are hard to audit
-if (action === "opened") { ... }
-else if (action === "comment") { ... }
-else if (action === "status") { ... }
+// BAD - the mapping is spread across pages and drifts
+if (status === "matched") return "已匹配";
+else if (status === "uncertain") return "待确认";
+else if (status === "failed") return "处理失败";
 
-// GOOD - one reducer owns the transition table
-switch (event.action) {
-  case "opened":
-    ...
-    return;
-  case "comment":
-    ...
-    return;
-}
+// GOOD - one map owns the mapping, pages import it
+// src/components/api-types.ts -> STATUS_LABELS
+{STATUS_LABELS[detail.status]}
 ```
 
-This matters when the event log is the source of truth. A reducer is the
-documented replay model; display code and commands should not duplicate pieces
-of that replay model.
+This matters because the status vocabulary is a shared contract: the server's
+`evaluations.result` / `jev_requests.status` decide which labels exist, and
+`STATUS_LABELS` / `JE_REQUEST_STATUS_LABELS` are the only places that translate
+them. A page-level `if/else` chain is a second copy of that contract.
 
 ---
 
@@ -140,84 +137,38 @@ of that replay model.
 - [ ] No repeated untyped payload field extraction outside a shared decoder
 - [ ] Constants defined in one place
 - [ ] Similar patterns follow same structure
-- [ ] Reducer/action transitions live in one reducer or command dispatcher
+- [ ] Status/purpose label text lives in one shared map, not in a page
 
 ---
 
-## Gotcha: Python if/elif/else Exhaustive Check
+## This Repo: The Client/Server Constant Boundary
 
-**Problem**: Python's if/elif/else chains have no compile-time exhaustive check. When you add a new value to a `Literal` type (e.g., `Platform`), existing if/elif/else chains silently fall through to `else` with wrong defaults.
+`src/components/api-types.ts` is the client-side contract and **imports nothing from `src/lib/**`**
+(those modules are server-only). When a knob is needed on both sides, the constant deliberately
+exists twice:
 
-**Symptom**: New platform works partially — some methods return Claude defaults instead of platform-specific values. No error is raised.
+| Constant | Server | Client |
+| --- | --- | --- |
+| `JE_KEY_FAILURE_THRESHOLD = 3` | `src/lib/db/repos/jev-keys.ts:19` | `src/components/api-types.ts:87` |
+| page size `50` | `src/lib/service/bulletins.ts:107` (`BULLETIN_LIST_DEFAULT_LIMIT`) | `src/components/api-types.ts:313` (`BULLETIN_PAGE_SIZE`) |
 
-**Example** (`cli_adapter.py`):
-```python
-# BAD: "gemini" falls through to else, returns "claude"
-@property
-def cli_name(self) -> str:
-    if self.platform == "opencode":
-        return "opencode"
-    else:
-        return "claude"  # gemini silently gets "claude"!
-
-# GOOD: explicit branch for every platform
-@property
-def cli_name(self) -> str:
-    if self.platform == "opencode":
-        return "opencode"
-    elif self.platform == "gemini":
-        return "gemini"
-    else:
-        return "claude"
-```
-
-**Prevention**: When adding a new value to a Python `Literal` type, search for ALL if/elif/else chains that switch on that type and add explicit branches. Don't rely on `else` being correct for new values.
-
----
-
-## Gotcha: Asymmetric Mechanisms Producing Same Output
-
-**Problem**: When two different mechanisms must produce the same file set (e.g., recursive directory copy for init vs. manual `files.set()` for update), structural changes (renaming, moving, adding subdirectories) only propagate through the automatic mechanism. The manual one silently drifts.
-
-**Symptom**: Init works perfectly, but update creates files at wrong paths or misses files entirely.
-
-**Prevention**:
-- **Best**: Eliminate the asymmetry — have the manual path call the automatic one (e.g., `collectTemplateFiles()` calls `getAllScripts()` instead of maintaining its own list)
-- **If asymmetry is unavoidable**: Add a regression test that compares outputs from both mechanisms
-- When migrating directory structures, search for ALL code paths that reference the old structure
-
-**Real example**: `trellis update` had a manual `files.set()` list for 11 scripts that `getAllScripts()` already tracked. Fix: replaced the manual list with a `for..of getAllScripts()` loop. See `update.ts` refactor in v0.4.0-beta.3.
-
----
-
-## Template File Registration (Trellis-specific)
-
-When adding new files to `src/templates/trellis/scripts/`:
-
-**Single registration point**: `src/templates/trellis/index.ts`
-
-1. Add `export const xxxScript = readTemplate("scripts/path/file.py");`
-2. Add to `getAllScripts()` Map
-
-That's it. `commands/update.ts` uses `getAllScripts()` directly — no manual sync needed.
-
-**Why this matters**: Without registration in `getAllScripts()`, `trellis update` won't sync the file to user projects. Bug fixes and features won't propagate.
-
-**History**: Before v0.4.0-beta.3, `update.ts` had its own hand-maintained file list that frequently fell out of sync with `getAllScripts()`. This caused 11 Python files to be silently skipped during `trellis update`. The fix was to eliminate the duplicate list and use `getAllScripts()` as the single source of truth.
-
-### Quick Checklist for New Scripts
+**Prevention**: unlike a normal shared constant, no compiler error catches the drift. Before
+changing one, grep the name *and* the value on both sides:
 
 ```bash
-# After adding a new .py file, verify it's in getAllScripts():
-grep -l "newFileName" src/templates/trellis/index.ts  # Should match
+grep -rn "JE_KEY_FAILURE_THRESHOLD" src/
+grep -rn "= 50;" src/lib src/components
 ```
 
-### Template Sync Convention
+## This Repo: One Label Map Per Enum
 
-`.trellis/scripts/` (dogfooded) and `packages/cli/src/templates/trellis/scripts/` (template) must stay identical. After editing `.trellis/scripts/`, always sync:
+User-facing text for a status/purpose enum belongs in exactly one map:
 
-```bash
-rsync -av --delete --exclude='__pycache__' .trellis/scripts/ packages/cli/src/templates/trellis/scripts/
-```
+| Map | Location | Consumed by |
+| --- | --- | --- |
+| `STATUS_LABELS` | `src/components/api-types.ts:282` | bulletins list + detail pages |
+| `JE_PURPOSE_LABELS` | `src/lib/service/jev-usage.ts:23` | Jev usage projection |
+| `JE_REQUEST_STATUS_LABELS` | `src/lib/service/jev-usage.ts:29` | Jev usage projection |
 
-**Gotcha**: Running rsync with wrong source/destination paths can create nested garbage directories (e.g., `.trellis/scripts/packages/cli/...`). Always double-check paths before running.
+**Prevention**: never inline a `status === "failed" ? "处理失败" : ...` chain in a page — that is
+how 「明确匹配」/「待确认（信息不足）」/「处理失败」/「没有匹配」 drift apart between screens.

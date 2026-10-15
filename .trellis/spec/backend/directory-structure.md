@@ -21,7 +21,7 @@ src/
 │   │   ├── client.ts          # getDb() singleton, WAL + busy_timeout
 │   │   ├── migrations.ts      # ordered DDL (field names are cross-module contract)
 │   │   ├── migrate.ts         # idempotent BEGIN IMMEDIATE migration runner
-│   │   └── repos/*.ts         # one table per file; raw SQL, no ORM
+│   │   └── repos/*.ts         # SQL owner; raw SQL, no ORM (settings.ts owns settings + secrets)
 │   ├── domain/                # shared types + constants (RULE_VERSION, SESSION_COOKIE)
 │   ├── sources/xianbao/       # external source adapter (client + normalize + zod schemas)
 │   ├── jev/                   # TypeSafe System One adapter (client + prompt/parse)
@@ -39,10 +39,16 @@ src/
   `ok(...)`. No business branching beyond mapping errors to `HttpError`.
 - **`db/repos` = SQL owner.** One file per table, exported functions named for the operation
   (`insertBulletinIfAbsent`, `claimJob`, `markDeliveryResult`). Repos never call the network.
-- **`sources` / `jev` / `notify` = external adapters.** Each owns its own zod schemas, its own
-  typed error, and injectable `fetchImpl` for tests. Nothing above them parses raw payloads.
+  Two exceptions to "one table per file": `settings.ts` owns both `settings` and `secrets`, and
+  `jev-cooldown.ts` owns no table — it is a `settings`-namespace projection (`jev.cooldown`).
+- **`sources` / `jev` / `notify` = external adapters.** Each owns its payload decoding and an
+  injectable `fetchImpl` for tests. Nothing above them parses raw payloads. The failure contract
+  differs by design: `sources` decodes with zod and throws `XianbaoError`; `jev` throws `JevError`
+  (carrying `retryable` / `retryAfterMs`); `notify` throws nothing and instead returns a
+  `SendResult` (`ok` / `retryable` / `error`) per channel.
 - **`service` = use-case composition** shared by routes and worker (`getJevRuntimeConfig`,
-  `createNotificationAndDeliveries`, `describeBulletin`).
+  `describeBulletin`, `callJevWithLedger`/`reserveJevCall`). Notification fan-out
+  (`createNotificationAndDeliveries`) lives in `src/lib/notify/dispatch.ts`, not here.
 - **`worker` = scheduling + orchestration**, one file per loop.
 
 ## Naming Conventions

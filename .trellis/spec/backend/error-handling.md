@@ -138,7 +138,8 @@ caught inside the collector. A failed unit:
 | Unknown id | `404 NOT_FOUND` |
 | Retry of a succeeded delivery | `409 ALREADY_SUCCEEDED` |
 | Jev answered with an unknown choice | `Evaluation.result = "failed"` — **never** `matched` |
-| Jev has no API key / key is rejected (401/403) | job stays `pending` with 300s backoff (`permanentRetry`), so it recovers after the user fixes the config |
+| Jev 未配置 / 池中无可用 Key（**未发出上游请求**） | `JevCallBlockedError.isConfigProblem` → job 保持 `pending` 并 `permanentRetry`，用户修好配置后自动继续；不计为线报失败 |
+| 某个 Key 实际返回 401/403（`JevError.code = "auth"`） | 账本记一条 `failed` 并计入该 Key 连续失败；job 按**普通退避**重试（下次可选其它 Key），连续 3 次后该 Key 自动禁用，池中再无可用 Key 时转入上一行 |
 | Jev returns an unparseable structure | job retries up to `max_attempts`, then `dead` and visible in 运行状态 |
 | Jev 全池不可用 / 容量满 / 共享退避中 | 任务保持 `pending`，`last_error` 为中文说明；**绝不**当作「没有匹配」 |
 | `POST /api/settings/jev/test` 未配置 | `400 JE_NOT_CONFIGURED`（中文） |
