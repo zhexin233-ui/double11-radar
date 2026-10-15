@@ -4,6 +4,10 @@ import { useState } from "react";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import { DryRunPanel } from "@/components/DryRunPanel";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Section } from "@/components/ui/Section";
+import { TableScroll } from "@/components/ui/TableScroll";
+import { Feedback } from "@/components/ui/Feedback";
 import {
   JE_CONCURRENCY_RANGE,
   JE_JOBS_PER_ROUND_RANGE,
@@ -66,27 +70,25 @@ function JevForm(props: {
   }
 
   return (
-    <form className="card stack" onSubmit={save}>
-      <label>
+    <form className="stack" onSubmit={save}>
+      <label className="field">
         服务地址
         <input
           type="url"
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
-          style={{ width: "100%" }}
           required
         />
       </label>
-      <label>
+      <label className="field">
         模型标识
         <input
           value={model}
           onChange={(event) => setModel(event.target.value)}
-          style={{ width: "100%" }}
           required
         />
       </label>
-      <label>
+      <label className="field">
         调用超时（毫秒）
         <input
           type="number"
@@ -98,7 +100,7 @@ function JevForm(props: {
       </label>
 
       <div className="grid-2">
-        <label>
+        <label className="field">
           Jev 并发数
           <input
             type="number"
@@ -113,7 +115,7 @@ function JevForm(props: {
             增加密钥数量不会放大并发；同时进行的请求数越多，向 Jev 施加的压力越大。
           </span>
         </label>
-        <label>
+        <label className="field">
           每轮任务数
           <input
             type="number"
@@ -129,13 +131,13 @@ function JevForm(props: {
         </label>
       </div>
 
-      <p className="muted small">
+      <p className="muted small" style={{ margin: 0 }}>
         这两项保存后<strong>立即生效</strong>（worker 每轮重新读取），不需要重启容器。
         一个 Jev 请求会携带全部启用需求，因此增加需求不会增加请求数。
       </p>
 
       <div className="row">
-        <button type="submit" className="primary" disabled={busy}>
+        <button type="submit" className="btn-primary" disabled={busy}>
           保存配置
         </button>
       </div>
@@ -177,6 +179,7 @@ function JevKeyAddForm(props: {
     <form className="row" onSubmit={submit}>
       <input
         placeholder="Key 名称，例如：主账号"
+        aria-label="Key 名称"
         value={label}
         onChange={(event) => setLabel(event.target.value)}
         maxLength={100}
@@ -186,6 +189,7 @@ function JevKeyAddForm(props: {
       <input
         type="password"
         placeholder="API 密钥（只在服务端加密保存）"
+        aria-label="API 密钥"
         value={apiKey}
         onChange={(event) => setApiKey(event.target.value)}
         maxLength={500}
@@ -193,7 +197,11 @@ function JevKeyAddForm(props: {
         disabled={busy}
         style={{ flex: "2 1 260px" }}
       />
-      <button type="submit" className="primary" disabled={busy || !label.trim() || !apiKey.trim()}>
+      <button
+        type="submit"
+        className="btn-primary"
+        disabled={busy || !label.trim() || !apiKey.trim()}
+      >
         添加密钥
       </button>
     </form>
@@ -307,6 +315,7 @@ function JevKeyRow(props: {
         <input
           key={`${item.id}:${item.updatedAt}:label`}
           defaultValue={item.label}
+          aria-label="密钥名称"
           disabled={busy}
           onBlur={(event) => {
             const next = event.target.value.trim();
@@ -352,6 +361,7 @@ function JevKeyRow(props: {
               <input
                 type="password"
                 placeholder="新的 API 密钥"
+                aria-label="新的 API 密钥"
                 value={secret}
                 disabled={busy}
                 onChange={(event) => setSecret(event.target.value)}
@@ -361,7 +371,7 @@ function JevKeyRow(props: {
             {secretAction !== "keep" ? (
               <button
                 type="button"
-                className="primary"
+                className="btn-primary"
                 disabled={busy || (secretAction === "replace" && !secret.trim())}
                 onClick={applySecret}
               >
@@ -370,13 +380,13 @@ function JevKeyRow(props: {
             ) : null}
           </fieldset>
           <div className="row">
-            <button type="button" className="ghost" disabled={busy} onClick={toggleEnabled}>
+            <button type="button" className="btn-ghost" disabled={busy} onClick={toggleEnabled}>
               {item.enabled ? "停用" : "恢复"}
             </button>
-            <button type="button" className="ghost" disabled={busy} onClick={testKey}>
+            <button type="button" className="btn-ghost" disabled={busy} onClick={testKey}>
               测试
             </button>
-            <button type="button" className="ghost danger" disabled={busy} onClick={removeKey}>
+            <button type="button" className="btn-ghost danger" disabled={busy} onClick={removeKey}>
               删除
             </button>
           </div>
@@ -397,18 +407,9 @@ function JevUsagePanel(props: {
   const { usage } = props;
 
   return (
-    <section className="card stack">
-      <div>
-        <h2 style={{ marginBottom: 4 }}>费用与用量</h2>
-        <p className="muted small">
-          金额<strong>按官方公布费率估算，不是服务商实付账单</strong>，也不包含未核实的缓存折扣或定制合同价格。
-          统计只覆盖应用启用本功能之后的实际调用，不能由历史判断记录倒推既往账单；
-          每次实际重试、连接测试与需求试判都会各计一次调用。
-        </p>
-      </div>
-
-      {props.error ? <p className="error">{props.error}</p> : null}
-      {props.loading && !usage ? <p className="muted">正在加载…</p> : null}
+    <div className="stack">
+      {props.error ? <Feedback kind="error">{props.error}</Feedback> : null}
+      {props.loading && !usage ? <Feedback kind="loading">正在加载…</Feedback> : null}
 
       {usage ? (
         <>
@@ -447,91 +448,99 @@ function JevUsagePanel(props: {
 
           <h3>按 Key 汇总</h3>
           {usage.byKey.length === 0 ? (
-            <p className="muted">还没有按 Key 的调用记录。</p>
+            <p className="muted" style={{ margin: 0 }}>
+              还没有按 Key 的调用记录。
+            </p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Key</th>
-                  <th>实际调用</th>
-                  <th>已计价</th>
-                  <th>未知费用</th>
-                  <th>失败</th>
-                  <th>输入 Token</th>
-                  <th>输出 Token</th>
-                  <th>已知估算费用</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usage.byKey.map((row) => (
-                  <tr key={row.keyId ?? "unknown"}>
-                    <td>{row.keyLabel ?? "未关联 Key"}</td>
-                    <td className="small">{row.requestCount}</td>
-                    <td className="small">{row.requestCount - row.unknownCostCount}</td>
-                    <td className="small">{row.unknownCostCount}</td>
-                    <td className="small">{row.failedCount}</td>
-                    <td className="small">{row.inputTokens.toLocaleString()}</td>
-                    <td className="small">{row.outputTokens.toLocaleString()}</td>
-                    <td className="small">
-                      {row.knownRequestCount === 0
-                        ? "—（暂无可计价调用）"
-                        : `$${row.knownCostUsd}`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <h3>最近调用</h3>
-          {usage.recent.items.length === 0 ? (
-            <p className="muted">尚无调用记录。</p>
-          ) : (
-            <>
+            <TableScroll label="按 Key 调用汇总" minTableWidth={900}>
               <table>
                 <thead>
                   <tr>
-                    <th>时间</th>
-                    <th>来源</th>
-                    <th>模型</th>
-                    <th>状态</th>
                     <th>Key</th>
-                    <th>用量（输入 / 输出）</th>
-                    <th>估算费用</th>
+                    <th>实际调用</th>
+                    <th>已计价</th>
+                    <th>未知费用</th>
+                    <th>失败</th>
+                    <th>输入 Token</th>
+                    <th>输出 Token</th>
+                    <th>已知估算费用</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {usage.recent.items.map((request) => (
-                    <tr key={request.id}>
-                      <td className="small">{formatTime(request.startedAt)}</td>
-                      <td className="small">{request.purposeLabel}</td>
+                  {usage.byKey.map((row) => (
+                    <tr key={row.keyId ?? "unknown"}>
+                      <td>{row.keyLabel ?? "未关联 Key"}</td>
+                      <td className="small">{row.requestCount}</td>
+                      <td className="small">{row.requestCount - row.unknownCostCount}</td>
+                      <td className="small">{row.unknownCostCount}</td>
+                      <td className="small">{row.failedCount}</td>
+                      <td className="small">{row.inputTokens.toLocaleString()}</td>
+                      <td className="small">{row.outputTokens.toLocaleString()}</td>
                       <td className="small">
-                        {request.responseModel ?? request.requestedModel}
-                      </td>
-                      <td className="small">
-                        <span className={`badge ${request.status === "failed" ? "failed" : ""}`}>
-                          {request.statusLabel}
-                        </span>
-                      </td>
-                      <td className="small">{request.keyLabel ?? "—"}</td>
-                      <td className="small">
-                        {request.inputTokens ?? "未知"} / {request.outputTokens ?? "未知"}
-                      </td>
-                      <td className="small">
-                        {request.estimatedUsd !== null
-                          ? `$${request.estimatedUsd}`
-                          : (request.unknownReason ?? "费用未知")}
+                        {row.knownRequestCount === 0
+                          ? "—（暂无可计价调用）"
+                          : `$${row.knownCostUsd}`}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="row" style={{ justifyContent: "space-between" }}>
+            </TableScroll>
+          )}
+
+          <h3>最近调用</h3>
+          {usage.recent.items.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              尚无调用记录。
+            </p>
+          ) : (
+            <>
+              <TableScroll label="最近调用记录" minTableWidth={900}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>来源</th>
+                      <th>模型</th>
+                      <th>状态</th>
+                      <th>Key</th>
+                      <th>用量（输入 / 输出）</th>
+                      <th>估算费用</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usage.recent.items.map((request) => (
+                      <tr key={request.id}>
+                        <td className="small">{formatTime(request.startedAt)}</td>
+                        <td className="small">{request.purposeLabel}</td>
+                        <td className="small">
+                          {request.responseModel ?? request.requestedModel}
+                        </td>
+                        <td className="small">
+                          <span className={`badge ${request.status === "failed" ? "failed" : ""}`}>
+                            {request.statusLabel}
+                          </span>
+                        </td>
+                        <td className="small">{request.keyLabel ?? "—"}</td>
+                        <td className="small">
+                          {request.inputTokens ?? "未知"} / {request.outputTokens ?? "未知"}
+                        </td>
+                        <td className="small">
+                          {request.estimatedUsd !== null
+                            ? `$${request.estimatedUsd}`
+                            : (request.unknownReason ?? "费用未知")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableScroll>
+              <div className="toolbar">
                 <span className="muted small">共 {usage.recent.total} 次调用</span>
-                <span className="row">
+                <span className="toolbar-end">
                   <button
                     type="button"
-                    className="ghost"
+                    className="btn-ghost"
                     disabled={props.page === 0}
                     onClick={() => props.onPage(Math.max(0, props.page - 1))}
                   >
@@ -539,7 +548,7 @@ function JevUsagePanel(props: {
                   </button>
                   <button
                     type="button"
-                    className="ghost"
+                    className="btn-ghost"
                     disabled={(props.page + 1) * USAGE_PAGE_SIZE >= usage.recent.total}
                     onClick={() => props.onPage(props.page + 1)}
                   >
@@ -551,12 +560,15 @@ function JevUsagePanel(props: {
           )}
         </>
       ) : null}
-    </section>
+    </div>
   );
 }
 
 export default function JevPage() {
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [usagePage, setUsagePage] = useState(0);
@@ -570,8 +582,8 @@ export default function JevPage() {
     await Promise.all([settings.reload(), usage.reload()]);
   }
 
-  function reportResult(message: string) {
-    setNotice(message);
+  function reportResult(message: string, kind: "success" | "error" = "success") {
+    setNotice({ kind, text: message });
     setActionError(null);
   }
 
@@ -580,10 +592,12 @@ export default function JevPage() {
     setNotice(null);
     try {
       const result = await apiSend<TestResultDto>("/api/settings/jev/test", "POST", {});
+      const ok = result.ok;
       reportResult(
-        result.ok
+        ok
           ? `连接测试成功：${result.message ?? ""}`
           : `连接测试失败：${result.message ?? "未知原因"}`,
+        ok ? "success" : "error",
       );
       await reloadAll();
     } catch (caught) {
@@ -595,91 +609,152 @@ export default function JevPage() {
 
   const data = settings.data;
 
-  if (settings.error) return <p className="error">加载失败：{settings.error}</p>;
-  if (settings.loading || !data) return <p className="muted">正在加载…</p>;
+  if (settings.error && !data) {
+    return (
+      <div className="page">
+        <PageHeader title="Jev 配置" />
+        <Feedback kind="error">加载失败：{settings.error}</Feedback>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="page">
+        <PageHeader title="Jev 配置" />
+        <Feedback kind="loading">正在加载…</Feedback>
+      </div>
+    );
+  }
+
+  const enabledKeys = data.keys.filter((key) => key.enabled).length;
 
   return (
-    <div className="stack">
-      <h1>Jev 配置</h1>
-      <p className="muted small">
-        使用 TypeSafe Jev 原生 System One 接口（POST /v1/systemone），只返回结构化 Choice
-        判断，不生成自由文本。API 密钥只在服务端加密保存与使用。
-      </p>
-
-      {actionError ? <p className="error">{actionError}</p> : null}
-      {notice ? <div className="notice">{notice}</div> : null}
-
-      <JevForm
-        key={data.version}
-        view={data}
-        onSaved={() => {
-          reportResult("Jev 配置已保存。");
-          void reloadAll();
-        }}
-        onError={setActionError}
+    <div className="page">
+      <PageHeader
+        title="Jev 配置"
+        lead="使用 TypeSafe Jev 原生 System One 接口（POST /v1/systemone），只返回结构化 Choice 判断，不生成自由文本。API 密钥只在服务端加密保存与使用。"
       />
 
-      <section className="card stack">
-        <div>
-          <h2 style={{ marginBottom: 4 }}>API 密钥</h2>
-          <p className="muted small">
+      <nav className="anchor-nav" aria-label="Jev 配置分区">
+        <a href="#jev-connection">连接与调度</a>
+        <a href="#jev-keys">API 密钥</a>
+        <a href="#jev-usage">费用与用量</a>
+        <a href="#jev-dry-run">需求试判</a>
+      </nav>
+
+      {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
+      {notice ? <Feedback kind={notice.kind}>{notice.text}</Feedback> : null}
+      {settings.error ? (
+        <Feedback kind="error">
+          刷新失败：{settings.error}（下方为上次成功数据）
+        </Feedback>
+      ) : null}
+
+      <Section
+        id="jev-connection"
+        className="anchor-target"
+        title="连接与调度"
+        description={
+          <>
+            当前已知状态：{enabledKeys} 个启用密钥 / 共 {data.keys.length} 个。
+            连接测试从密钥池调度一次<strong>真实调用</strong>（会计入费用统计），不会回放历史线报；
+            真实语义效果需要在你的凭据环境下验证。
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => void testPool()}
+            disabled={busy}
+          >
+            测试连接
+          </button>
+        }
+      >
+        <JevForm
+          key={data.version}
+          view={data}
+          onSaved={() => {
+            reportResult("Jev 配置已保存。");
+            void reloadAll();
+          }}
+          onError={setActionError}
+        />
+      </Section>
+
+      <Section
+        id="jev-keys"
+        className="anchor-target"
+        title="API 密钥"
+        description={
+          <>
             可配置多个密钥并发处理新线报，总在途请求数仍受上面的全局并发上限约束。
             同一 Key 连续 {JE_KEY_FAILURE_THRESHOLD} 次实际请求失败会自动禁用，成功一次清零；
             禁用（含手动停用）后需手动恢复或替换密钥，失败计数与禁用状态重启后保留。
             密钥只在服务端加密使用，网页只显示掩码。
-          </p>
+          </>
+        }
+      >
+        <div className="stack">
+          <JevKeyAddForm onDone={reportResult} onError={setActionError} reload={reloadAll} />
+
+          {data.keys.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              还没有配置 Jev 密钥。添加后，后台判断、连接测试与需求试判都会从密钥池调度。
+            </p>
+          ) : (
+            <TableScroll label="Jev API 密钥列表" minTableWidth={1100}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    <th>密钥</th>
+                    <th>状态</th>
+                    <th>连续失败</th>
+                    <th>禁用原因 / 最近错误</th>
+                    <th>最近使用</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.keys.map((item) => (
+                    <JevKeyRow
+                      key={`${item.id}:${item.updatedAt}`}
+                      item={item}
+                      onDone={reportResult}
+                      onError={setActionError}
+                      reload={reloadAll}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
+          )}
         </div>
+      </Section>
 
-        <JevKeyAddForm onDone={reportResult} onError={setActionError} reload={reloadAll} />
-
-        {data.keys.length === 0 ? (
-          <p className="muted">
-            还没有配置 Jev 密钥。添加后，后台判断、连接测试与需求试判都会从密钥池调度。
-          </p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>密钥</th>
-                <th>状态</th>
-                <th>连续失败</th>
-                <th>禁用原因 / 最近错误</th>
-                <th>最近使用</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.keys.map((item) => (
-                <JevKeyRow
-                  key={`${item.id}:${item.updatedAt}`}
-                  item={item}
-                  onDone={reportResult}
-                  onError={setActionError}
-                  reload={reloadAll}
-                />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <div className="row">
-        <button type="button" className="ghost" onClick={() => void testPool()} disabled={busy}>
-          测试连接
-        </button>
-        <span className="muted small">
-          从密钥池调度一次真实调用（会进入费用统计），不会回放历史线报；真实语义效果需要在你的凭据环境下验证。
-        </span>
-      </div>
-
-      <JevUsagePanel
-        usage={usage.data}
-        error={usage.error}
-        loading={usage.loading}
-        page={usagePage}
-        onPage={setUsagePage}
-      />
+      <Section
+        id="jev-usage"
+        className="anchor-target"
+        title="费用与用量"
+        description={
+          <>
+            金额<strong>按官方公布费率估算，不是服务商实付账单</strong>，也不包含未核实的缓存折扣或定制合同价格。
+            统计只覆盖应用启用本功能之后的实际调用，不能由历史判断记录倒推既往账单；
+            每次实际重试、连接测试与需求试判都会各计一次调用。
+          </>
+        }
+      >
+        <JevUsagePanel
+          usage={usage.data}
+          error={usage.error}
+          loading={usage.loading}
+          page={usagePage}
+          onPage={setUsagePage}
+        />
+      </Section>
 
       <DryRunPanel />
     </div>

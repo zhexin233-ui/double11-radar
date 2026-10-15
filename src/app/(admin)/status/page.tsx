@@ -2,6 +2,10 @@
 
 import { useApiResource } from "@/components/use-api";
 import type { StatusDto } from "@/components/api-types";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Section } from "@/components/ui/Section";
+import { TableScroll } from "@/components/ui/TableScroll";
+import { Feedback } from "@/components/ui/Feedback";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -15,40 +19,86 @@ export default function StatusPage() {
     { refreshMs: 15000 },
   );
 
-  if (error) return <p className="error">加载状态失败：{error}</p>;
-  if (loading || !status) return <p className="muted">正在加载…</p>;
+  const header = (
+    <PageHeader
+      title="运行状态"
+      lead="查看后台进程、采集与投递的真实健康状况。异常会紧随摘要显示，不会沉到底部。"
+      actions={
+        <button type="button" className="btn-ghost" onClick={() => void reload()}>
+          刷新
+        </button>
+      }
+    />
+  );
+
+  if (error && !status) {
+    return (
+      <div className="page">
+        {header}
+        <Feedback kind="error">加载状态失败：{error}</Feedback>
+      </div>
+    );
+  }
+
+  if (!status) {
+    return (
+      <div className="page">
+        {header}
+        <Feedback kind="loading">正在加载…</Feedback>
+      </div>
+    );
+  }
 
   const { worker, channels, jobs, counts } = status;
 
   return (
-    <div className="stack">
-      <div className="row">
-        <h1 style={{ margin: 0 }}>运行状态</h1>
-        <button type="button" className="ghost" onClick={() => void reload()}>
-          刷新
-        </button>
-      </div>
+    <div className="page">
+      {header}
 
-      {status.processingHealthy ? (
-        <div className="card">
-          <span className="badge matched">后台运行正常</span>
-          <p className="muted small">
-            上次匹配时间：{formatTime(counts.lastMatchedAt)}。
-            「没有匹配」表示已正常判断但没有命中需求，与处理故障不同。
-          </p>
+      <Section alt>
+        <div className="stack">
+          <span className={`badge ${status.processingHealthy ? "matched" : "failed"}`}>
+            {status.processingHealthy ? "后台运行正常" : "处理故障"}
+          </span>
+          {status.processingHealthy ? (
+            <p className="muted small" style={{ margin: 0 }}>
+              上次匹配时间：{formatTime(counts.lastMatchedAt)}。
+              「没有匹配」表示已正常判断但没有命中需求，与处理故障不同。
+            </p>
+          ) : (
+            <p className="error small" style={{ margin: 0 }} role="alert">
+              后台可能未运行或存在失败任务/频道错误，请勿把当前状态理解为「没有匹配」。
+            </p>
+          )}
+          {error ? <Feedback kind="error">刷新失败：{error}（下方为上次成功数据）</Feedback> : null}
         </div>
-      ) : (
-        <div className="card">
-          <span className="badge failed">处理故障</span>
-          <p className="error small">
-            后台可能未运行或存在失败任务/频道错误，请勿把当前状态理解为「没有匹配」。
-          </p>
+      </Section>
+
+      <Section title="关键统计">
+        <div className="stats">
+          <div>
+            <div className="stat-value">{counts.matchedBulletins}</div>
+            <div className="stat-label">明确匹配线报</div>
+          </div>
+          <div>
+            <div className="stat-value">{counts.uncertainBulletins}</div>
+            <div className="stat-label">待确认线报</div>
+          </div>
+          <div>
+            <div className="stat-value" style={counts.failedEvaluations ? { color: "var(--danger)" } : undefined}>
+              {counts.failedEvaluations}
+            </div>
+            <div className="stat-label">处理失败线报</div>
+          </div>
+          <div>
+            <div className="stat-value">{counts.notificationCount}</div>
+            <div className="stat-label">通知总数</div>
+          </div>
         </div>
-      )}
+      </Section>
 
       <div className="grid-2">
-        <section className="card">
-          <h2>后台进程</h2>
+        <Section title="后台进程" headingLevel={2} alt>
           <dl className="facts small">
             <dt>心跳</dt>
             <dd>{formatTime(worker.lastHeartbeatAt)}</dd>
@@ -74,13 +124,12 @@ export default function StatusPage() {
               {worker.lastErrorAt ? `（${formatTime(worker.lastErrorAt)}）` : ""}
             </dd>
           </dl>
-          <p className="muted small">
+          <p className="muted small" style={{ marginTop: "var(--sp-4)", marginBottom: 0 }}>
             worker 为独立进程，关闭本网页不会停止采集与判断。
           </p>
-        </section>
+        </Section>
 
-        <section className="card">
-          <h2>频道与任务</h2>
+        <Section title="频道与任务" headingLevel={2} alt>
           <dl className="facts small">
             <dt>频道总数</dt>
             <dd>{channels.stats.total}</dd>
@@ -99,90 +148,85 @@ export default function StatusPage() {
             <dt>失败任务</dt>
             <dd className={jobs.dead ? "error" : ""}>{jobs.dead}</dd>
           </dl>
-        </section>
+        </Section>
 
-        <section className="card">
-          <h2>处理统计</h2>
-          <dl className="facts small">
-            <dt>明确匹配线报</dt>
-            <dd>{counts.matchedBulletins}</dd>
-            <dt>待确认线报</dt>
-            <dd>{counts.uncertainBulletins}</dd>
-            <dt>处理失败线报</dt>
-            <dd className={counts.failedEvaluations ? "error" : ""}>
-              {counts.failedEvaluations}
-            </dd>
-            <dt>通知总数</dt>
-            <dd>{counts.notificationCount}</dd>
-          </dl>
-        </section>
-
-        <section className="card">
-          <h2>投递状态</h2>
+        <Section title="投递状态" headingLevel={2} alt>
           {Object.keys(counts.delivery).length === 0 ? (
-            <p className="muted small">暂无投递记录。</p>
+            <p className="muted small" style={{ margin: 0 }}>
+              暂无投递记录。
+            </p>
           ) : (
-            <ul className="small">
+            <dl className="facts small">
               {Object.entries(counts.delivery).map(([state, value]) => (
-                <li key={state}>
-                  {state}：{value}
-                </li>
+                <div key={state} style={{ display: "contents" }}>
+                  <dt>{state}</dt>
+                  <dd>{value}</dd>
+                </div>
               ))}
-            </ul>
+            </dl>
           )}
-        </section>
+        </Section>
+
+        <Section title="处理说明" headingLevel={2} alt>
+          <p className="muted small" style={{ margin: 0 }}>
+            「明确匹配」「待确认（信息不足）」「处理失败」「没有匹配」互相区分；
+            处理失败是模型或调用异常，不代表没有命中。
+          </p>
+        </Section>
       </div>
 
       {channels.failing.length > 0 ? (
-        <section className="card">
-          <h2>频道错误</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>频道</th>
-                <th>错误</th>
-                <th>时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {channels.failing.map((channel) => (
-                <tr key={channel.id}>
-                  <td>{channel.name}</td>
-                  <td className="error small">{channel.lastError}</td>
-                  <td className="small">{formatTime(channel.lastErrorAt)}</td>
+        <Section title="频道错误">
+          <TableScroll label="频道错误列表">
+            <table>
+              <thead>
+                <tr>
+                  <th>频道</th>
+                  <th>错误</th>
+                  <th>时间</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {channels.failing.map((channel) => (
+                  <tr key={channel.id}>
+                    <td>{channel.name}</td>
+                    <td className="error small">{channel.lastError}</td>
+                    <td className="small">{formatTime(channel.lastErrorAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+        </Section>
       ) : null}
 
       {status.recentFailedJobs.length > 0 ? (
-        <section className="card">
-          <h2>最近失败任务</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>类型</th>
-                <th>状态</th>
-                <th>尝试</th>
-                <th>错误</th>
-                <th>时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.recentFailedJobs.map((job) => (
-                <tr key={job.id}>
-                  <td>{job.kind === "evaluate" ? "判断" : "投递"}</td>
-                  <td>{job.status}</td>
-                  <td>{job.attempts}</td>
-                  <td className="small">{job.lastError}</td>
-                  <td className="small">{formatTime(job.updatedAt)}</td>
+        <Section title="最近失败任务">
+          <TableScroll label="最近失败任务列表">
+            <table>
+              <thead>
+                <tr>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>尝试</th>
+                  <th>错误</th>
+                  <th>时间</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {status.recentFailedJobs.map((job) => (
+                  <tr key={job.id}>
+                    <td>{job.kind === "evaluate" ? "判断" : "投递"}</td>
+                    <td>{job.status}</td>
+                    <td>{job.attempts}</td>
+                    <td className="small">{job.lastError}</td>
+                    <td className="small">{formatTime(job.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+        </Section>
       ) : null}
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiSend, errorMessage } from "@/components/api-client";
+import { Feedback } from "@/components/ui/Feedback";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,24 +27,30 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 420 }}>
-      <h1>管理员登录</h1>
-      <p className="muted">使用部署时配置的 ADMIN_PASSWORD 登录。</p>
-      <form className="card stack" onSubmit={submit}>
-        <label htmlFor="password">密码</label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
-        {error ? <p className="error">{error}</p> : null}
-        <button type="submit" className="primary" disabled={busy}>
-          {busy ? "登录中…" : "登录"}
-        </button>
-      </form>
+    <main className="auth-main">
+      <div className="auth-card stack">
+        <div>
+          <h1>管理员登录</h1>
+          <p className="muted">使用部署时配置的 ADMIN_PASSWORD 登录。</p>
+        </div>
+        <form className="stack" onSubmit={submit}>
+          <label className="field" htmlFor="password">
+            密码
+            <input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+          {error ? <Feedback kind="error">{error}</Feedback> : null}
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? "登录中…" : "登录"}
+          </button>
+        </form>
+      </div>
     </main>
   );
 }
