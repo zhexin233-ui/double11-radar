@@ -33,8 +33,15 @@ if (response.status === 401 && typeof window !== "undefined") {
 
 - Pages fetch and render; components receive typed props from `api-types.ts`.
 - No inline `any`, no `as` casts on API responses — `apiGet<T>` is already typed.
-- Tables always render an empty-state paragraph instead of an empty `<table>`.
+- Tables always render an empty-state paragraph instead of an empty `<table>`, and are wrapped
+  in `TableScroll` with a `minTableWidth` so wide tables scroll locally.
 - Long forms get `<fieldset><legend>` for each credential so the 保留/替换/清除 choice is explicit.
+- Admin pages wrap content in `.page` and compose `PageHeader` / `Section`; the public login page
+  uses `.auth-main` + `.auth-card`. `globals.css` deliberately does **not** set a width on a bare
+  `main` — always use an explicit container class (`admin-main` / `auth-main`).
+- Feedback kind must match the outcome: `error` (role=alert) for failures, `success` for confirmed
+  saves, `notice` for mixed/neutral results. Never render a failure inside a success style.
+- Every page renders exactly one `h1` (`PageHeader`, or a hand-rolled header on the detail page).
 
 ## Verification
 

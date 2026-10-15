@@ -26,7 +26,12 @@ src/
     ├── api-client.ts         # fetch wrapper: x-requested-with, {ok} envelope, 401 -> /login
     ├── api-types.ts          # client-side DTOs + status label maps
     ├── use-api.ts            # useApiResource<T>(path, { refreshMs })
-    └── AdminNav.tsx          # nav links + logout
+    ├── AdminNav.tsx          # nav links + logout
+    └── ui/                   # presentational primitives (no fetch, no domain state)
+        ├── PageHeader.tsx    # h1 + lead + actions
+        ├── Section.tsx       # titled panel
+        ├── TableScroll.tsx   # accessible horizontal scroll container
+        └── Feedback.tsx      # loading / success / error / notice
 ```
 
 ---
@@ -38,4 +43,6 @@ src/
 - Reusable pieces live in `src/components/`, not in a page file — except a form that is
   deliberately co-located and keyed by the server version (see `JevForm`, `PushForm`,
   `SelectionForm`).
+- `src/components/ui/` holds only presentational primitives (typed props in, JSX out). They
+  must not fetch, hold domain state, or import `@/lib/**`.
 - Never create a second fetch helper; extend `api-client.ts`.
