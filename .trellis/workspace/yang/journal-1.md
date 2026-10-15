@@ -136,3 +136,24 @@
 
 - 在网页按需重新启用需求；启用前费用区会显示「尚无调用记录 / 暂无可计价调用」
 - 若需回退：`docker compose down` → 用上面的 tar 还原卷 → 以同一 `APP_ENCRYPTION_KEY` 启动旧版本
+
+
+## Session 2: 校对 .trellis/spec 并完成 bootstrap 任务归档
+
+**Date**: 2026-10-15
+**Task**: 校对 .trellis/spec 并完成 bootstrap 任务归档
+**Branch**: `main`
+
+### Summary
+
+按真实代码逐文件校对 11 个项目规范 + 2 个思考指南；修复失效任务路径引用（spec/README/migrations 注释）；纠正 Jev 401/403 重试语义与 notify 失败契约；清理 guides 中重复的 Trellis CLI 内部章节并替换为本仓库真实示例（客户端常量双写、label map、五层边界、整数纳秒、boolean 绑定陷阱）；task 00-bootstrap-guidelines 归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5552576` | (see git log) |
+
+### Status
+
+[OK] **Completed**
