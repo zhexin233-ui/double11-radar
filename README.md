@@ -191,7 +191,7 @@ docker compose start worker
 - 凭据使用 AES-256-GCM 加密存储；会话使用服务端可验证的 HttpOnly Cookie
 - 所有外部请求（线报酷 / Jev / Bark / 飞书）都由 NAS 主动发出，不开放入站端口
 
-工程契约与设计细节见 `.trellis/tasks/10-14-jev-key-pool-usage-records/` 下的
+工程契约与设计细节见归档任务 `.trellis/tasks/archive/2026-10/10-14-jev-key-pool-usage-records/` 下的
 `prd.md`、`design.md`、`implement.md` 与 `research/current-behavior.md`；
-上游系统实现与基线/投递语义见归档任务 `.trellis/tasks/archive/` 中的历史规划。
+更早的上游系统实现与基线/投递语义见 `.trellis/tasks/archive/2026-10/10-13-xianbao-needs-matching/`。
 编码规范见 `.trellis/spec/backend/` 与 `.trellis/spec/frontend/`。
