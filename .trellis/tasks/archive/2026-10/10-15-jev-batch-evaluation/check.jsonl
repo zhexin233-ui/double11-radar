@@ -1,0 +1,10 @@
+{"file":".trellis/spec/backend/index.md","reason":"核验统一请求服务、鉴权和模块职责"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"核验迁移、旧队列、事务展开、owner 防旧写和账本一次计数"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"核验失败回退、未发送等待和错误状态展示"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"完整 lint/typecheck/test/build 及离线验证"}
+{"file":".trellis/spec/frontend/index.md","reason":"三模式配置与来源说明的客户端边界"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"表单回显、错误反馈、原语和状态标签"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"列表筛选/分页/自动刷新不串数据"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"跨层新增模式、purpose 和 processing 元数据无漂移"}
+{"file":".trellis/tasks/10-15-jev-batch-evaluation/research/three-mode-current-contract.md","reason":"核对精确改动入口与当前行为"}
+{"file":".trellis/tasks/10-15-jev-batch-evaluation/research/three-mode-budget-regex.md","reason":"不能将字节预算当 Token 保证，线程异常不得造成过滤"}

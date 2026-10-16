@@ -1,0 +1,12 @@
+{"file":".trellis/spec/backend/index.md","reason":"后台模块边界、统一 JEV 调用与鉴权契约"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"增量迁移、同步事务、队列租约和调用账本幂等"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"真实失败与未发送阻塞分类，失败不得显示未命中"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"正则/门控错误清洗与密钥日志边界"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"离线 transport 注入与四项质量门槛"}
+{"file":".trellis/spec/frontend/index.md","reason":"客户端 API 边界与状态展示约束"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"沿用 keyed 配置表单和现有页面原语"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"保存刷新、服务端状态与表单状态分离"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"策略、处理来源和账本 DTO 同步"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"配置到采集、门控、队列、账本和页面的跨层契约"}
+{"file":".trellis/tasks/10-15-jev-batch-evaluation/research/three-mode-current-contract.md","reason":"当前 UI/API/队列代码定位，避免带入旧探索范围"}
+{"file":".trellis/tasks/10-15-jev-batch-evaluation/research/three-mode-budget-regex.md","reason":"官方预算证据、保守装箱与正则隔离边界"}
