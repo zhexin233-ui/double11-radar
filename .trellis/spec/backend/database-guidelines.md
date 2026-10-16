@@ -207,3 +207,91 @@ V2 增量迁移新增两张表（`src/lib/db/migrations.ts` 的 `V2_KEYS_AND_LED
 - `tests/service/jev-usage.test.ts`、`tests/jev/pricing.test.ts` — 汇总与未知计价：
   1,000,000 输入 = $0.042、输出免费、缺失输入为未知、极小正数不显示为 $0.00。
 - `tests/worker/evaluator-lease.test.ts` — owner 守卫；未发出上游请求的重排不累计 `attempts`。
+
+## Scenario: 三模式自动处理（run / 子批 / 处理记录）
+
+### 1. Scope / Trigger
+
+- 触发：新增 V3 DDL（三张表 + 账本关联列）、`JobKind`/`JevRequestPurpose` 扩展、记录页状态优先级变化。
+- 策略只在**后台自动处理**层生效；连接测试与需求试判仍直接调用统一请求服务，不受预筛影响。
+
+### 2. Signatures
+
+- 迁移：`src/lib/db/migrations.ts` 的 `V3_EVALUATION_MODES`（追加版本 3，不改 V1/V2）。
+- 仓库：`src/lib/db/repos/evaluation-runs.ts`
+  - `insertEvaluationRun` / `getEvaluationRun`
+  - `insertBatchPart` / `getBatchPart` / `listBatchPartsByRun`
+  - `insertProcessing` / `getProcessing` / `listProcessingByPart` / `updateProcessing`
+  - `excludeBatchPart` / `expandBatchPart`（都只允许 `pending → 终态`，返回是否命中）
+- 任务：`JobKind` 增加 `screen_batch`；payload key `screen_batch:<partId>`。
+- 账本：`JevRequestPurpose` 增加 `batch_gate`；`jev_requests` 增加 `evaluation_run_id`、`batch_part_id`。
+
+### 3. Contracts
+
+`evaluation_runs`（采集时冻结模式/规则/需求快照）：
+
+| 列 | 语义 |
+| --- | --- |
+| `evaluation_mode` | `individual` / `batch_gate` / `regex_gate` |
+| `strategy_config_version` | 采集时 `settings('jev').version`，仅追溯用 |
+| `regex_rules_json` | 仅 `regex_gate` 非空：该 run 的全局规则快照 |
+| `need_snapshots_json` | 仅 `batch_gate` 非空：全部启用需求 `{id,name,note,enabled,version}` 快照；门控与展开都使用它 |
+
+`evaluation_batch_parts`：`state ∈ pending|excluded|expanded`，`UNIQUE(run_id, ordinal)`；`gate_result`/`gate_request_id`/`fallback_reason` 可空。
+
+`bulletin_processing`（一个新增来源条目一行）：
+`stage ∈ pending|ready|filtered|evaluated|failed|skipped_no_needs`；
+`screening_source ∈ batch_gate|regex_gate|NULL`；`matched_rule_index` 仅正则命中时记录；`gate_request_id` 关联门控账本行。
+
+`BULLETIN_DISPLAY_STATUS_SQL` 优先级（列表/详情/计数共用同一表达式）：
+`baseline > matched > failed > uncertain > 已有 evaluation 的 not_matched > processing.stage='filtered' 的 not_matched > pending`。
+`processing.stage='failed'` 也归入 failed；本地过滤不得伪造模型 `evaluations`。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 结果 |
+| --- | --- |
+| 批次合法且明确「全批对全部需求均不相关」 | part=`excluded`、成员 `filtered`（source=batch_gate）、无 evaluation/通知，账本仅 1 行门控 |
+| 批次命中 / 可疑 | part=`expanded`、成员 `ready`、幂等建 `evaluate:<id>`（使用 run 需求快照） |
+| 门控失败 / 缺题 / 非法答案 / 超体积 / 连接语义（baseUrl·model）变化 | part=`expanded` + 中文 `fallback_reason`，全成员逐条 |
+| 门控阻塞（busy / cooldown / no_key） | part 保持 `pending`，不展开、不绕限流 |
+| 门控 owner 失效 | 迟到请求仍记真实用量/Key 状态，但不改 part/成员 |
+| 正则未匹配 | 成员 `filtered`（source=regex_gate），不写 `jev_requests` |
+| 正则异常 / 超时 / 超边界 / 规则为空 | 成员 `ready` + `screening_reason` 回退原因，继续逐条 |
+| 没有启用需求 | 成员 `skipped_no_needs`，不请求模型，不算「未命中」 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：采集 `apply.immediate()` 事务内读模式/规则/需求并建 run；子批 ≤20 条且完整门控请求 ≤16 KiB；统一请求服务在预留事务内按本次实际 `timeoutMs` 校准 job 租约。
+- Base：正则规则为空 → 回退逐条并记录原因。
+- Bad：把门控失败/非法答案当 `not_matched` 整批结束；用 `processing` 冒充模型逐条结论；在一个门控租约内串行跑 N 次精判。
+
+### 6. Tests Required
+
+- `tests/db/evaluation-runs.test.ts` — excluded/expanded 终态唯一、成员阶段投影、`updateProcessing` 保留未提交字段。
+- `tests/db/migrate.test.ts` — V3 表/列存在、重复迁移幂等。
+- `tests/worker/collector-modes.test.ts` — 采集事务内建 run/part/processing；batch_gate 需求快照、regex_gate 规则快照。
+- `tests/worker/three-modes.test.ts` — N 条发 N 次；全否仅 1 次；命中/可疑 N+1 次且全成员；非法答案回退；无 Key 保持 pending；连接语义变化否决不生效；正则 pass/filter/fallback。
+- `tests/service/jev-requests.test.ts` — batch_gate 单行账本 + run/part 关联；预留事务内租约校准；失去 owner 返回 `lease_lost` 且不发请求、不写账本。
+- `tests/jev/batch-gate.test.ts`、`tests/regex/rules.test.ts` — 三态严格解析、装箱不丢成员/不截断、线程 ready/validate/match 与超限回退。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// 在采集事务外或整轮缓存里读模式，门控租约内串行跑全批精判
+const mode = cachedMode;
+claimJob(db, owner, leaseMs, "screen_batch");
+for (const member of members) await evaluateJob(...);
+```
+
+#### Correct
+
+```ts
+// 采集事务内读模式/规则/需求并建 run；门控只发一次，展开为独立成员任务
+const jevConfig = getJevConfig(db);
+insertEvaluationRun(db, { ...snapshot });
+enqueueJob(db, { kind: "screen_batch", payloadKey: `screen_batch:${partId}`, payload: { partId } });
+// 展开时只 enqueue evaluate:<id>，由统一 claim 循环继续领取
+```

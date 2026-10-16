@@ -49,3 +49,9 @@ module boundaries, 官方费率与用量契约). 该归档设计是 **Jev Key �
    `callJevWithLedger`), which owns global capacity, Key selection, failure counting and the
    usage ledger. The HTTP adapter `src/lib/jev/client.ts` only does transport and response
    boundary parsing; it must not choose a Key, count failures or write the ledger.
+7. **自动处理策略只在调度层生效。** `evaluationMode`（`individual` / `batch_gate` / `regex_gate`）
+   由 `src/lib/worker/evaluator.ts` 按 run 快照执行；连接测试（`/api/settings/jev/test`）与
+   需求试判（`src/lib/service/dry-run.ts`）必须绕过预筛、直接调用统一请求服务，
+   绝不能被门控/正则过滤吞掉。本地过滤（批次全否 / 正则未匹配）不得写伪造的
+   `evaluations` 或通知，来源记录在 `bulletin_processing`。详见
+   [Database Guidelines](./database-guidelines.md) 的「三模式自动处理」章节。

@@ -68,3 +68,20 @@ const price = (item as { price?: number }).price ?? 0;      // invents 0 for "no
 const price: number | null = item.bulletin.price;
 {price === null ? "" : `${price} 元`}
 ```
+
+## 三模式配置与处理来源 DTO（`src/components/api-types.ts`）
+
+`JevConfigDto.config` 额外镜像 `evaluationMode: EvaluationModeDto` 与 `regexRules: string[]`；
+`BulletinDetailDto.processing` 镜像服务端 `BulletinProcessingView`：
+
+- `EvaluationModeDto = "individual" | "batch_gate" | "regex_gate"` 与服务端 `EvaluationMode` 一致；
+  选项与取舍文案集中在 `EVALUATION_MODE_OPTIONS` / `EVALUATION_MODE_LABELS`，组件不得另写一套映射。
+- `ProcessingStageDto` / `ScreeningSourceDto` 镜像 `ProcessingStage` / `ScreeningSource`；
+  `PROCESSING_SOURCE_LABELS` 是「批次预筛排除 / 正则过滤」的唯一文案来源。
+- `JevRequestPurposeDto` 必须包含 `batch_gate`；`JevUsageRequestDto` 额外含 `evaluationRunId` / `batchPartId`。
+- 上限常量 `MAX_REGEX_RULES` / `MAX_REGEX_RULE_LENGTH` / `MAX_REGEX_TOTAL_BYTES` 只作输入提示，
+  服务端 `src/lib/domain/constants.ts` 是唯一权威。
+
+> **Warning**: 本地过滤（`processing.stage === "filtered"`）在列表归入 `not_matched`，
+> 但详情必须显示 `screeningReason`（如「正则规则未匹配，未调用 JEV」/「由批次预筛判定」），
+> 不得渲染为模型逐条结论，也不得显示虚构概率。
