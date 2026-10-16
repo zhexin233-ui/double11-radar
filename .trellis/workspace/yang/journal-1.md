@@ -179,3 +179,26 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: JEV 三模式自动处理落地
+
+**Date**: 2026-10-16
+**Task**: JEV 三模式自动处理落地
+**Branch**: `main`
+
+### Summary
+
+实现逐条（默认）/批次初筛后全批逐条/全局正则预筛三种互斥模式：V3 迁移（evaluation_runs、evaluation_batch_parts、bulletin_processing、账本 run/part 关联）、配置 evaluationMode+regexRules（版本冲突 409、线程内语法预检）、统一请求服务 batch_gate purpose/门控响应校验/按实际 timeout 校准租约、采集事务内建 run 与需求/规则快照、evaluator 统一领取 evaluate/screen_batch、正则 .mjs worker runner、记录页过滤来源与批次追溯。四道门槛通过（lint/typecheck/test 248/build 无告警），并完成隔离 DB 的生产 Next 正则保存烟测；未部署、未发真实模型请求或通知。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9522cc6` | (see git log) |
+| `a7dcb84` | (see git log) |
+| `be28177` | (see git log) |
+
+### Status
+
+[OK] **Completed**

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
-- **Last Active**: 2026-10-15
+- **Total Sessions**: 4
+- **Last Active**: 2026-10-16
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~181 | Active |
+| `journal-1.md` | ~204 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-10-16 | JEV 三模式自动处理落地 | `9522cc6`, `a7dcb84`, `be28177` | `main` |
 | 3 | 2026-10-15 | Apple 官网式全站布局重构 | `7655d31`, `b0d491e` | `main` |
 | 2 | 2026-10-15 | 校对 .trellis/spec 并完成 bootstrap 任务归档 | `5552576` | `main` |
 | 1 | 2026-10-14 | 线报需求匹配与推送：从规划到真实凭据验收 | `8109b0f`, `ff09eb8`, `ff7695e`, `3cad9ff`, `c8a4254`, `12c4648`, `d69df1c`, `bf56010`, `d4a617d`, `29f3812`, `b2bda74`, `5d01e6c`, `0347195`, `9fae1e5`, `a91487a` | `main` |
