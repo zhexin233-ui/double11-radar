@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 import {
   fetchFeed as defaultFetchFeed,
   fetchMeta as defaultFetchMeta,
@@ -7,6 +8,15 @@ import {
 } from "@/lib/sources/xianbao/client";
 import { insertBulletinIfAbsent, hasActiveRecordInOtherNs } from "@/lib/db/repos/bulletins";
 import { enqueueJob } from "@/lib/db/repos/jobs";
+import { listEnabledNeeds } from "@/lib/db/repos/needs";
+import {
+  insertBatchPart,
+  insertEvaluationRun,
+  insertProcessing,
+} from "@/lib/db/repos/evaluation-runs";
+import { packBatchParts } from "@/lib/jev/batch-packing";
+import type { GateMember } from "@/lib/jev/batch-prompt";
+import { getJevConfig, getJevConfigView } from "@/lib/service/config";
 import {
   getChannelSelection,
   listChannels,
@@ -19,7 +29,7 @@ import {
 } from "@/lib/db/repos/channels";
 import { getRuntimeState, patchRuntimeState } from "@/lib/worker/runtime-state";
 import type { AppEnv } from "@/lib/env";
-import type { ChannelState } from "@/lib/domain/types";
+import type { ChannelState, NeedSnapshot } from "@/lib/domain/types";
 
 /**
  * 采集循环。
@@ -197,6 +207,11 @@ async function pollChannel(
     let enqueued = 0;
 
     const apply = db.transaction(() => {
+      const inserted: Array<{
+        bulletinId: string;
+        sourceNs: string;
+        member: GateMember;
+      }> = [];
       for (const item of feed.items) {
         // 跨频道基线保护：同来源记录若已在其它编号空间被处理，仍按本频道
         // 编号空间独立记录，但绝不改动其它频道已有行。
@@ -209,19 +224,122 @@ async function pollChannel(
         if (isBaseline) {
           baselineCount += 1;
         } else {
+          inserted.push({
+            bulletinId: result.id,
+            sourceNs: item.sourceNs,
+            member: {
+              id: result.id,
+              title: item.title,
+              content: item.content,
+              category: item.category,
+              brand: item.brand,
+              mall: item.mall,
+              price: item.price,
+            },
+          });
+        }
+      }
+
+      if (isBaseline) {
+        setChannelInitialized(db, channel.id, true);
+        return;
+      }
+      if (inserted.length === 0) return;
+
+      // 模式/规则/配置版本/需求读取必须与去重、建 run 在同一个 apply.immediate()
+      // 事务内，不使用网络请求前或整轮缓存。
+      const jevConfig = getJevConfig(db);
+      const strategyConfigVersion = getJevConfigView(db).version;
+      const mode = jevConfig.evaluationMode;
+      const needs = listEnabledNeeds(db);
+      const needSnapshots: NeedSnapshot[] =
+        mode === "batch_gate"
+          ? needs.map((need) => ({
+              id: need.id,
+              name: need.name,
+              note: need.note,
+              enabled: need.enabled,
+              version: need.version,
+            }))
+          : [];
+
+      const runId = randomUUID();
+      insertEvaluationRun(db, {
+        id: runId,
+        sourceNs: inserted[0].sourceNs,
+        evaluationMode: mode,
+        strategyConfigVersion,
+        regexRules: mode === "regex_gate" ? jevConfig.regexRules : null,
+        needSnapshots: mode === "batch_gate" ? needSnapshots : null,
+        createdAt: nowIso,
+      });
+
+      const gatePlan =
+        mode === "batch_gate" && needSnapshots.length > 0
+          ? packBatchParts(
+              inserted.map((entry) => entry.member),
+              needSnapshots,
+              { model: jevConfig.model },
+            )
+          : null;
+
+      if (gatePlan) {
+        const partIdByBulletin = new Map<string, string>();
+        gatePlan.parts.forEach((group, ordinal) => {
+          const partId = randomUUID();
+          insertBatchPart(db, { id: partId, runId, ordinal, createdAt: nowIso });
+          for (const member of group) {
+            partIdByBulletin.set(member.id, partId);
+          }
+          // 批次初筛也是一个调度任务，与逐条共用 jobsPerRound。
           const job = enqueueJob(db, {
-            kind: "evaluate",
-            payloadKey: `evaluate:${result.id}`,
-            payload: { bulletinId: result.id },
-            // 沿用本轮注入的时钟，保证调度时间可预测、可测试。
+            kind: "screen_batch",
+            payloadKey: `screen_batch:${partId}`,
+            payload: { partId, evaluationRunId: runId },
             runAt: nowIso,
           });
           if (job.created) enqueued += 1;
-        }
+        });
+
+        inserted.forEach((entry, index) => {
+          const partId = partIdByBulletin.get(entry.bulletinId) ?? null;
+          insertProcessing(db, {
+            bulletinId: entry.bulletinId,
+            runId,
+            batchPartId: partId,
+            position: index,
+            createdAt: nowIso,
+          });
+          // 单成员/无法装箱的成员直接逐条，不发无效门控请求。
+          if (partId) return;
+          const job = enqueueJob(db, {
+            kind: "evaluate",
+            payloadKey: `evaluate:${entry.bulletinId}`,
+            payload: { bulletinId: entry.bulletinId, evaluationRunId: runId },
+            runAt: nowIso,
+          });
+          if (job.created) enqueued += 1;
+        });
+        return;
       }
-      if (isBaseline) {
-        setChannelInitialized(db, channel.id, true);
-      }
+
+      // individual / regex_gate / batch_gate 无启用需求：逐条任务。
+      inserted.forEach((entry, index) => {
+        insertProcessing(db, {
+          bulletinId: entry.bulletinId,
+          runId,
+          batchPartId: null,
+          position: index,
+          createdAt: nowIso,
+        });
+        const job = enqueueJob(db, {
+          kind: "evaluate",
+          payloadKey: `evaluate:${entry.bulletinId}`,
+          payload: { bulletinId: entry.bulletinId, evaluationRunId: runId },
+          runAt: nowIso,
+        });
+        if (job.created) enqueued += 1;
+      });
     });
     apply.immediate();
 

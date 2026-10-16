@@ -167,10 +167,11 @@ export function isBulletinFilterStatus(
 /**
  * 记录页状态判定的**唯一 owner**（作用于别名为 `b` 的 bulletins 行）。
  *
- * 优先级严格为：baseline > 任一 matched > 任一 failed > 任一 uncertain > 存在其它判断 > pending。
- * failed 分支在没有 matched 的前提下，额外覆盖「evaluate job 已失败但尚未落 evaluations」：
- * 否则处理失败会被误显示成「没有匹配」。成功重试（`completeJob` 清空 last_error）后
- * 该分支自然回落为 pending / not_matched。
+ * 优先级严格为：baseline > 任一 matched > 任一 failed > 任一 uncertain > 存在其它判断 > 本地过滤 > pending。
+ * failed 分支在没有 matched 的前提下，额外覆盖「evaluate job 已失败但尚未落 evaluations」与
+ * 处理阶段 failed：否则处理失败会被误显示成「没有匹配」。
+ * 本地过滤（批次全否 / 正则未匹配）归入 not_matched，但不伪造模型 evaluation。
+ * 成功重试（`completeJob` 清空 last_error、阶段转 `evaluated`）后自然回落。
  *
  * 列表过滤（COUNT 与分页）、聚合与详情必须共用这一个表达式，禁止在 TS 里再维护一套优先级。
  */
@@ -186,12 +187,19 @@ CASE
     SELECT 1 FROM jobs j
     WHERE j.payload_key = 'evaluate:' || b.id
       AND (j.status = 'dead' OR (j.last_error IS NOT NULL AND j.status <> 'succeeded'))
+  ) OR EXISTS (
+    SELECT 1 FROM bulletin_processing p
+    WHERE p.bulletin_id = b.id AND p.stage = 'failed'
   ) THEN 'failed'
   WHEN EXISTS (
     SELECT 1 FROM evaluations e WHERE e.bulletin_id = b.id AND e.result = 'uncertain'
   ) THEN 'uncertain'
   WHEN EXISTS (
     SELECT 1 FROM evaluations e WHERE e.bulletin_id = b.id
+  ) THEN 'not_matched'
+  WHEN EXISTS (
+    SELECT 1 FROM bulletin_processing p
+    WHERE p.bulletin_id = b.id AND p.stage = 'filtered'
   ) THEN 'not_matched'
   ELSE 'pending'
 END`;

@@ -7,6 +7,7 @@ import { loadEnv, type AppEnv } from "@/lib/env";
 import { runCollectorOnce } from "@/lib/worker/collector";
 import { runEvaluatorOnce } from "@/lib/worker/evaluator";
 import { runDelivererOnce } from "@/lib/worker/deliverer";
+import { disposeSharedRegexRunner } from "@/lib/service/regex-runner";
 import { getRuntimeState, patchRuntimeState } from "@/lib/worker/runtime-state";
 
 /**
@@ -102,6 +103,8 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
     clearInterval(heartbeat);
     clearInterval(collectTimer);
     clearInterval(workTimer);
+    // 释放正则执行线程，避免进程退出时遗留 worker。
+    disposeSharedRegexRunner();
   };
 }
 

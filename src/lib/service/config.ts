@@ -30,6 +30,9 @@ import {
   DEFAULT_JE_MODEL,
   DEFAULT_JE_TIMEOUT_MS,
 } from "@/lib/jev/client";
+import { HttpError } from "@/lib/http/json";
+import { parseRegexRules, validateRegexRuleShape } from "@/lib/regex/rules";
+import type { EvaluationMode } from "@/lib/domain/types";
 import type { AppEnv } from "@/lib/env";
 
 /**
@@ -120,8 +123,12 @@ export interface JevConfig {
   timeoutMs: number;
   /** 同时进行的 Jev 请求数上限（1 = 严格串行）。 */
   concurrency: number;
-  /** 每轮最多领取并处理的判断任务数。 */
+  /** 每轮最多领取并处理的判断任务数（批次初筛也算一个调度任务）。 */
   jobsPerRound: number;
+  /** 后台自动处理模式；缺失/非法时默认逐条。 */
+  evaluationMode: EvaluationMode;
+  /** 正则预筛模式的全局规则（一行一条 source，固定 iu）。 */
+  regexRules: string[];
 }
 
 /** 并发上限：默认串行，允许小幅提高，但不放任打满上游。 */
@@ -131,6 +138,21 @@ export const MIN_JOBS_PER_ROUND = 1;
 export const MAX_JOBS_PER_ROUND = 50;
 export const DEFAULT_JE_CONCURRENCY = 1;
 export const DEFAULT_JE_JOBS_PER_ROUND = 3;
+export const DEFAULT_EVALUATION_MODE: EvaluationMode = "individual";
+
+export const EVALUATION_MODES: readonly EvaluationMode[] = [
+  "individual",
+  "batch_gate",
+  "regex_gate",
+];
+
+/** 校验任意输入是否为合法处理模式。 */
+export function isEvaluationMode(value: unknown): value is EvaluationMode {
+  return (
+    typeof value === "string" &&
+    (EVALUATION_MODES as readonly string[]).includes(value)
+  );
+}
 
 export interface JevConfigView {
   config: JevConfig;
@@ -144,6 +166,8 @@ const DEFAULT_JE_CONFIG: JevConfig = {
   timeoutMs: DEFAULT_JE_TIMEOUT_MS,
   concurrency: DEFAULT_JE_CONCURRENCY,
   jobsPerRound: DEFAULT_JE_JOBS_PER_ROUND,
+  evaluationMode: DEFAULT_EVALUATION_MODE,
+  regexRules: [],
 };
 
 /** 把整数限制在 [min, max]；非法值回退到 fallback。 */
@@ -188,6 +212,16 @@ export function getJevConfig(db: Database.Database): JevConfig {
       MAX_JOBS_PER_ROUND,
       DEFAULT_JE_CONFIG.jobsPerRound,
     ),
+    evaluationMode: isEvaluationMode(value.evaluationMode)
+      ? value.evaluationMode
+      : DEFAULT_EVALUATION_MODE,
+    // 规则结构异常（非字符串数组）只回退为空规则；regex_gate 遇空规则会回退逐条，
+    // 绝不形成全量过滤。
+    regexRules:
+      Array.isArray(value.regexRules) &&
+      value.regexRules.every((rule) => typeof rule === "string")
+        ? (value.regexRules as string[])
+        : [],
   };
 }
 
@@ -210,7 +244,24 @@ export interface SaveJevConfigInput {
   timeoutMs?: number;
   concurrency?: number;
   jobsPerRound?: number;
+  evaluationMode?: EvaluationMode;
+  regexRules?: string[];
+  /** 新客户端提交的基线配置版本；不匹配时拒绝写入（409）。 */
+  expectedVersion?: number;
   apiKey?: SecretInput;
+}
+
+/** 归一化并校验提交的正则规则；非法时抛中文字段错误。 */
+export function normalizeJevRegexRules(raw: unknown): string[] {
+  const parsed = parseRegexRules(raw);
+  if (!parsed.ok) {
+    throw new HttpError("INVALID_BODY", parsed.error, 400);
+  }
+  const shape = validateRegexRuleShape(parsed.rules);
+  if (!shape.ok) {
+    throw new HttpError("INVALID_BODY", shape.error, 400);
+  }
+  return parsed.rules;
 }
 
 export function saveJevConfig(
@@ -250,10 +301,38 @@ export function saveJevConfig(
             MAX_JOBS_PER_ROUND,
             current.jobsPerRound,
           ),
+    evaluationMode:
+      input.evaluationMode === undefined
+        ? current.evaluationMode
+        : input.evaluationMode,
+    regexRules:
+      input.regexRules === undefined
+        ? current.regexRules
+        : normalizeJevRegexRules(input.regexRules),
   };
+  // 启用正则预筛必须有至少一条合法规则；其他模式允许保存空规则。
+  if (next.evaluationMode === "regex_gate" && next.regexRules.length === 0) {
+    throw new HttpError(
+      "INVALID_BODY",
+      "正则预筛模式至少需要一条合法的正则规则",
+      400,
+    );
+  }
   // 基础配置与兼容 Key 的密文/元数据必须在同一事务内落库；
   // 只改普通配置时不得重置 Key 计数或误启用已禁用的 Key。
   const run = db.transaction(() => {
+    // 版本核对在事务（写锁）内进行：并发修改时拒绝写入，不把旧校验应用到新规则。
+    if (input.expectedVersion !== undefined) {
+      const record = getSetting(db, JE_SETTING_NAMESPACE);
+      const currentVersion = record?.version ?? 0;
+      if (input.expectedVersion !== currentVersion) {
+        throw new HttpError(
+          "CONFIG_VERSION_CONFLICT",
+          "配置已被其它会话修改，请刷新页面后重试",
+          409,
+        );
+      }
+    }
     setSetting(db, JE_SETTING_NAMESPACE, next);
     applyLegacyJevKeyInput(db, input.apiKey, key);
   });

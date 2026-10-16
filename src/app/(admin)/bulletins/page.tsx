@@ -7,6 +7,7 @@ import {
   BULLETIN_AUTO_REFRESH_MS,
   BULLETIN_FILTER_OPTIONS,
   BULLETIN_PAGE_SIZE,
+  PROCESSING_SOURCE_LABELS,
   STATUS_LABELS,
   type BulletinDetailDto,
   type BulletinFilterStatusDto,
@@ -138,6 +139,11 @@ export default function BulletinsPage() {
                       <span className={`badge ${item.status}`}>
                         {STATUS_LABELS[item.status]}
                       </span>
+                      {item.processing?.screeningSource ? (
+                        <div className="muted small">
+                          {PROCESSING_SOURCE_LABELS[item.processing.screeningSource]}
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       <Link href={`/bulletins/${item.bulletin.id}`}>

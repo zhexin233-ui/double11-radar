@@ -9,14 +9,17 @@ import {
   type BulletinListQuery,
 } from "@/lib/db/repos/bulletins";
 import { listEvaluationsByBulletin } from "@/lib/db/repos/evaluations";
+import { getEvaluationRun, getProcessing } from "@/lib/db/repos/evaluation-runs";
 import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
 import { getNotificationByBulletin } from "@/lib/db/repos/notifications";
 import { buildClassificationExplanation } from "@/lib/notify/dispatch";
 import { HttpError } from "@/lib/http/json";
 import type {
   Bulletin,
+  BulletinProcessing,
   Delivery,
   Evaluation,
+  EvaluationMode,
   Notification,
 } from "@/lib/domain/types";
 
@@ -33,6 +36,20 @@ import type {
 export type { BulletinDisplayStatus };
 export type { BulletinFilterStatus };
 
+/** 详情/列表展示的处理元数据（不伪造模型答案）。 */
+export interface BulletinProcessingView {
+  runId: string;
+  evaluationMode: EvaluationMode;
+  stage: BulletinProcessing["stage"];
+  screeningSource: BulletinProcessing["screeningSource"];
+  screeningReason: string | null;
+  gateRequestId: string | null;
+  matchedRuleIndex: number | null;
+  batchPartId: string | null;
+  needSnapshotNames: string[] | null;
+  regexRuleCount: number | null;
+}
+
 export interface BulletinDetail {
   bulletin: Bulletin;
   status: BulletinDisplayStatus;
@@ -41,6 +58,7 @@ export interface BulletinDetail {
   evaluations: Evaluation[];
   deliveries: Delivery[];
   notification: Notification | null;
+  processing: BulletinProcessingView | null;
 }
 
 export function describeBulletin(
@@ -59,6 +77,9 @@ export function describeBulletin(
     getBulletinDisplayStatus(db, bulletin.id) ??
     (bulletin.baseline ? "baseline" : "pending");
 
+  const processing = getProcessing(db, bulletin.id);
+  const run = processing ? getEvaluationRun(db, processing.runId) : null;
+
   return {
     bulletin,
     status,
@@ -69,6 +90,21 @@ export function describeBulletin(
     evaluations,
     deliveries,
     notification,
+    processing: processing
+      ? {
+          runId: processing.runId,
+          evaluationMode: run?.evaluationMode ?? "individual",
+          stage: processing.stage,
+          screeningSource: processing.screeningSource,
+          screeningReason: processing.screeningReason,
+          gateRequestId: processing.gateRequestId,
+          matchedRuleIndex: processing.matchedRuleIndex,
+          batchPartId: processing.batchPartId,
+          needSnapshotNames:
+            run?.needSnapshots?.map((snapshot) => snapshot.name) ?? null,
+          regexRuleCount: run?.regexRules?.length ?? null,
+        }
+      : null,
   };
 }
 

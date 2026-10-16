@@ -9,9 +9,13 @@ import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
 import {
+  EVALUATION_MODE_OPTIONS,
   JE_CONCURRENCY_RANGE,
   JE_JOBS_PER_ROUND_RANGE,
   JE_KEY_FAILURE_THRESHOLD,
+  MAX_REGEX_RULE_LENGTH,
+  MAX_REGEX_RULES,
+  type EvaluationModeDto,
   type JevConfigDto,
   type JevKeyDto,
   type JevSettingsDto,
@@ -48,6 +52,12 @@ function JevForm(props: {
   const [timeoutMs, setTimeoutMs] = useState(props.view.config.timeoutMs);
   const [concurrency, setConcurrency] = useState(props.view.config.concurrency);
   const [jobsPerRound, setJobsPerRound] = useState(props.view.config.jobsPerRound);
+  const [evaluationMode, setEvaluationMode] = useState<EvaluationModeDto>(
+    props.view.config.evaluationMode,
+  );
+  const [regexRulesText, setRegexRulesText] = useState(
+    props.view.config.regexRules.join("\n"),
+  );
   const [busy, setBusy] = useState(false);
 
   async function save(event: React.FormEvent) {
@@ -60,6 +70,10 @@ function JevForm(props: {
         timeoutMs,
         concurrency,
         jobsPerRound,
+        evaluationMode,
+        // 服务端会忽略纯空白行并去重；切换模式时不清空已保存规则。
+        regexRules: regexRulesText.split("\n"),
+        version: props.view.version,
       });
       props.onSaved();
     } catch (caught) {
@@ -99,6 +113,55 @@ function JevForm(props: {
         />
       </label>
 
+      <fieldset className="stack" id="jev-strategy">
+        <legend>后台判断模式</legend>
+        <p className="muted small" style={{ margin: 0 }}>
+          只影响后台对<strong>之后新采集</strong>线报的自动处理；连接测试与需求试判仍直接调用，
+          不会被预筛吞掉。切换模式不会回放历史线报，已有批次按当时的策略快照继续完成。
+        </p>
+        {EVALUATION_MODE_OPTIONS.map((option) => (
+          <label key={option.value} className="stack">
+            <span>
+              <input
+                type="radio"
+                name="evaluationMode"
+                value={option.value}
+                checked={evaluationMode === option.value}
+                disabled={busy}
+                onChange={() => setEvaluationMode(option.value)}
+              />{" "}
+              <strong>{option.label}</strong>
+            </span>
+            <span className="muted small">{option.description}</span>
+          </label>
+        ))}
+
+        {evaluationMode === "regex_gate" ? (
+          <label className="field">
+            全局正则规则（一行一条，任意命中即放行）
+            <textarea
+              rows={6}
+              value={regexRulesText}
+              disabled={busy}
+              spellCheck={false}
+              aria-label="全局正则规则"
+              placeholder={"抽纸|软抽\n湿巾|洗脸巾"}
+              onChange={(event) => setRegexRulesText(event.target.value)}
+            />
+            <span className="muted small">
+              直接写 JS 正则 source，<strong>不要首尾斜杠</strong>，固定忽略大小写与 Unicode；
+              空白行忽略，相同规则去重。最多 {MAX_REGEX_RULES} 条，每条最多{" "}
+              {MAX_REGEX_RULE_LENGTH} 个字符，合计不超过 16 KiB。匹配标题、正文及现有品类/品牌/商城/来源价格；
+              规则未覆盖的线报不会调用 JEV，可能漏报。
+            </span>
+          </label>
+        ) : (
+          <p className="muted small" style={{ margin: 0 }}>
+            已保存的全局正则规则会保留；切换到「正则预筛后逐条判断」即可查看与编辑。
+          </p>
+        )}
+      </fieldset>
+
       <div className="grid-2">
         <label className="field">
           Jev 并发数
@@ -116,7 +179,7 @@ function JevForm(props: {
           </span>
         </label>
         <label className="field">
-          每轮任务数
+          每轮判断任务预算
           <input
             type="number"
             min={JE_JOBS_PER_ROUND_RANGE.min}
@@ -126,14 +189,16 @@ function JevForm(props: {
           />
           <span className="muted small">
             上限 {JE_JOBS_PER_ROUND_RANGE.max}，默认 3。worker 每 2 秒触发一轮，
-            每轮最多领取并处理这么多条线报；实际吞吐还受并发数与单次调用耗时限制。
+            每轮最多领取并处理这么多条<strong>判断任务</strong>（批次初筛也算一个调度任务，
+            不是批次条数）；播放展开后的成员也各自占一个任务。实际吞吐还受并发数与单次调用耗时限制。
           </span>
         </label>
       </div>
 
       <p className="muted small" style={{ margin: 0 }}>
         这两项保存后<strong>立即生效</strong>（worker 每轮重新读取），不需要重启容器。
-        一个 Jev 请求会携带全部启用需求，因此增加需求不会增加请求数。
+        逐条/正则模式下每条线报只发一次请求、携带全部启用需求，因此增加需求不会增加请求数；
+        批次模式会额外发一次整体初筛。
       </p>
 
       <div className="row">
@@ -638,6 +703,7 @@ export default function JevPage() {
 
       <nav className="anchor-nav" aria-label="Jev 配置分区">
         <a href="#jev-connection">连接与调度</a>
+        <a href="#jev-strategy">判断模式</a>
         <a href="#jev-keys">API 密钥</a>
         <a href="#jev-usage">费用与用量</a>
         <a href="#jev-dry-run">需求试判</a>

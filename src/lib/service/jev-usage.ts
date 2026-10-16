@@ -22,6 +22,7 @@ import type {
 
 export const JE_PURPOSE_LABELS: Record<JevRequestPurpose, string> = {
   evaluate: "后台判断",
+  batch_gate: "批次初筛",
   test: "连接测试",
   dry_run: "需求试判",
 };
@@ -44,6 +45,9 @@ export interface JevUsageRequestView {
   keyId: string | null;
   keyLabel: string | null;
   bulletinId: string | null;
+  /** 所属处理 run / 子批（三模式追溯）；旧账本为 null。 */
+  evaluationRunId: string | null;
+  batchPartId: string | null;
   requestedModel: string;
   responseModel: string | null;
   httpStatus: number | null;
@@ -105,6 +109,8 @@ function toRequestView(request: JevRequest): JevUsageRequestView {
     keyId: request.keyId,
     keyLabel: request.keyLabel,
     bulletinId: request.bulletinId,
+    evaluationRunId: request.evaluationRunId,
+    batchPartId: request.batchPartId,
     requestedModel: request.requestedModel,
     responseModel: request.responseModel,
     httpStatus: request.httpStatus,

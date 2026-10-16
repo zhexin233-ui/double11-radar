@@ -104,25 +104,39 @@ export function getJob(db: Database.Database, id: string): Job | null {
   return row ? toJob(row) : null;
 }
 
-/** 领取一条到期任务并加租约；无任务返回 null。可按 kind 过滤。 */
+/** 领取一条到期任务并加租约；无任务返回 null。可按 kind（或多个 kind）过滤。 */
 export function claimJob(
   db: Database.Database,
   owner: string,
   leaseMs: number,
   now: Date = new Date(),
-  kind?: JobKind,
+  kind?: JobKind | readonly JobKind[],
 ): Job | null {
   const nowIso = now.toISOString();
   const leaseUntil = new Date(now.getTime() + leaseMs).toISOString();
+  const kinds: readonly JobKind[] | null = Array.isArray(kind)
+    ? (kind as readonly JobKind[])
+    : kind === undefined
+      ? null
+      : [kind as JobKind];
+  const params: Record<string, unknown> = { nowIso };
+  let kindClause = "";
+  if (kinds && kinds.length > 0) {
+    const placeholders = kinds.map((value, index) => {
+      params[`kind${index}`] = value;
+      return `@kind${index}`;
+    });
+    kindClause = `AND kind IN (${placeholders.join(", ")})`;
+  }
   const claim = db.transaction(() => {
     const candidate = db
       .prepare(
         `SELECT id FROM jobs
          WHERE status = 'pending' AND run_at <= @nowIso
-           AND (@kind IS NULL OR kind = @kind)
+           ${kindClause}
          ORDER BY run_at ASC LIMIT 1`,
       )
-      .get({ nowIso, kind: kind ?? null }) as { id: string } | undefined;
+      .get(params) as { id: string } | undefined;
     if (!candidate) return null;
     const result = db
       .prepare(
@@ -136,6 +150,35 @@ export function claimJob(
   });
   const id = claim.immediate();
   return id ? getJob(db, id) : null;
+}
+
+/**
+ * 在持有租约时把租约延长到不早于 `leaseUntil`（可能已足够长）。
+ * 用于统一请求服务在预留事务内按本次实际 timeoutMs 校准任务租约，
+ * 避免「claim 时用了旧超时，发送前管理员又增大 timeout」导致正常请求提前失租。
+ */
+export function extendJobLease(
+  db: Database.Database,
+  id: string,
+  leaseUntil: Date,
+  now: Date = new Date(),
+): boolean {
+  const result = db
+    .prepare(
+      `UPDATE jobs SET
+         lease_until = CASE
+           WHEN lease_until IS NULL OR lease_until < @leaseUntil THEN @leaseUntil
+           ELSE lease_until
+         END,
+         updated_at = @nowIso
+       WHERE id = @id AND status = 'leased'`,
+    )
+    .run({
+      id,
+      leaseUntil: leaseUntil.toISOString(),
+      nowIso: now.toISOString(),
+    });
+  return result.changes === 1;
 }
 
 export function completeJob(

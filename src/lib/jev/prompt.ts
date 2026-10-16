@@ -1,5 +1,5 @@
 import { AnswerSchema } from "@/lib/jev/types";
-import type { Bulletin, ChoiceOutcome, Need } from "@/lib/domain/types";
+import type { Bulletin, ChoiceOutcome } from "@/lib/domain/types";
 
 /**
  * Jev 问题构造与答案解析。
@@ -19,9 +19,17 @@ export interface JevQuestion {
   instructions: string;
 }
 
+/** 构造问题时只需要需求的关键字段（实时需求与 run 需求快照共用）。 */
+export interface NeedLike {
+  id: string;
+  name: string;
+  note: string;
+  version: number;
+}
+
 export interface BuiltQuestions {
   questions: Record<string, JevQuestion>;
-  needByQuestionId: Map<string, Need>;
+  needByQuestionId: Map<string, NeedLike>;
 }
 
 export function questionIdForNeed(needId: string): string {
@@ -37,7 +45,7 @@ const CRITERIA: Record<ChoiceOutcome, string> = {
     "现有信息不足，或只有品牌关联、没有可确认品类的商品描述，无法判断是否符合需求与备注约束。",
 };
 
-function buildInstructions(need: Need): string {
+function buildInstructions(need: NeedLike): string {
   const lines = [`用户购买需求：${need.name}`];
   if (need.note.trim()) {
     lines.push(`附加约束（必须同时满足）：${need.note.trim()}`);
@@ -53,9 +61,9 @@ function buildInstructions(need: Need): string {
 }
 
 /** 为每个启用需求构造一个 Choice 问题。 */
-export function buildQuestions(needs: Need[]): BuiltQuestions {
+export function buildQuestions(needs: readonly NeedLike[]): BuiltQuestions {
   const questions: Record<string, JevQuestion> = {};
-  const needByQuestionId = new Map<string, Need>();
+  const needByQuestionId = new Map<string, NeedLike>();
   for (const need of needs) {
     const questionId = questionIdForNeed(need.id);
     questions[questionId] = {
@@ -78,8 +86,10 @@ export interface StateFields {
   price?: number | null;
 }
 
-/** 由字段构造 state：只包含有值的字段，正文作为数据提供。 */
-export function buildStateFromFields(fields: StateFields): string {
+/** 由字段构造 state 对象：只包含有值的字段，正文作为数据提供。 */
+export function stateFieldsObject(
+  fields: StateFields,
+): Record<string, string | number> {
   const state: Record<string, string | number> = { 线报标题: fields.title };
   if (fields.content) state.正文 = fields.content;
   if (fields.category) state.品类 = fields.category;
@@ -88,7 +98,12 @@ export function buildStateFromFields(fields: StateFields): string {
   if (fields.price !== null && fields.price !== undefined) {
     state.价格 = fields.price;
   }
-  return JSON.stringify(state);
+  return state;
+}
+
+/** 由字段构造 state：只包含有值的字段，正文作为数据提供。 */
+export function buildStateFromFields(fields: StateFields): string {
+  return JSON.stringify(stateFieldsObject(fields));
 }
 
 /** 构造 state：只包含有值的字段，正文作为数据提供。 */
@@ -187,9 +202,16 @@ export function parseAnswers(
   return result;
 }
 
+/** 从响应中提取 answers 记录（供批次门控做额外的问题 ID 校验）。 */
+export function extractAnswerKeys(response: unknown): string[] {
+  return Object.keys(extractAnswers(response));
+}
+
 function extractAnswers(response: unknown): Record<string, unknown> {
   if (!response || typeof response !== "object") return {};
   const candidate = (response as { answers?: unknown }).answers;
   if (!candidate || typeof candidate !== "object") return {};
   return candidate as Record<string, unknown>;
 }
+
+export { extractAnswers };
