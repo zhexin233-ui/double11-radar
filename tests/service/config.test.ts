@@ -18,6 +18,7 @@ import {
   MIN_JOBS_PER_ROUND,
 } from "@/lib/service/config";
 import { createTestDb, testKey } from "../helpers/db";
+import { HttpError } from "@/lib/http/json";
 
 const KEY = testKey();
 
@@ -191,6 +192,123 @@ describe("Jev 并发与每轮任务数的配置契约", () => {
       expect(config.model).toBe("jev-v2");
       expect(config.concurrency).toBe(2);
       expect(config.jobsPerRound).toBe(5);
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("三模式配置与全局正则（AC2/AC7/AC8）", () => {
+  it("新库默认逐条模式、空规则，不因升级自动启用预筛", () => {
+    const ctx = createTestDb();
+    try {
+      const config = getJevConfigView(ctx.db, KEY).config;
+      expect(config.evaluationMode).toBe("individual");
+      expect(config.regexRules).toEqual([]);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("保存模式与规则后可读回；部分更新保留旧模式", () => {
+    const ctx = createTestDb();
+    try {
+      saveJevConfig(
+        ctx.db,
+        { evaluationMode: "regex_gate", regexRules: ["抽纸|软抽", "湿巾"] },
+        KEY,
+      );
+      let config = getJevConfigView(ctx.db, KEY).config;
+      expect(config.evaluationMode).toBe("regex_gate");
+      expect(config.regexRules).toEqual(["抽纸|软抽", "湿巾"]);
+
+      // 只改连接配置不应重置模式或规则。
+      saveJevConfig(ctx.db, { model: "jev-v9" }, KEY);
+      config = getJevConfigView(ctx.db, KEY).config;
+      expect(config.evaluationMode).toBe("regex_gate");
+      expect(config.regexRules).toEqual(["抽纸|软抽", "湿巾"]);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("显式空数组清空规则，但正则模式不允许空规则", () => {
+    const ctx = createTestDb();
+    try {
+      saveJevConfig(ctx.db, { regexRules: ["抽纸"] }, KEY);
+      expect(getJevConfigView(ctx.db, KEY).config.regexRules).toEqual(["抽纸"]);
+
+      saveJevConfig(ctx.db, { regexRules: [] }, KEY);
+      expect(getJevConfigView(ctx.db, KEY).config.regexRules).toEqual([]);
+
+      expect(() =>
+        saveJevConfig(ctx.db, { evaluationMode: "regex_gate" }, KEY),
+      ).toThrowError(/正则预筛模式至少需要一条合法的正则规则/);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("规则归一化：忽略空白行、保留空格、去重（AC7）", () => {
+    const ctx = createTestDb();
+    try {
+      const view = saveJevConfig(
+        ctx.db,
+        {
+          evaluationMode: "regex_gate",
+          regexRules: ["  抽纸 | 软抽 ", "", "   ", "  抽纸 | 软抽 ", "湿巾"],
+        },
+        KEY,
+      );
+      expect(view.config.regexRules).toEqual(["  抽纸 | 软抽 ", "湿巾"]);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("非法规则被拒绝且不覆盖旧配置（AC8）", () => {
+    const ctx = createTestDb();
+    try {
+      saveJevConfig(ctx.db, { regexRules: ["抽纸"] }, KEY);
+      expect(() =>
+        saveJevConfig(ctx.db, { regexRules: ["a".repeat(501)] }, KEY),
+      ).toThrowError(/500 个字符/);
+      expect(getJevConfigView(ctx.db, KEY).config.regexRules).toEqual(["抽纸"]);
+
+      expect(() =>
+        saveJevConfig(
+          ctx.db,
+          { regexRules: Array.from({ length: 21 }, (_, index) => `a${index}`) },
+          KEY,
+        ),
+      ).toThrowError(/最多 20 条/);
+      expect(getJevConfigView(ctx.db, KEY).config.regexRules).toEqual(["抽纸"]);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("并发修改时版本冲突拒绝写入（409 语义）", () => {
+    const ctx = createTestDb();
+    try {
+      const first = saveJevConfig(ctx.db, { model: "jev-v1" }, KEY);
+      // 另一个会话先写了一次，版本自增。
+      saveJevConfig(ctx.db, { model: "jev-v2" }, KEY);
+
+      let thrown: unknown;
+      try {
+        saveJevConfig(
+          ctx.db,
+          { model: "jev-v3", expectedVersion: first.version },
+          KEY,
+        );
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(HttpError);
+      expect((thrown as HttpError).status).toBe(409);
+      // 旧校验不得应用到新规则：模式/规则保持另一个会话的写入结果。
+      expect(getJevConfigView(ctx.db, KEY).config.model).toBe("jev-v2");
     } finally {
       ctx.close();
     }
