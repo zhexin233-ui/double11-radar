@@ -37,6 +37,8 @@ interface JevRequestRow {
   purpose: string;
   bulletin_id: string | null;
   job_id: string | null;
+  evaluation_run_id: string | null;
+  batch_part_id: string | null;
   requested_model: string;
   response_model: string | null;
   provider_origin: string | null;
@@ -68,6 +70,8 @@ function toJevRequest(row: JevRequestRow): JevRequest {
     purpose: row.purpose as JevRequestPurpose,
     bulletinId: row.bulletin_id,
     jobId: row.job_id,
+    evaluationRunId: row.evaluation_run_id,
+    batchPartId: row.batch_part_id,
     requestedModel: row.requested_model,
     responseModel: row.response_model,
     providerOrigin: row.provider_origin,
@@ -108,6 +112,8 @@ export interface InsertInFlightInput {
   purpose: JevRequestPurpose;
   bulletinId?: string | null;
   jobId?: string | null;
+  evaluationRunId?: string | null;
+  batchPartId?: string | null;
   requestedModel: string;
   providerOrigin: string | null;
   configVersion: number | null;
@@ -124,12 +130,12 @@ export function insertInFlightRequest(
   db.prepare(
     `INSERT INTO jev_requests (
        id, key_id, key_label, key_generation, purpose, bulletin_id, job_id,
-       requested_model, provider_origin, config_version, status, started_at,
-       lease_until, cost_status
+       evaluation_run_id, batch_part_id, requested_model, provider_origin,
+       config_version, status, started_at, lease_until, cost_status
      ) VALUES (
        @id, @keyId, @keyLabel, @keyGeneration, @purpose, @bulletinId, @jobId,
-       @requestedModel, @providerOrigin, @configVersion, 'in_flight', @startedAt,
-       @leaseUntil, 'unknown'
+       @evaluationRunId, @batchPartId, @requestedModel, @providerOrigin,
+       @configVersion, 'in_flight', @startedAt, @leaseUntil, 'unknown'
      )`,
   ).run({
     id,
@@ -139,6 +145,8 @@ export function insertInFlightRequest(
     purpose: input.purpose,
     bulletinId: input.bulletinId ?? null,
     jobId: input.jobId ?? null,
+    evaluationRunId: input.evaluationRunId ?? null,
+    batchPartId: input.batchPartId ?? null,
     requestedModel: input.requestedModel,
     providerOrigin: input.providerOrigin,
     configVersion: input.configVersion,

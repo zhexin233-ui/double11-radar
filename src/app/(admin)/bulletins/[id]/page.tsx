@@ -8,6 +8,8 @@ import { useApiResource } from "@/components/use-api";
 import {
   DELIVERY_LABELS,
   EVALUATION_LABELS,
+  EVALUATION_MODE_LABELS,
+  PROCESSING_SOURCE_LABELS,
   STATUS_LABELS,
   type BulletinDetailDto,
 } from "@/components/api-types";
@@ -129,6 +131,58 @@ export default function BulletinDetailPage() {
         ) : null}
       </Section>
 
+      {detail.processing ? (
+        <Section title="处理策略与批次">
+          <dl className="facts">
+            <dt>判断模式</dt>
+            <dd>{EVALUATION_MODE_LABELS[detail.processing.evaluationMode]}</dd>
+            <dt>处理阶段</dt>
+            <dd>{detail.processing.stage}</dd>
+            {detail.processing.screeningSource ? (
+              <>
+                <dt>过滤来源</dt>
+                <dd>
+                  {PROCESSING_SOURCE_LABELS[detail.processing.screeningSource]}
+                  {detail.processing.matchedRuleIndex !== null
+                    ? `（正则预筛命中第 ${detail.processing.matchedRuleIndex + 1} 条规则）`
+                    : ""}
+                </dd>
+              </>
+            ) : null}
+            {detail.processing.screeningReason ? (
+              <>
+                <dt>说明</dt>
+                <dd>{detail.processing.screeningReason}</dd>
+              </>
+            ) : null}
+            {detail.processing.needSnapshotNames ? (
+              <>
+                <dt>批次需求快照</dt>
+                <dd>{detail.processing.needSnapshotNames.join("、") || "—"}</dd>
+              </>
+            ) : null}
+            {detail.processing.regexRuleCount !== null ? (
+              <>
+                <dt>正则规则数</dt>
+                <dd>{detail.processing.regexRuleCount}</dd>
+              </>
+            ) : null}
+            {detail.processing.gateRequestId ? (
+              <>
+                <dt>初筛请求 ID</dt>
+                <dd>{detail.processing.gateRequestId}</dd>
+              </>
+            ) : null}
+            {detail.processing.batchPartId ? (
+              <>
+                <dt>子批 ID</dt>
+                <dd>{detail.processing.batchPartId}</dd>
+              </>
+            ) : null}
+          </dl>
+        </Section>
+      ) : null}
+
       <Section title="命中需求与分类说明">
         {detail.matchedNeeds.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
@@ -136,7 +190,10 @@ export default function BulletinDetailPage() {
               ? "本次判断存在处理失败，不能视为「没有匹配」。"
               : detail.status === "uncertain"
                 ? "信息不足，留在待确认，未发送通知。"
-                : "没有命中任何启用需求。"}
+                : detail.processing?.stage === "filtered"
+                  ? (detail.processing.screeningReason ??
+                    "该条未匹配本地规则，未调用 JEV。")
+                  : "没有命中任何启用需求。"}
           </p>
         ) : (
           <div className="stack">

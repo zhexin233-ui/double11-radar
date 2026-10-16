@@ -51,10 +51,52 @@ export interface JevConfigDto {
     timeoutMs: number;
     concurrency: number;
     jobsPerRound: number;
+    evaluationMode: EvaluationModeDto;
+    regexRules: string[];
   };
   apiKey: SecretStateDto;
   version: number;
 }
+
+/** 后台自动处理模式（与 lib/domain/types 的 EvaluationMode 一致）。 */
+export type EvaluationModeDto = "individual" | "batch_gate" | "regex_gate";
+
+export const EVALUATION_MODE_LABELS: Record<EvaluationModeDto, string> = {
+  individual: "逐条判断（默认）",
+  batch_gate: "批次预筛后逐条判断",
+  regex_gate: "正则预筛后逐条判断",
+};
+
+/** 三模式选择项（含取舍说明）。 */
+export const EVALUATION_MODE_OPTIONS: ReadonlyArray<{
+  value: EvaluationModeDto;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "individual",
+    label: EVALUATION_MODE_LABELS.individual,
+    description:
+      "每条新线报都对全部启用需求调用一次 JEV，保留完整语义判断。没有额外预筛，不会因预筛漏判。",
+  },
+  {
+    value: "batch_gate",
+    label: EVALUATION_MODE_LABELS.batch_gate,
+    description:
+      "先对一批新线报做一次整体初筛：全部明确无关时节省调用；有命中或可疑时该批所有成员逐条判断，会多一次预筛调用。合成判断可能漏判，属可选模式的取舍。",
+  },
+  {
+    value: "regex_gate",
+    label: EVALUATION_MODE_LABELS.regex_gate,
+    description:
+      "先用下方全局正则预筛，命中才逐条调用 JEV；规则未覆盖的线报会直接跳过，可能漏报，需维护规则。",
+  },
+];
+
+/** 正则规则保护上限（与服务端 constants 一致，仅作输入提示）。 */
+export const MAX_REGEX_RULES = 20;
+export const MAX_REGEX_RULE_LENGTH = 500;
+export const MAX_REGEX_TOTAL_BYTES = 16 * 1024;
 
 /**
  * 并发与每轮任务数的界面提示边界。
@@ -86,7 +128,7 @@ export interface JevSettingsDto extends JevConfigDto {
 /** 连续失败达到该次数会自动禁用 Key（与服务端常量一致）。 */
 export const JE_KEY_FAILURE_THRESHOLD = 3;
 
-export type JevRequestPurposeDto = "evaluate" | "test" | "dry_run";
+export type JevRequestPurposeDto = "evaluate" | "batch_gate" | "test" | "dry_run";
 export type JevRequestStatusDto =
   | "in_flight"
   | "succeeded"
@@ -105,6 +147,8 @@ export interface JevUsageRequestDto {
   keyId: string | null;
   keyLabel: string | null;
   bulletinId: string | null;
+  evaluationRunId: string | null;
+  batchPartId: string | null;
   requestedModel: string;
   responseModel: string | null;
   httpStatus: number | null;
@@ -175,6 +219,39 @@ export interface EvaluationDto {
   updatedAt: string;
 }
 
+/** 本地处理阶段（不伪造模型答案）。 */
+export type ProcessingStageDto =
+  | "pending"
+  | "ready"
+  | "filtered"
+  | "evaluated"
+  | "failed"
+  | "skipped_no_needs";
+
+/** 本地过滤来源。 */
+export type ScreeningSourceDto = "batch_gate" | "regex_gate";
+
+export const PROCESSING_SOURCE_LABELS: Record<ScreeningSourceDto, string> = {
+  batch_gate: "批次预筛排除",
+  regex_gate: "正则过滤",
+};
+
+/** 线报的处理策略 / 批次 / 过滤来源元数据（详情展示，不代表模型概率）。 */
+export interface BulletinProcessingDto {
+  runId: string;
+  evaluationMode: EvaluationModeDto;
+  stage: ProcessingStageDto;
+  screeningSource: ScreeningSourceDto | null;
+  screeningReason: string | null;
+  gateRequestId: string | null;
+  matchedRuleIndex: number | null;
+  batchPartId: string | null;
+  /** 批次需求快照名称（batch_gate）；其它模式为 null。 */
+  needSnapshotNames: string[] | null;
+  /** 正则规则条数（regex_gate）；其它模式为 null。 */
+  regexRuleCount: number | null;
+}
+
 export interface DeliveryDto {
   id: string;
   channel: "bark" | "feishu";
@@ -205,6 +282,8 @@ export interface BulletinDetailDto {
   explanation: string | null;
   evaluations: EvaluationDto[];
   deliveries: DeliveryDto[];
+  /** 三模式处理元数据；旧数据 / 基线为 null。 */
+  processing: BulletinProcessingDto | null;
 }
 
 export interface DryRunNeedResultDto {

@@ -17,8 +17,36 @@ export type EvaluationResult = ChoiceOutcome | "failed";
 /** 任务状态。`leased` 为租约持有中，`dead` 为超过最大尝试次数。 */
 export type JobStatus = "pending" | "leased" | "succeeded" | "dead";
 
-/** 后台任务种类。 */
-export type JobKind = "evaluate" | "deliver";
+/**
+ * 后台任务种类。
+ * - `evaluate`：单条线报对全部启用需求调用一次 JEV；
+ * - `screen_batch`：批次初筛，一次整体相关性问题；
+ * - `deliver`：通知投递。
+ */
+export type JobKind = "evaluate" | "screen_batch" | "deliver";
+
+/**
+ * 后台自动处理模式（互斥）：
+ * - `individual`：逐条判断（默认，兼容旧配置）；
+ * - `batch_gate`：批次初筛后全批逐条；
+ * - `regex_gate`：全局正则预筛后逐条。
+ */
+export type EvaluationMode = "individual" | "batch_gate" | "regex_gate";
+
+/** 非基线条目在自动处理链路中的阶段（本地状态，独立于模型 evaluations）。 */
+export type ProcessingStage =
+  | "pending"
+  | "ready"
+  | "filtered"
+  | "evaluated"
+  | "failed"
+  | "skipped_no_needs";
+
+/** 本地过滤来源：批次初筛排除 / 正则预筛过滤。 */
+export type ScreeningSource = "batch_gate" | "regex_gate";
+
+/** 批次子批状态；门控只能有一个终态。 */
+export type BatchPartState = "pending" | "excluded" | "expanded";
 
 /** 单渠道投递状态。 */
 export type DeliveryStatus =
@@ -153,6 +181,60 @@ export interface Notification {
   createdAt: string;
 }
 
+/** 需求快照（冻结当时的名称/备注/版本，删除需求不破坏历史）。 */
+export interface NeedSnapshot {
+  id: string;
+  name: string;
+  note: string;
+  enabled: boolean;
+  version: number;
+}
+
+/**
+ * 一次采集产生的处理 run。
+ * 保存采集时的模式、全局规则与（batch_gate 时的）需求快照；
+ * 模式/规则变更只作用于之后的新 run，旧 run 继续恢复。
+ */
+export interface EvaluationRun {
+  id: string;
+  sourceNs: string;
+  evaluationMode: EvaluationMode;
+  strategyConfigVersion: number;
+  /** regex_gate 的全局规则快照；其它模式为 null。 */
+  regexRules: string[] | null;
+  /** batch_gate 的需求快照；individual/regex_gate 为 null（执行时取实时需求）。 */
+  needSnapshots: NeedSnapshot[] | null;
+  createdAt: string;
+}
+
+/** batch_gate 的子批；成员由 bulletin_processing.batch_part_id 关联。 */
+export interface EvaluationBatchPart {
+  id: string;
+  runId: string;
+  ordinal: number;
+  state: BatchPartState;
+  gateResult: ChoiceOutcome | null;
+  gateRequestId: string | null;
+  fallbackReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 单个新增线报的本地处理记录（不伪造逐需求 evaluation）。 */
+export interface BulletinProcessing {
+  bulletinId: string;
+  runId: string;
+  batchPartId: string | null;
+  position: number;
+  stage: ProcessingStage;
+  screeningSource: ScreeningSource | null;
+  screeningReason: string | null;
+  gateRequestId: string | null;
+  matchedRuleIndex: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 管理员会话记录（token 只存哈希）。 */
 export interface SessionRecord {
   tokenHash: string;
@@ -164,7 +246,11 @@ export interface SessionRecord {
 // ── Jev 多密钥池与调用账本 ──────────────────────────────────────────────────
 
 /** 一次 Jev 请求的来源。 */
-export type JevRequestPurpose = "evaluate" | "test" | "dry_run";
+export type JevRequestPurpose =
+  | "evaluate"
+  | "batch_gate"
+  | "test"
+  | "dry_run";
 
 /**
  * 调用账本状态。
@@ -209,6 +295,10 @@ export interface JevRequest {
   purpose: JevRequestPurpose;
   bulletinId: string | null;
   jobId: string | null;
+  /** 所属处理 run（三模式追溯）；旧账本行为 null。 */
+  evaluationRunId: string | null;
+  /** batch_gate 子批；单条与旧账本行为 null。 */
+  batchPartId: string | null;
   requestedModel: string;
   responseModel: string | null;
   providerOrigin: string | null;

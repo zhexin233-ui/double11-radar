@@ -7,6 +7,7 @@ import {
   reclaimExpiredRequestReservations,
 } from "@/lib/db/repos/jev-requests";
 import { listJevKeys, touchJevKeyUsed } from "@/lib/db/repos/jev-keys";
+import { extendJobLease, isJobOwnedBy } from "@/lib/db/repos/jobs";
 import { getJevCooldown, isJevCoolingDown } from "@/lib/db/repos/jev-cooldown";
 import {
   getJevConfig,
@@ -51,7 +52,24 @@ export type JevBlockReason =
   | "cooldown"
   | "key_disabled"
   | "key_unreadable"
-  | "key_missing";
+  | "key_missing"
+  | "lease_lost";
+
+/**
+ * 一次调用的非敏感语义配置标识。
+ * 只比较标准化 baseUrl 与 model（普通并发/超时/Key 元数据变化不会因
+ * configVersion 自增而被误判成语义变化），供门控否定结果的失效判断。
+ */
+export interface JevSemanticConfig {
+  baseUrl: string;
+  model: string;
+  configVersion: number | null;
+}
+
+/** 标准化服务地址：去掉尾部斜杠，便于语义比较。 */
+export function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
 
 export interface JevCallBlocked {
   ok: false;
@@ -73,6 +91,7 @@ export interface JevCallReservation {
   timeoutMs: number;
   providerOrigin: string | null;
   configVersion: number | null;
+  semanticConfig: JevSemanticConfig;
   startedAt: Date;
 }
 
@@ -87,6 +106,11 @@ export interface JevReserveInput {
   purpose: JevRequestPurpose;
   bulletinId?: string | null;
   jobId?: string | null;
+  /** 所属处理 run / 子批（三模式追溯）。 */
+  evaluationRunId?: string | null;
+  batchPartId?: string | null;
+  /** 受信任的任务 owner；提供时会在预留事务内校准任务租约。 */
+  jobOwner?: string | null;
   /** 指定 Key（连接测试用）：必须是当前启用且可解密的 Key，不隐式启用。 */
   preferredKeyId?: string | null;
   now?: Date;
@@ -219,6 +243,26 @@ export function reserveJevCall(
 
     const configVersion = getJevConfigView(db).version;
     const providerOrigin = providerOriginFromBaseUrl(config.baseUrl);
+    const semanticConfig: JevSemanticConfig = {
+      baseUrl: normalizeBaseUrl(config.baseUrl),
+      model: config.model,
+      configVersion,
+    };
+    // 按本次真正选定的 timeoutMs 校准任务租约；失去 owner 时绝不发送请求。
+    if (input.jobId && input.jobOwner) {
+      if (!isJobOwnedBy(db, input.jobId, input.jobOwner)) {
+        return blocked(
+          "lease_lost",
+          "任务租约已失效，本次调用不再发送，交由新租约处理",
+        );
+      }
+      extendJobLease(
+        db,
+        input.jobId,
+        new Date(now.getTime() + jevRequestLeaseMs(config.timeoutMs)),
+        now,
+      );
+    }
     const reserved = insertInFlightRequest(db, {
       keyId: chosenRow.id,
       keyLabel: chosenRow.label,
@@ -226,6 +270,8 @@ export function reserveJevCall(
       purpose: input.purpose,
       bulletinId: input.bulletinId ?? null,
       jobId: input.jobId ?? null,
+      evaluationRunId: input.evaluationRunId ?? null,
+      batchPartId: input.batchPartId ?? null,
       requestedModel: config.model,
       providerOrigin,
       configVersion,
@@ -247,6 +293,7 @@ export function reserveJevCall(
         timeoutMs: config.timeoutMs,
         providerOrigin,
         configVersion,
+        semanticConfig,
         startedAt: now,
       },
     };
@@ -261,6 +308,7 @@ export interface JevCallSucceeded {
   keyLabel: string;
   response: SystemOneResponse;
   keyDisabled: boolean;
+  semanticConfig: JevSemanticConfig;
 }
 
 export interface JevCallFailed {
@@ -270,6 +318,7 @@ export interface JevCallFailed {
   keyLabel: string;
   error: JevError;
   keyDisabled: boolean;
+  semanticConfig: JevSemanticConfig;
 }
 
 export interface JevCallBlockedOutcome {
@@ -288,7 +337,19 @@ export interface JevCallRequest {
   questions: SystemOneRequest["questions"];
   bulletinId?: string | null;
   jobId?: string | null;
+  /** 受信任的任务 owner；提供时会在预留事务内校准任务租约。 */
+  jobOwner?: string | null;
+  evaluationRunId?: string | null;
+  batchPartId?: string | null;
   preferredKeyId?: string | null;
+  /**
+   * 仅在受信服务端调用时使用的响应校验：在记录成功前验证业务完整性。
+   * 返回不合法时按「一次实际失败」落账（保留 usage/model/request id），
+   * 调用方据此回退逐条，不做事后二次计失败。
+   */
+  validateResponse?: (
+    response: SystemOneResponse,
+  ) => { ok: true } | { ok: false; error: string };
 }
 
 export interface JevCallDeps {
@@ -335,6 +396,9 @@ export async function callJevWithLedger(
       purpose: request.purpose,
       bulletinId: request.bulletinId ?? null,
       jobId: request.jobId ?? null,
+      evaluationRunId: request.evaluationRunId ?? null,
+      batchPartId: request.batchPartId ?? null,
+      jobOwner: request.jobOwner ?? null,
       preferredKeyId: request.preferredKeyId ?? null,
       now: deps.now?.() ?? new Date(),
     },
@@ -364,6 +428,39 @@ export async function callJevWithLedger(
       },
     );
     const meta = readResponseMeta(response);
+    // 受信服务端的业务校验：不合法时按一次实际失败落账（保留 usage/model/request id）。
+    const validation = request.validateResponse?.(response);
+    if (validation && !validation.ok) {
+      const error = new JevError(`Jev 响应校验失败：${validation.error}`, {
+        status: meta.httpStatus,
+        retryable: false,
+        code: "invalid_response",
+        upstreamRequestId: meta.upstreamRequestId,
+        responseModel: meta.responseModel,
+        usage: meta.usage,
+      });
+      const failed = completeJevRequest(db, {
+        id: reservation.requestId,
+        status: "failed",
+        now: deps.now?.() ?? new Date(),
+        upstreamRequestId: meta.upstreamRequestId,
+        responseModel: meta.responseModel,
+        httpStatus: meta.httpStatus,
+        errorCode: error.code,
+        errorMessage: error.message,
+        inputTokens: meta.usage.inputTokens,
+        outputTokens: meta.usage.outputTokens,
+      });
+      return {
+        status: "failed",
+        requestId: reservation.requestId,
+        keyId: reservation.keyId,
+        keyLabel: reservation.keyLabel,
+        error,
+        keyDisabled: failed.keyDisabled,
+        semanticConfig: reservation.semanticConfig,
+      };
+    }
     const completed = completeJevRequest(db, {
       id: reservation.requestId,
       status: "succeeded",
@@ -381,6 +478,7 @@ export async function callJevWithLedger(
       keyLabel: reservation.keyLabel,
       response,
       keyDisabled: completed.keyDisabled,
+      semanticConfig: reservation.semanticConfig,
     };
   } catch (error) {
     const finishedAt = deps.now?.() ?? new Date();
@@ -406,6 +504,7 @@ export async function callJevWithLedger(
         keyLabel: reservation.keyLabel,
         error,
         keyDisabled: completed.keyDisabled,
+        semanticConfig: reservation.semanticConfig,
       };
     }
     // 未知异常：先把预留落成失败释放容量（用量未知），再交给调用方处理。
