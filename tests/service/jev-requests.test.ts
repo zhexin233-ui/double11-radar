@@ -17,6 +17,9 @@ import {
 } from "@/lib/db/repos/jev-requests";
 import { getJevKey, setJevKeyCooldown } from "@/lib/db/repos/jev-keys";
 import { getJevCooldown, setJevCooldown } from "@/lib/db/repos/jev-cooldown";
+import { claimJob, enqueueJob, getJob } from "@/lib/db/repos/jobs";
+import { insertBulletinIfAbsent } from "@/lib/db/repos/bulletins";
+import { makeNormalized } from "../helpers/bulletins";
 import { JevError } from "@/lib/jev/client";
 
 /**
@@ -500,6 +503,116 @@ describe("调用账本与真实结果一次落账（AC6）", () => {
       // 共享退避与 Key 冷却都被写入
       expect(getJevCooldown(ctx.db).until).not.toBeNull();
       expect(getJevKey(ctx.db, key.id)!.cooldownUntil).not.toBeNull();
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("批次初筛账本与任务租约校准（AC10/AC11）", () => {
+  it("batch_gate 一次调用只记一行，并关联 run/part", async () => {
+    const ctx = createTestDb();
+    try {
+      saveJevConfig(ctx.db, { apiKey: "sk-batch" }, KEY);
+      const outcome = await callJevWithLedger(
+        ctx.db,
+        {
+          purpose: "batch_gate",
+          state: "{}",
+          questions: QUESTIONS,
+          jobId: "job-x",
+          evaluationRunId: "run-1",
+          batchPartId: "part-1",
+        },
+        { callSystemOne: succeeding() as never },
+      );
+      expect(outcome.status).toBe("succeeded");
+      const row = ctx.db
+        .prepare(
+          "SELECT purpose, evaluation_run_id, batch_part_id FROM jev_requests",
+        )
+        .get() as {
+        purpose: string;
+        evaluation_run_id: string | null;
+        batch_part_id: string | null;
+      };
+      expect(row.purpose).toBe("batch_gate");
+      expect(row.evaluation_run_id).toBe("run-1");
+      expect(row.batch_part_id).toBe("part-1");
+      expect(requestCount(ctx.db)).toBe(1);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("预留事务内按实际 timeoutMs 校准任务租约（AC10）", async () => {
+    const ctx = createTestDb();
+    try {
+      saveJevConfig(
+        ctx.db,
+        { apiKey: "sk-lease", timeoutMs: 60_000, concurrency: 1, jobsPerRound: 1 },
+        KEY,
+      );
+      const { id: bulletinId } = insertBulletinIfAbsent(
+        ctx.db,
+        makeNormalized({ sourceId: "lease-cal-1" }),
+        { baseline: false },
+      );
+      const { id: jobId } = enqueueJob(ctx.db, {
+        kind: "evaluate",
+        payloadKey: `evaluate:${bulletinId}`,
+        payload: { bulletinId },
+        runAt: "2026-10-16T00:00:00.000Z",
+      });
+      const base = new Date("2026-10-16T00:00:00.000Z");
+      const owner = "owner-cal";
+      // 用很短的租约领取，模拟「claim 时用了旧超时，发送前管理员又增大 timeout」。
+      const claimed = claimJob(ctx.db, owner, 1_000, base, "evaluate");
+      expect(claimed?.id).toBe(jobId);
+
+      const outcome = await callJevWithLedger(
+        ctx.db,
+        {
+          purpose: "evaluate",
+          state: "{}",
+          questions: QUESTIONS,
+          jobId,
+          jobOwner: owner,
+        },
+        { callSystemOne: succeeding() as never, now: () => base },
+      );
+      expect(outcome.status).toBe("succeeded");
+      const leaseUntil = Date.parse(getJob(ctx.db, jobId)!.leaseUntil!);
+      expect(leaseUntil).toBeGreaterThanOrEqual(
+        base.getTime() + 60_000 + 30_000,
+      );
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("失去 owner 时返回 lease_lost，不发请求、不写账本（AC10）", async () => {
+    const ctx = createTestDb();
+    try {
+      saveJevConfig(ctx.db, { apiKey: "sk-lease-lost" }, KEY);
+      const callSystemOne = succeeding();
+      const outcome = await callJevWithLedger(
+        ctx.db,
+        {
+          purpose: "evaluate",
+          state: "{}",
+          questions: QUESTIONS,
+          jobId: "missing-job",
+          jobOwner: "owner-x",
+        },
+        { callSystemOne: callSystemOne as never },
+      );
+      expect(outcome.status).toBe("blocked");
+      if (outcome.status === "blocked") {
+        expect(outcome.block.reason).toBe("lease_lost");
+      }
+      expect(callSystemOne).not.toHaveBeenCalled();
+      expect(requestCount(ctx.db)).toBe(0);
     } finally {
       ctx.close();
     }

@@ -35,6 +35,9 @@ const EXPECTED_TABLES = [
   "deliveries",
   "jev_api_keys",
   "jev_requests",
+  "evaluation_runs",
+  "evaluation_batch_parts",
+  "bulletin_processing",
 ];
 
 describe("db/migrate", () => {
@@ -61,7 +64,7 @@ describe("db/migrate", () => {
       const versions = ctx.db
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((row) => row.version)).toEqual([1, 2]);
+      expect(versions.map((row) => row.version)).toEqual([1, 2, 3]);
     } finally {
       ctx.close();
     }
@@ -97,8 +100,8 @@ describe("db/migrate", () => {
       migrate(db, [migrations[0]]);
       setSecret(db, LEGACY_JEV_SECRET_NAMESPACE, "sk-legacy-secret", key);
 
-      // 升级到 V2：数据迁移在同一事务内执行。
-      expect(migrate(db).applied).toEqual([2]);
+      // 升级到 V2/V3：数据迁移在同一事务内执行。
+      expect(migrate(db).applied).toEqual([2, 3]);
       expect(listJevKeys(db)).toHaveLength(1);
       expect(getJevKey(db, LEGACY_JEV_KEY_ID)?.enabled).toBe(true);
       expect(getSecret(db, LEGACY_JEV_KEY_NAMESPACE, key)).toBe("sk-legacy-secret");
@@ -126,6 +129,37 @@ describe("db/migrate", () => {
     const ctx = createTestDb();
     try {
       expect(listJevKeys(ctx.db)).toEqual([]);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("V3 新增三模式表与账本关联列，重复迁移不重复加列（AC2/AC11）", () => {
+    const ctx = createTestDb();
+    try {
+      const columns = ctx.db
+        .prepare("PRAGMA table_info(jev_requests)")
+        .all() as Array<{ name: string }>;
+      const names = columns.map((row) => row.name);
+      expect(names).toContain("evaluation_run_id");
+      expect(names).toContain("batch_part_id");
+
+      const processingColumns = ctx.db
+        .prepare("PRAGMA table_info(bulletin_processing)")
+        .all() as Array<{ name: string }>;
+      expect(processingColumns.map((row) => row.name)).toEqual(
+        expect.arrayContaining([
+          "bulletin_id",
+          "run_id",
+          "batch_part_id",
+          "stage",
+          "screening_source",
+          "matched_rule_index",
+        ]),
+      );
+
+      // 重复迁移为幂等：不会因二次 ALTER 报错或重复应用。
+      expect(migrate(ctx.db).applied).toEqual([]);
     } finally {
       ctx.close();
     }
