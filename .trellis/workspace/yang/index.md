@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-10-16
+- **Total Sessions**: 5
+- **Last Active**: 2026-10-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~204 | Active |
+| `journal-1.md` | ~251 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-10-17 | 匹配确认门控与判定追溯（R1+R2）落地 | `a23e742`, `95e7ae2`, `bb1398c`, `57d970f`, `18eec09` | `main` |
 | 4 | 2026-10-16 | JEV 三模式自动处理落地 | `9522cc6`, `a7dcb84`, `be28177` | `main` |
 | 3 | 2026-10-15 | Apple 官网式全站布局重构 | `7655d31`, `b0d491e` | `main` |
 | 2 | 2026-10-15 | 校对 .trellis/spec 并完成 bootstrap 任务归档 | `5552576` | `main` |

@@ -224,3 +224,28 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: 匹配确认门控与判定追溯（R1+R2）落地
+
+**Date**: 2026-10-17
+**Task**: 匹配确认门控与判定追溯（R1+R2）落地
+**Branch**: `main`
+
+### Summary
+
+按获批规划实施 10-17-match-confirmation：新增纯决策模块 src/lib/jev/match-policy.ts（match-confirmation-v1，p_matched≥0.80 且三态分布完整合法才自动确认，confidence 仅展示），自动判断与试判共用同一函数与策略快照；V4 迁移追加 evaluations 5 个可空追溯列（不回填旧行、不改唯一键），repo 独占策略 JSON 解码；业务降级 error=null 不重试不计 Key 失败；通知只从本次成功 upsert 的确认项构造，旧通知不撤销不改写；详情/试判/列表展示原始选择→业务结果、原因、分数与策略快照，旧记录显示未记录。trellis-check 全量审查修复 3 处（DTO 缺 ruleVersion/configVersion 镜像、choice_probability_conflict 文案、解析失败行缺 pipeline 断言）。验证：pnpm test 284 通过、typecheck/lint 干净、build 成功。规范更新 database-guidelines（V4 七段 code-spec）、error-handling（降级≠失败）、backend/index 第 8 条规则、frontend 文案约定。未部署、未真实调用模型、未改生产数据；浅深主题人工浏览器检查仍未执行。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a23e742` | (see git log) |
+| `95e7ae2` | (see git log) |
+| `bb1398c` | (see git log) |
+| `57d970f` | (see git log) |
+| `18eec09` | (see git log) |
+
+### Status
+
+[OK] **Completed**
