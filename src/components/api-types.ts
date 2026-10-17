@@ -520,6 +520,15 @@ export const NEEDS_PAGE_SIZE = 10;
 /** 采集频道每页条数（与服务端默认一致）。 */
 export const CHANNELS_PAGE_SIZE = 20;
 
+/** 密钥管理弹窗每页条数（客户端分页：`/api/settings/jev.keys` 一次性返回完整数组）。 */
+export const JEV_KEYS_PAGE_SIZE = 10;
+
+/** 按 Key 汇总弹窗每页条数（客户端分页：usage.byKey 一次性返回完整数组）。 */
+export const JEV_USAGE_BY_KEY_PAGE_SIZE = 10;
+
+/** 「按 Key 汇总」在页面上保留的预览行数（沿用服务端排序：已知费用降序）。 */
+export const JEV_USAGE_BY_KEY_PREVIEW = 5;
+
 /** 记录页自动刷新间隔（毫秒）；默认关闭，由用户显式开启。 */
 export const BULLETIN_AUTO_REFRESH_MS = 5000;
 

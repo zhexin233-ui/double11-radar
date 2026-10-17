@@ -42,3 +42,17 @@ export function pageRange(
   const end = Math.min(start + pageSize - 1, total);
   return { start, end };
 }
+
+/**
+ * 取客户端分页的某一页（数据已全量在前端）。
+ *
+ * `total` 即 `items.length`；越界 / 非法页码先经 `clampPage` 收敛，
+ * 非法页大小返回空数组，空集返回空数组。
+ */
+export function pageSlice<T>(items: T[], page: number, pageSize: number): T[] {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  if (!Number.isFinite(pageSize) || pageSize <= 0) return [];
+  const safePage = clampPage(page, items.length, pageSize);
+  const start = safePage * pageSize;
+  return items.slice(start, start + pageSize);
+}

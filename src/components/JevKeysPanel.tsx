@@ -1,0 +1,605 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Button,
+  Fieldset,
+  Modal,
+  PasswordInput,
+  Radio,
+  TextInput,
+} from "@mantine/core";
+import { apiSend, errorMessage } from "@/components/api-client";
+import { TableScroll } from "@/components/ui/TableScroll";
+import { Pagination } from "@/components/ui/Pagination";
+import { Feedback } from "@/components/ui/Feedback";
+import { StatusBadge } from "@/components/status-badge";
+import { clampPage, pageSlice } from "@/components/pagination-model";
+import { formatTime } from "@/components/format";
+import {
+  JE_KEY_FAILURE_THRESHOLD,
+  JEV_KEYS_PAGE_SIZE,
+  type JevKeyDto,
+  type SecretStateDto,
+  type TestResultDto,
+} from "@/components/api-types";
+
+type SecretAction = "keep" | "replace" | "clear";
+type ConfirmKind = "clear" | "disable" | "delete";
+
+interface Notice {
+  kind: "success" | "error";
+  text: string;
+}
+
+interface PendingConfirm {
+  kind: ConfirmKind;
+  key: JevKeyDto;
+}
+
+/** Radio.Group 的值是 string；只接受三个已知选项，避免在 JSX 里用 `as` 断言。 */
+function toSecretAction(value: string): SecretAction {
+  return value === "replace" || value === "clear" ? value : "keep";
+}
+
+function secretStateLabel(state: SecretStateDto): string {
+  if (state.unreadable) return "无法解密（加密密钥可能已变更）";
+  if (!state.configured) return "未配置";
+  return state.masked ? `已配置 ${state.masked}` : "已配置";
+}
+
+function enabledBadge(enabled: boolean) {
+  return (
+    <StatusBadge status={enabled ? "matched" : "baseline"}>
+      {enabled ? "已启用" : "已停用"}
+    </StatusBadge>
+  );
+}
+
+/**
+ * 弹窗内反馈：密钥操作的结果不能只写到页面顶部——弹窗打开时会被遮罩挡住。
+ * 三个 Modal body 里各渲染一次，保证用户当前能看到的那一层总有结果。
+ */
+function PanelNotice(props: { notice: Notice | null; loadError?: string | null }) {
+  return (
+    <>
+      {props.loadError ? (
+        <Feedback kind="error">
+          刷新失败：{props.loadError}（下方为上次成功数据）
+        </Feedback>
+      ) : null}
+      {props.notice ? (
+        <Feedback kind={props.notice.kind}>{props.notice.text}</Feedback>
+      ) : null}
+    </>
+  );
+}
+
+/** 新增密钥表单：只把明文交给服务端加密保存，成功后清空输入。 */
+function JevKeyAddForm(props: {
+  onDone: (notice: string) => void;
+  onError: (message: string) => void;
+  reload: () => Promise<void>;
+}) {
+  const [label, setLabel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!label.trim() || !apiKey.trim()) return;
+    setBusy(true);
+    try {
+      await apiSend<JevKeyDto>("/api/settings/jev/keys", "POST", {
+        label: label.trim(),
+        apiKey: apiKey.trim(),
+      });
+      setLabel("");
+      setApiKey("");
+      props.onDone("已添加 Jev 密钥。");
+      await props.reload();
+    } catch (caught) {
+      props.onError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="row" onSubmit={submit}>
+      <TextInput
+        placeholder="Key 名称，例如：主账号"
+        aria-label="Key 名称"
+        value={label}
+        onChange={(event) => setLabel(event.currentTarget.value)}
+        maxLength={100}
+        disabled={busy}
+        style={{ flex: "1 1 160px" }}
+      />
+      <PasswordInput
+        placeholder="API 密钥（只在服务端加密保存）"
+        aria-label="API 密钥"
+        value={apiKey}
+        onChange={(event) => setApiKey(event.currentTarget.value)}
+        maxLength={500}
+        autoComplete="off"
+        disabled={busy}
+        style={{ flex: "2 1 260px" }}
+      />
+      <Button
+        type="submit"
+        loading={busy}
+        disabled={!label.trim() || !apiKey.trim()}
+        style={{ alignSelf: "flex-start" }}
+      >
+        添加密钥
+      </Button>
+    </form>
+  );
+}
+
+/** 只读密钥表：展示态与单元格语义与旧行内实现一致，操作只剩「编辑」。 */
+function JevKeysTable(props: { rows: JevKeyDto[]; onEdit: (id: string) => void }) {
+  return (
+    <TableScroll label="Jev API 密钥列表" minTableWidth={1100}>
+      <table>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>密钥</th>
+            <th>状态</th>
+            <th>连续失败</th>
+            <th>禁用原因 / 最近错误</th>
+            <th>最近使用</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((item) => (
+            <tr key={item.id}>
+              <td>{item.label}</td>
+              <td className="small">{secretStateLabel(item.secretState)}</td>
+              <td>{enabledBadge(item.enabled)}</td>
+              <td className="small">
+                {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
+              </td>
+              <td className="small">
+                {item.disabledReason ? <div>{item.disabledReason}</div> : null}
+                {item.lastError ? <div className="muted">{item.lastError}</div> : null}
+                {!item.disabledReason && !item.lastError ? "—" : null}
+              </td>
+              <td className="small">{formatTime(item.lastUsedAt)}</td>
+              <td>
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  aria-label={`编辑「${item.label}」`}
+                  onClick={() => props.onEdit(item.id)}
+                >
+                  编辑
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableScroll>
+  );
+}
+
+/** 管理弹窗 body：持有页码；关闭弹窗即卸载，重开自动回到第 1 页。 */
+function KeysModalBody(props: {
+  keys: JevKeyDto[];
+  notice: Notice | null;
+  loadError?: string | null;
+  onEdit: (id: string) => void;
+  onDone: (message: string) => void;
+  onError: (message: string) => void;
+  reload: () => Promise<void>;
+}) {
+  const [page, setPage] = useState(0);
+  const total = props.keys.length;
+  const enabledCount = props.keys.filter((key) => key.enabled).length;
+  const safePage = clampPage(page, total, JEV_KEYS_PAGE_SIZE);
+
+  return (
+    <div className="stack">
+      <PanelNotice notice={props.notice} loadError={props.loadError} />
+      <p className="muted small" style={{ margin: 0 }}>
+        共 {total} 个 Key · {enabledCount} 个启用。
+      </p>
+      <JevKeyAddForm
+        onDone={props.onDone}
+        onError={props.onError}
+        reload={props.reload}
+      />
+      {total === 0 ? (
+        <p className="muted" style={{ margin: 0 }}>
+          还没有配置 Jev 密钥。添加后，后台判断、连接测试与需求试判都会从密钥池调度。
+        </p>
+      ) : (
+        <>
+          <JevKeysTable
+            rows={pageSlice(props.keys, safePage, JEV_KEYS_PAGE_SIZE)}
+            onEdit={props.onEdit}
+          />
+          <Pagination
+            page={safePage}
+            total={total}
+            pageSize={JEV_KEYS_PAGE_SIZE}
+            onPage={setPage}
+            unit="个 Key"
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 编辑密钥弹窗 body：保留旧行内的全部能力（重命名 / 密钥变更 / 启停 / 测试 / 删除）。
+ *
+ * 非破坏性写入（重命名、替换密钥、连接测试）由本组件的 `guard` 直接提交；
+ * 清除 / 停用 / 删除一律通过 `onRequestConfirm` 走父级的确认弹窗，不再用浏览器原生确认框。
+ */
+function KeyEditForm(props: {
+  item: JevKeyDto;
+  onDone: (message: string) => void;
+  onError: (message: string) => void;
+  onRequestConfirm: (kind: ConfirmKind, key: JevKeyDto) => void;
+  reload: () => Promise<void>;
+}) {
+  const { item } = props;
+  const [secretAction, setSecretAction] = useState<SecretAction>("keep");
+  const [secret, setSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const base = `/api/settings/jev/keys/${item.id}`;
+
+  async function guard(action: () => Promise<string>) {
+    setBusy(true);
+    try {
+      const message = await action();
+      setSecretAction("keep");
+      setSecret("");
+      props.onDone(message);
+      await props.reload();
+    } catch (caught) {
+      props.onError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function rename(next: string) {
+    void guard(async () => {
+      await apiSend(base, "PATCH", { label: next });
+      return `已重命名为「${next}」。`;
+    });
+  }
+
+  function applySecret() {
+    if (secretAction === "clear") {
+      props.onRequestConfirm("clear", item);
+      return;
+    }
+    if (secretAction === "replace") {
+      const value = secret.trim();
+      if (!value) return;
+      void guard(async () => {
+        await apiSend(base, "PATCH", { apiKey: value });
+        return `已替换「${item.label}」的密钥，失败计数清零并进入新 generation。`;
+      });
+    }
+  }
+
+  function toggleEnabled() {
+    if (item.enabled) {
+      props.onRequestConfirm("disable", item);
+      return;
+    }
+    void guard(async () => {
+      await apiSend(base, "PATCH", { enabled: true });
+      return `已恢复「${item.label}」，失败计数清零。`;
+    });
+  }
+
+  function testKey() {
+    void guard(async () => {
+      const result = await apiSend<TestResultDto>("/api/settings/jev/test", "POST", {
+        keyId: item.id,
+      });
+      if (!result.ok) {
+        throw new Error(`「${item.label}」连接测试失败：${result.message ?? "未知原因"}`);
+      }
+      return `「${item.label}」连接测试成功：${result.message ?? ""}`;
+    });
+  }
+
+  function removeKey() {
+    props.onRequestConfirm("delete", item);
+  }
+
+  return (
+    <div className="stack">
+      <dl className="facts">
+        <dt>密钥状态</dt>
+        <dd>{secretStateLabel(item.secretState)}</dd>
+        <dt>启用状态</dt>
+        <dd>{enabledBadge(item.enabled)}</dd>
+        <dt>连续失败</dt>
+        <dd>
+          {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
+        </dd>
+        <dt>禁用原因 / 最近错误</dt>
+        <dd>
+          {item.disabledReason ? <div>{item.disabledReason}</div> : null}
+          {item.lastError ? <div className="muted">{item.lastError}</div> : null}
+          {!item.disabledReason && !item.lastError ? "—" : null}
+        </dd>
+        <dt>最近使用</dt>
+        <dd>{formatTime(item.lastUsedAt)}</dd>
+        <dt>创建时间</dt>
+        <dd>{formatTime(item.createdAt)}</dd>
+        <dt>更新时间</dt>
+        <dd>{formatTime(item.updatedAt)}</dd>
+      </dl>
+
+      <TextInput
+        defaultValue={item.label}
+        label="名称"
+        aria-label="密钥名称"
+        size="sm"
+        disabled={busy}
+        onBlur={(event) => {
+          const next = event.currentTarget.value.trim();
+          if (next && next !== item.label) rename(next);
+          else if (!next) event.currentTarget.value = item.label;
+        }}
+      />
+
+      <Fieldset legend="密钥">
+        <div className="stack">
+          <Radio.Group
+            value={secretAction}
+            onChange={(next) => setSecretAction(toSecretAction(next))}
+            aria-label={`${item.label}密钥处理方式`}
+          >
+            <div className="row small">
+              <Radio value="keep" label="保留" disabled={busy} />
+              <Radio value="replace" label="替换" disabled={busy} />
+              <Radio value="clear" label="清除" disabled={busy} />
+            </div>
+          </Radio.Group>
+          {secretAction === "replace" ? (
+            <PasswordInput
+              placeholder="新的 API 密钥"
+              aria-label="新的 API 密钥"
+              value={secret}
+              disabled={busy}
+              onChange={(event) => setSecret(event.currentTarget.value)}
+            />
+          ) : null}
+          {secretAction !== "keep" ? (
+            <Button
+              type="button"
+              size="sm"
+              loading={busy}
+              disabled={secretAction === "replace" && !secret.trim()}
+              onClick={applySecret}
+              style={{ alignSelf: "flex-start" }}
+            >
+              应用密钥变更
+            </Button>
+          ) : null}
+        </div>
+      </Fieldset>
+
+      <div className="row">
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          disabled={busy}
+          onClick={toggleEnabled}
+        >
+          {item.enabled ? "停用" : "恢复"}
+        </Button>
+        <Button type="button" variant="default" size="sm" disabled={busy} onClick={testKey}>
+          测试
+        </Button>
+        <Button
+          type="button"
+          variant="subtle"
+          color="red"
+          size="sm"
+          disabled={busy}
+          onClick={removeKey}
+        >
+          删除
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** 确认弹窗文案（沿用原破坏性操作的确认措辞，逐字不变）。 */
+function confirmText(pending: PendingConfirm): string {
+  switch (pending.kind) {
+    case "clear":
+      return `清除「${pending.key.label}」的密钥？清除后会停用该 Key，需要替换密钥后才能再次启用。`;
+    case "disable":
+      return `停用「${pending.key.label}」？停用后不再分配新请求，可在需要时手动恢复。`;
+    case "delete":
+      return `删除 Key「${pending.key.label}」？密钥密文会被清除，历史调用账本保留非敏感快照。`;
+  }
+}
+
+/**
+ * 密钥池管理：三个弹窗（管理 / 编辑 / 确认）+ 新增表单 + 只读分页表。
+ *
+ * `keys` 由页面 `useApiResource` 持有并下传，本组件不复制进 state；
+ * 编辑对象每渲染从 `props.keys` 派生，`reload()` 后立即显示最新值。
+ */
+export function JevKeysPanel(props: {
+  opened: boolean;
+  onClose: () => void;
+  keys: JevKeyDto[];
+  loadError?: string | null;
+  reload: () => Promise<void>;
+}) {
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  // 不存快照：reload() 改变 updatedAt 后编辑弹窗立即显示新值；Key 被删除则自动关闭。
+  const editingKey = props.keys.find((key) => key.id === editingKeyId) ?? null;
+
+  function closeKeys() {
+    setEditingKeyId(null);
+    setPendingConfirm(null);
+    setNotice(null);
+    props.onClose();
+  }
+
+  function openEdit(id: string) {
+    setNotice(null);
+    setEditingKeyId(id);
+  }
+
+  function requestConfirm(kind: ConfirmKind, key: JevKeyDto) {
+    setNotice(null);
+    setPendingConfirm({ kind, key });
+  }
+
+  function finishEdit(message: string) {
+    setNotice({ kind: "success", text: message });
+  }
+
+  function failEdit(message: string) {
+    setNotice({ kind: "error", text: message });
+  }
+
+  // 破坏性操作共用：成功关确认弹窗并刷新；失败把错误写进弹窗内并保留确认弹窗以便重试。
+  async function guard(action: () => Promise<string>): Promise<boolean> {
+    setConfirmBusy(true);
+    try {
+      const message = await action();
+      setNotice({ kind: "success", text: message });
+      setPendingConfirm(null);
+      await props.reload();
+      return true;
+    } catch (caught) {
+      setNotice({ kind: "error", text: errorMessage(caught) });
+      return false;
+    } finally {
+      setConfirmBusy(false);
+    }
+  }
+
+  async function confirmPending() {
+    const pending = pendingConfirm;
+    if (!pending) return;
+    const { kind, key } = pending;
+    const base = `/api/settings/jev/keys/${key.id}`;
+
+    const message =
+      kind === "clear"
+        ? `已清除「${key.label}」的密钥并停用该 Key。`
+        : kind === "disable"
+          ? `已停用「${key.label}」。`
+          : `已删除 Key「${key.label}」。`;
+
+    const ok = await guard(async () => {
+      if (kind === "clear") {
+        await apiSend(base, "PATCH", { apiKey: { clear: true } });
+      } else if (kind === "disable") {
+        await apiSend(base, "PATCH", { enabled: false });
+      } else {
+        await apiSend(base, "DELETE");
+      }
+      return message;
+    });
+
+    if (ok && kind === "delete") setEditingKeyId(null);
+  }
+
+  return (
+    <Modal.Stack>
+      <Modal
+        opened={props.opened}
+        onClose={closeKeys}
+        stackId="jev-keys"
+        title="Jev API 密钥"
+        size={1200}
+        centered
+      >
+        <KeysModalBody
+          keys={props.keys}
+          notice={notice}
+          loadError={props.loadError}
+          onEdit={openEdit}
+          onDone={finishEdit}
+          onError={failEdit}
+          reload={props.reload}
+        />
+      </Modal>
+
+      <Modal
+        opened={editingKey !== null}
+        onClose={() => setEditingKeyId(null)}
+        stackId="jev-key-edit"
+        title={editingKey ? `编辑密钥：${editingKey.label}` : "编辑密钥"}
+        size="lg"
+        centered
+      >
+        <div className="stack">
+          <PanelNotice notice={notice} />
+          {editingKey ? (
+            <KeyEditForm
+              key={`${editingKey.id}:${editingKey.updatedAt}`}
+              item={editingKey}
+              onDone={finishEdit}
+              onError={failEdit}
+              onRequestConfirm={requestConfirm}
+              reload={props.reload}
+            />
+          ) : null}
+        </div>
+      </Modal>
+
+      <Modal
+        opened={pendingConfirm !== null}
+        onClose={() => setPendingConfirm(null)}
+        stackId="jev-confirm"
+        title="确认操作"
+        centered
+      >
+        <div className="stack">
+          <PanelNotice notice={notice} />
+          <p style={{ margin: 0 }}>{pendingConfirm ? confirmText(pendingConfirm) : ""}</p>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <Button
+              variant="default"
+              size="sm"
+              disabled={confirmBusy}
+              onClick={() => setPendingConfirm(null)}
+            >
+              取消
+            </Button>
+            <Button
+              color="red"
+              size="sm"
+              loading={confirmBusy}
+              onClick={() => void confirmPending()}
+            >
+              确认
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </Modal.Stack>
+  );
+}
