@@ -1,0 +1,33 @@
+{
+  "id": "jev-keys-modal-pagination",
+  "name": "jev-keys-modal-pagination",
+  "title": "Jev 页面密钥列表与按 Key 汇总改为弹窗分页表格",
+  "description": "Jev 配置页的 API 密钥列表（约 200 个 Key）与「按 Key 汇总」两处长表未分页，整页被拉成长卷。改为页面只留摘要与入口按钮，点击后在弹窗内显示分页表格（每页 10 条）；密钥写操作整体搬进弹窗，破坏性操作改用确认弹窗。纯前端改动，不改服务端接口。",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "yang",
+  "assignee": "yang",
+  "createdAt": "2026-10-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/app/(admin)/jev/page.tsx",
+    "src/components/JevKeysPanel.tsx",
+    "src/components/format.ts",
+    "src/components/pagination-model.ts",
+    "src/components/api-types.ts",
+    "tests/components/pagination-model.test.ts"
+  ],
+  "notes": "",
+  "meta": {}
+}

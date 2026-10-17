@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "结构规则 3（列表必须分页或书面说明原因）、四条结构规则、Mantine 使用边界与编辑式表格约定"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Pagination/TableScroll/Section 原语契约、uncontrolled blur 编辑模式、破坏性确认用 Modal 而非 window.confirm、宽表 minTableWidth"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "react-hooks/set-state-in-effect 与 set-state-in-render 约束、客户端分页收敛写法、浅深主题验收、反馈样式与文案约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "服务端数据只有一份（useApiResource）；哪些状态可以放组件内、哪些必须由页面持有"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "DTO 边界与禁用 as 断言；页大小常量的客户端来源；哪些常量有服务端镜像、哪些没有"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "新组件放 src/components/ 而非 ui/ 的判据；页面与可复用组件的分工"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "禁止重复分页数学、重复单元格逻辑与重复格式化；提交前复用自查清单"}
+{"file": ".trellis/tasks/10-17-jev-keys-modal-pagination/research/current-behavior.md", "reason": "现有代码锚点与行号、JevKeyRow 请求契约、三处 window.confirm 文案、Mantine v9 Modal/Modal.Stack 源码事实、无 jsdom 的测试基建限制"}

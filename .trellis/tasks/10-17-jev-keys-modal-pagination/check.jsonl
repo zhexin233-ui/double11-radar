@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "验收结构规则 3（分页）、Mantine 边界与表格约定是否被遵守"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "复核分页/TableScroll 用法、无新增 window.confirm、空态段落而非空表格"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "typecheck/lint/test/build 门槛、无 set-state-in-effect、浅深主题、反馈 kind 与结论一致、无硬编码颜色"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "复核没有把服务端数据复制进组件 state、没有乐观本地编辑"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "复核新增常量与 DTO 用法、无 as 断言、服务端契约未被误改"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "复核新文件位置与 ui/ 边界、没有第二个 fetch helper"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复核分页数学/单元格逻辑/格式化没有出现第二份实现"}
+{"file": ".trellis/tasks/10-17-jev-keys-modal-pagination/research/current-behavior.md", "reason": "逐条比对请求契约、确认文案、Modal 栈源码事实与测试基建限制是否在实现中被遵守"}
