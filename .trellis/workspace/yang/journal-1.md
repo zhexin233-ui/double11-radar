@@ -202,3 +202,25 @@
 ### Status
 
 [OK] **Completed**
+
+## Session 5: 管理台编辑式列表 + 服务端分页 + 深色主题
+
+**Date**: 2026-10-16
+**Task**: 管理台视觉重构与列表分页（`.trellis/tasks/10-16-admin-ui-redesign`）
+**Branch**: `main`
+
+### Summary
+
+按 cssdesignawards 的条目分割语言重做管理台视觉：区块改规则线、新增 `.eyebrow`/`.list*` 编辑式条目列表、表格改发丝线 + 表头小标签；引入 Mantine v9 承担交互原语与主题（浅色/深色/跟随系统三态，`ColorSchemeScript` 首帧注入无闪烁），`globals.css` 的颜色令牌全部别名到 Mantine CSS 变量，因此自定义排版自动跟随主题；`/needs`、`/channels` 补服务端分页，四处列表共用 `Pagination` + `clampPage` 收敛（删掉了 `bulletins` 里那条 `set-state-in-effect` 豁免），并把两份重复的 `parseIntegerParam` 合并到 `src/lib/http/query.ts`。
+
+规划期做了两轮用户选型（视觉方向、覆盖范围、分页方式，以及追加的 UI 库与深色主题需求），实施期分三次派发子代理（主题骨架 → 组件+服务端分页 → 逐页改造）。自测发现并修掉 5 处视觉/契约缺陷：`.page` gap 与 `.section` margin 叠加出的 ~150px 空白、深色表头对比不足、需求行被两个表单框包住、行内状态与 Switch label 重复、`status` 页仍引用已删除的 `--danger` 令牌。用 headless Chrome + CDP 自建截图与主题交互验证（截图落在 `/tmp/shots/`，含 8 页 × 浅/深），实测三态切换/持久化/console 无 hydration 警告。四道门槛全绿（lint/typecheck/test 260/build，`/api/*` 全动态），未部署。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `41fc9bf` | feat(ui): 管理台改编辑式列表、服务端分页与深色主题（Mantine v9） |
+
+### Status
+
+[OK] **Completed**
