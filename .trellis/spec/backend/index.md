@@ -55,3 +55,9 @@ module boundaries, 官方费率与用量契约). 该归档设计是 **Jev Key �
    绝不能被门控/正则过滤吞掉。本地过滤（批次全否 / 正则未匹配）不得写伪造的
    `evaluations` 或通知，来源记录在 `bulletin_processing`。详见
    [Database Guidelines](./database-guidelines.md) 的「三模式自动处理」章节。
+8. **逐需求业务确认只有一个决策入口。** 模型原始三态 → 业务结果必须经过
+   `src/lib/jev/match-policy.ts` 的 `decideMatchConfirmation`（纯函数，不读 env/DB/时间）；
+   自动判断与需求试判显式调用同一函数与同一策略快照，不得各自复写门槛逻辑。
+   基础解析兼容语义（`prompt.ts` / `batch-prompt.ts`）保持原样——新门控位于解析之后，
+   不得放宽 `parseAnswer` 的失败语义来配合降级。详见
+   [Database Guidelines](./database-guidelines.md) 的「匹配确认门控与判定追溯（V4）」章节。

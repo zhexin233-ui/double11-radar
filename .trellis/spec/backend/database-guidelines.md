@@ -207,6 +207,8 @@ V2 增量迁移新增两张表（`src/lib/db/migrations.ts` 的 `V2_KEYS_AND_LED
 - `tests/service/jev-usage.test.ts`、`tests/jev/pricing.test.ts` — 汇总与未知计价：
   1,000,000 输入 = $0.042、输出免费、缺失输入为未知、极小正数不显示为 $0.00。
 - `tests/worker/evaluator-lease.test.ts` — owner 守卫；未发出上游请求的重排不累计 `attempts`。
+- `tests/db/repos.test.ts` / `tests/db/migrate.test.ts` — V4 追溯列可空、往返、同键重试覆盖与重复迁移幂等（见下节）。
+- `tests/jev/match-policy.test.ts` — 分布合法性、0.80 边界与原因码矩阵（见下节）。
 
 ## Scenario: 三模式自动处理（run / 子批 / 处理记录）
 
@@ -294,4 +296,122 @@ const jevConfig = getJevConfig(db);
 insertEvaluationRun(db, { ...snapshot });
 enqueueJob(db, { kind: "screen_batch", payloadKey: `screen_batch:${partId}`, payload: { partId } });
 // 展开时只 enqueue evaluate:<id>，由统一 claim 循环继续领取
+```
+
+---
+
+## Scenario: 匹配确认门控与判定追溯（V4）
+
+### 1. Scope / Trigger
+
+- 触发：新增 V4 DDL（`evaluations` 5 个可空追溯列）、`DecisionReason` 枚举、
+  `src/lib/jev/match-policy.ts` 纯决策模块，以及「通知只含本次确认项」的语义收敛。
+- 问题：模型选择 matched 但概率分布缺乏依据时，曾被当作明确匹配并触发通知，且无法解释。
+- 来源设计：`.trellis/tasks/10-17-match-confirmation/design.md`（R1 门控 + R2 追溯）。
+  品牌证据约束（R3）与历史重算治理（R4）不在本期。
+
+### 2. Signatures
+
+```ts
+// src/lib/db/migrations.ts —— 追加版本 4，不改 V1/V2/V3，不改唯一键
+const V4_MATCH_CONFIRMATION_TRACE: string;
+// ALTER TABLE evaluations ADD COLUMN model_result / decision_reason /
+//   decision_policy_version / decision_policy_json / jev_request_id  TEXT（全部可空）
+
+// src/lib/jev/match-policy.ts —— 纯函数，不读 env/DB/时间
+export const MATCH_CONFIRMATION_POLICY_VERSION = "match-confirmation-v1";
+export const MATCH_CONFIRMATION_POLICY: MatchConfirmationPolicy; // { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 }（冻结）
+export function isCompleteProbabilityDistribution(p: Record<string, number> | null, tolerance: number): boolean;
+export interface MatchDecision { result: EvaluationResult; modelResult: ChoiceOutcome | null; reason: DecisionReason }
+export function decideMatchConfirmation(answer: ParsedAnswer, policy?: MatchConfirmationPolicy): MatchDecision;
+
+// src/lib/db/repos/evaluations.ts —— 唯一负责策略 JSON 解码
+// UpsertEvaluationInput 增加 modelResult / decisionReason / decisionPolicyVersion /
+//   decisionPolicy / jevRequestId（省略即写 NULL）
+```
+
+### 3. Contracts
+
+| 列 | 新记录语义 |
+| --- | --- |
+| `model_result` | 模型原始三态；`parse_failed` 时为 NULL（不伪称 failed 是模型选择） |
+| `decision_reason` | 确定性原因码；新失败行也是 `parse_failed` |
+| `decision_policy_version` | `match-confirmation-v1` |
+| `decision_policy_json` | `{"minMatchedProbability":0.8,"probabilitySumTolerance":0.01}` |
+| `jev_request_id` | 成功响应对应的实际调用账本 ID，无级联删除 |
+
+- `result` 仍是最终**业务**结果；概率/置信度/`raw_answer` 一律不改写。
+- 旧行五个字段全为 NULL → UI 显示「未记录」，**不得**回退成当前策略、不得推断原模型选择。
+- upsert 冲突时五个字段一起被替换，`attempts + 1`、保留原 `created_at`；
+  仓库不是逐次尝试审计，重复处理同键仍覆盖最近一次结论。
+- 自动判断与需求试判必须调用同一个 `decideMatchConfirmation`，保证同输入同结论。
+
+### 4. Validation & Error Matrix
+
+按 `decideMatchConfirmation` 的处理顺序（先命中者生效）：
+
+| 条件 | 最终 `result` | `decision_reason` |
+| --- | --- | --- |
+| 原解析结果 failed | `failed` | `parse_failed` |
+| 原结果 not_matched | `not_matched` | `model_not_matched` |
+| 原结果 uncertain | `uncertain` | `model_uncertain` |
+| matched 且 probabilities 缺失 | `uncertain` | `probabilities_missing` |
+| matched 且分布不合法（键不等、非有限、越界、\|Σ−1\|>容差） | `uncertain` | `probabilities_invalid` |
+| matched 且 p_matched **严格低于**其它任一选项 | `uncertain` | `choice_probability_conflict` |
+| matched 且 p_matched < 0.80（原始值，不四舍五入） | `uncertain` | `matched_probability_below_threshold` |
+| matched 且分布合法、并列最高或更高、p_matched ≥ 0.80 | `matched` | `matched_confirmed` |
+
+- 分布校验：键**恰好**为 `matched` / `not_matched` / `uncertain`，各值有限且 ∈ [0,1]，
+  `|Σ−1| ≤ 0.01 + 1e-12`；不补缺项、不截断、不自动归一化。
+- `confidence` 仅展示，**不参与**门槛，也不得解读为业务正确率。
+- 业务降级 `error` 必须为 `null`：不重试、不增加 Key 失败计数；
+  真实失败（上游/解析）保持原失败路径与 `error`。
+
+### 5. Good / Base / Bad Cases
+
+- Good：`matched` + p=(0.9, 0.05, 0.05) → `matched_confirmed`，通知仅含本次确认需求。
+- Base：`matched` + p=(0.52, 0.15, 0.33) / c=0.28 → `uncertain` + `matched_probability_below_threshold`，
+  原始选择、概率、原因、策略快照全部可追溯，无新通知。
+- Bad：把概率缺失/不合法当作 matched 直接通知；把降级写进 `error` 让其看起来像失败；
+  通知时重扫公告全部历史 matched 把旧项混进新 payload；回填旧行伪造「已按新策略」。
+
+### 6. Tests Required
+
+- `tests/jev/match-policy.test.ts` — 上表逐行 + 0.80/0.7999 边界、并列最高、总和容差含浮点误差、
+  confidence 缺失/越界不影响决策；样本只验证算法分支，**不得**宣称为业务准确率校准。
+- `tests/db/migrate.test.ts` — V4 列存在且可空、重复 `migrate()` 第二次不重复应用。
+- `tests/db/repos.test.ts` — 五字段往返；同键重试覆盖且 `attempts` 累加、`created_at` 保留；
+  旧行/坏 JSON 策略解码返回 `null`。
+- `tests/worker/pipeline.test.ts` — 通知成员只含本次确认项；落库 `configVersion` 为实际请求版本；
+  解析失败行 `modelResult=null` / `decisionReason=parse_failed` / `error` 非空。
+- `tests/service/dry-run.test.ts` — 与自动判断同结果同快照；仍不写 `evaluations`/`notifications`/`deliveries`/`jobs`。
+- `tests/worker/evaluator-lease.test.ts` — 追溯字段与账本 `requestId` 对应；owner 丢失时不写业务记录。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// 直接信任模型选择，概率完全不参与；通知重扫历史 matched
+upsertEvaluation(db, { result: answer.result, ... });
+if (matchedCount > 0) {
+  const all = listEvaluationsByBulletin(db, bulletin.id).filter((e) => e.result === "matched");
+  createNotificationAndDeliveries(db, bulletin, all);
+}
+```
+
+#### Correct
+
+```ts
+// 共享纯决策：保留原始选择，按完整分布门控；通知只含本次确认项
+const decision = decideMatchConfirmation(answer, policySnapshot);
+upsertEvaluation(db, {
+  result: decision.result,
+  modelResult: decision.modelResult,
+  decisionReason: decision.reason,
+  decisionPolicyVersion: MATCH_CONFIRMATION_POLICY_VERSION,
+  decisionPolicy: policySnapshot,
+  jevRequestId: outcome.requestId,
+  error: decision.result === "failed" ? answer.error : null,
+});
 ```

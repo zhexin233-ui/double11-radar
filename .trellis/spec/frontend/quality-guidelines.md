@@ -42,9 +42,18 @@ if (response.status === 401 && typeof window !== "undefined") {
 ## Copy conventions
 
 - All user-facing copy is Simplified Chinese.
-- Distinguish clearly: 「明确匹配」/「待确认（信息不足）」/「处理失败」/「没有匹配」.
+- Distinguish clearly: 「明确匹配」/「待确认（信息不足或未通过匹配确认）」/「处理失败」/「没有匹配」.
+  `uncertain` 的共享标签一律叫「待确认」；不要新造第三种状态，也不要把它说成「失败」。
+- 区分「模型原始选择」与「业务结果」：被降级时必须能同时看到两者
+  （例：「模型匹配 → 业务待确认」与程序原因码），不能只显示最终 badge 让人无从追溯。
+- 置信度附近必须声明它「来自上游分布集中程度，不代表业务正确率」；
+  不要把它渲染成正确率百分比。
+- 策略是否应用只由逐需求真实追溯字段说明：旧记录显示「未记录」，
+  **不得**用当前 matched 状态反推，也不得把共享分类模板改成「经匹配确认」
+  （该模板同时服务历史详情、旧通知与连接测试）。
 - Label generated text: 「以下为**程序生成的分类说明**（不是模型生成的理由）」.
 - State limits honestly: “不代表设备已读”, “不代表券后实付”, “不承诺补齐完整历史”.
+- 反馈样式跟结论一致：真实失败才用 error，正常业务降级用 notice/warning 或普通说明。
 
 ## Structure
 

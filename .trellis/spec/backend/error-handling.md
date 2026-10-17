@@ -138,6 +138,7 @@ caught inside the collector. A failed unit:
 | Unknown id | `404 NOT_FOUND` |
 | Retry of a succeeded delivery | `409 ALREADY_SUCCEEDED` |
 | Jev answered with an unknown choice | `Evaluation.result = "failed"` — **never** `matched` |
+| Jev 给出 matched 但概率分布缺失/不合法/低于确认门槛 | `Evaluation.result = "uncertain"` + `decision_reason`；`error` 保持 `null`（业务降级 ≠ 失败，不重试、不计 Key 失败）；`model_result` 仍保留 `matched` |
 | Jev 未配置 / 池中无可用 Key（**未发出上游请求**） | `JevCallBlockedError.isConfigProblem` → job 保持 `pending` 并 `permanentRetry`，用户修好配置后自动继续；不计为线报失败 |
 | 某个 Key 实际返回 401/403（`JevError.code = "auth"`） | 账本记一条 `failed` 并计入该 Key 连续失败；job 按**普通退避**重试（下次可选其它 Key），连续 3 次后该 Key 自动禁用，池中再无可用 Key 时转入上一行 |
 | Jev returns an unparseable structure | job retries up to `max_attempts`, then `dead` and visible in 运行状态 |
@@ -160,12 +161,37 @@ const answer = parseAnswer(raw);           // -> { result: "failed", error }
 upsertEvaluation(db, { result: answer.result, error: answer.error, ... });
 ```
 
+### 反面：把「业务降级」写进 error
+
+模型选择 matched 但概率分布不足时，结局是**业务待确认**（`result = "uncertain"`），不是失败：
+
+```ts
+// Wrong：降级被当成错误，触发重试并可能累加 Key 失败计数
+upsertEvaluation(db, { result: "uncertain", error: "匹配概率低于门槛", ... });
+```
+
+```ts
+// Correct：失败与降级分开表达——结论用 result/reason，error 只留给真实失败
+const decision = decideMatchConfirmation(answer, policySnapshot);
+upsertEvaluation(db, {
+  result: decision.result,                 // 可能被降为 uncertain
+  decisionReason: decision.reason,         // matched_probability_below_threshold
+  modelResult: decision.modelResult,       // 原始选择仍为 matched
+  error: decision.result === "failed" ? answer.error : null,
+  ...
+});
+```
+
+> **Warning**：把降级渲染成红色 `error` 样式同样错误。UI 上只有真实失败用 error 文案/配色，
+> 正常降级用 notice/warning 或普通说明（见 `frontend/quality-guidelines.md` 的文案约定）。
+
 ## Required tests
 
 - `tests/http/json.test.ts` — CSRF header/origin matrix and the `{ ok }` envelope.
 - `tests/jev/prompt.test.ts` — unknown choice / missing answer / wrong type / bad probabilities.
 - `tests/worker/pipeline.test.ts` — a missing Jev key leaves the job retryable and creates no
-  evaluation, notification or delivery.
+  evaluation, notification or delivery; 业务降级行 `error = null`、无通知、无重试；
+  解析失败行 `error` 非空且 `modelResult = null`（见 `database-guidelines.md` 的 V4 章节）。
 
 ---
 
