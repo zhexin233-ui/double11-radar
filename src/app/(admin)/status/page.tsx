@@ -171,7 +171,7 @@ export default function StatusPage() {
 
         <Section title="处理说明" headingLevel={2} alt>
           <p className="muted small" style={{ margin: 0 }}>
-            「明确匹配」「待确认（信息不足）」「处理失败」「没有匹配」互相区分；
+            「明确匹配」「待确认（信息不足或未通过匹配确认）」「处理失败」「没有匹配」互相区分；
             处理失败是模型或调用异常，不代表没有命中。
           </p>
         </Section>

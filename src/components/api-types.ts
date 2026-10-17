@@ -218,11 +218,119 @@ export interface EvaluationDto {
   needName: string;
   needNote: string;
   needVersion: number;
-  result: "matched" | "not_matched" | "uncertain" | "failed";
+  /** 问题模板版本（rule_version）；追溯与「是否为当前规则」判断用。 */
+  ruleVersion: string;
+  /** 落库时的 Jev 配置版本；与调用账本一致，供追溯。 */
+  configVersion: number;
+  result: EvaluationResultDto;
   probabilities: string | null;
   confidence: number | null;
   error: string | null;
   updatedAt: string;
+  /** 模型原始三态选择；解析失败或旧记录（策略未记录）为 null。 */
+  modelResult: ChoiceOutcomeDto | null;
+  /** 程序判定原因码；旧记录为 null。 */
+  decisionReason: DecisionReasonDto | null;
+  /** 匹配确认策略版本；旧记录为 null（不伪称已应用新策略）。 */
+  decisionPolicyVersion: string | null;
+  decisionPolicy: MatchConfirmationPolicyDto | null;
+  /** 触发该判断的实际调用账本 ID；旧记录为 null。 */
+  jevRequestId: string | null;
+}
+
+export type ChoiceOutcomeDto = "matched" | "not_matched" | "uncertain";
+export type EvaluationResultDto = ChoiceOutcomeDto | "failed";
+
+/** 匹配确认的确定性程序原因码（与 lib/domain/types 的 DecisionReason 镜像）。 */
+export type DecisionReasonDto =
+  | "parse_failed"
+  | "model_not_matched"
+  | "model_uncertain"
+  | "probabilities_missing"
+  | "probabilities_invalid"
+  | "choice_probability_conflict"
+  | "matched_probability_below_threshold"
+  | "matched_confirmed";
+
+/** 匹配确认策略快照（与 lib/domain/types 的 MatchConfirmationPolicy 镜像）。 */
+export interface MatchConfirmationPolicyDto {
+  minMatchedProbability: number;
+  probabilitySumTolerance: number;
+}
+
+/** 触发降级的固定文案（需带分数/门槛时用 `formatDecisionReason`）。 */
+export const DECISION_REASON_LABELS: Record<DecisionReasonDto, string> = {
+  parse_failed: "解析失败，未形成有效模型选择",
+  model_not_matched: "模型判定不匹配（不提升为匹配）",
+  model_uncertain: "模型信息不足",
+  probabilities_missing: "模型选择匹配但缺少概率分布，已降为待确认",
+  probabilities_invalid: "概率分布不完整或不合法，已降为待确认",
+  choice_probability_conflict: "匹配概率低于其它选项，已降为待确认",
+  matched_probability_below_threshold: "匹配概率低于自动确认门槛，已降为待确认",
+  matched_confirmed: "通过匹配确认门槛",
+};
+
+/** 模型原始选择的中文标签（与业务结果分开显示）。 */
+export const MODEL_CHOICE_LABELS: Record<ChoiceOutcomeDto, string> = {
+  matched: "匹配",
+  not_matched: "不匹配",
+  uncertain: "信息不足",
+};
+
+/**
+ * 格式化程序判定原因。低于门槛时使用保存的原始分数与实际门槛，
+ * 不用显示舍入值重新决策。
+ */
+export function formatDecisionReason(
+  reason: DecisionReasonDto,
+  values: {
+    matchedProbability?: number | null;
+    minMatchedProbability?: number | null;
+  } = {},
+): string {
+  if (reason === "matched_probability_below_threshold") {
+    const { matchedProbability, minMatchedProbability } = values;
+    if (
+      typeof matchedProbability === "number" &&
+      typeof minMatchedProbability === "number"
+    ) {
+      return `匹配概率 ${matchedProbability} 低于自动确认门槛 ${minMatchedProbability}，已降为待确认`;
+    }
+  }
+  return DECISION_REASON_LABELS[reason];
+}
+
+/** 置信度展示；缺失为 —，越界值明确标为异常（不冒充有效置信度）。 */
+export function formatConfidence(confidence: number | null): string {
+  if (confidence === null) return "—";
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    return `上游置信度异常（原值 ${confidence}）`;
+  }
+  return String(confidence);
+}
+
+/** 解析持久化概率 JSON 字符串；非法为空，不伪造概率。 */
+export function parseProbabilityRecord(
+  raw: string | null,
+): Record<string, number> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as Record<string, number>;
+  } catch {
+    return null;
+  }
+}
+
+/** 概率分布展示；缺失为 —。 */
+export function formatProbabilities(
+  value: Record<string, number> | null,
+): string {
+  if (!value) return "—";
+  return Object.entries(value)
+    .map(([key, score]) => `${key}=${score}`)
+    .join("，");
 }
 
 /** 本地处理阶段（不伪造模型答案）。 */
@@ -288,6 +396,10 @@ export interface BulletinDetailDto {
   explanation: string | null;
   evaluations: EvaluationDto[];
   deliveries: DeliveryDto[];
+  /** 已有通知（若有）：用于区分「本次待确认」与「从未发送过」。 */
+  notification: { id: string; createdAt: string } | null;
+  /** 是否存在未按当前策略重算的历史 matched；详情据此提示。 */
+  hasHistoricalMatched: boolean;
   /** 三模式处理元数据；旧数据 / 基线为 null。 */
   processing: BulletinProcessingDto | null;
 }
@@ -297,9 +409,14 @@ export interface DryRunNeedResultDto {
   needName: string;
   needNote: string;
   needVersion: number;
-  result: "matched" | "not_matched" | "uncertain" | "failed";
+  result: EvaluationResultDto;
+  modelResult: ChoiceOutcomeDto | null;
   probabilities: Record<string, number> | null;
   confidence: number | null;
+  decisionReason: DecisionReasonDto;
+  decisionPolicyVersion: string;
+  decisionPolicy: MatchConfirmationPolicyDto;
+  jevRequestId: string;
   error: string | null;
 }
 
@@ -368,7 +485,7 @@ export const STATUS_LABELS: Record<BulletinDetailDto["status"], string> = {
   baseline: "已建立基线",
   pending: "等待判断",
   matched: "明确匹配",
-  uncertain: "待确认（信息不足）",
+  uncertain: "待确认",
   failed: "处理失败",
   not_matched: "没有匹配",
 };
@@ -429,6 +546,6 @@ export function deliveryLabel(status: string): string {
 export const EVALUATION_LABELS: Record<EvaluationDto["result"], string> = {
   matched: "匹配",
   not_matched: "不匹配",
-  uncertain: "信息不足",
+  uncertain: "待确认",
   failed: "处理失败",
 };

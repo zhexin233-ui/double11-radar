@@ -13,6 +13,8 @@ import { getEvaluationRun, getProcessing } from "@/lib/db/repos/evaluation-runs"
 import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
 import { getNotificationByBulletin } from "@/lib/db/repos/notifications";
 import { buildClassificationExplanation } from "@/lib/notify/dispatch";
+import { MATCH_CONFIRMATION_POLICY_VERSION } from "@/lib/jev/match-policy";
+import { RULE_VERSION } from "@/lib/domain/constants";
 import { HttpError } from "@/lib/http/json";
 import { parseIntegerParam } from "@/lib/http/query";
 import type {
@@ -60,6 +62,11 @@ export interface BulletinDetail {
   deliveries: Delivery[];
   notification: Notification | null;
   processing: BulletinProcessingView | null;
+  /**
+   * 是否存在未按当前匹配确认策略重算的历史 matched（跨 rule_version 或升级前旧记录）。
+   * 首期不自动重算，仅在详情提示「含历史判定，未按本策略重算」。
+   */
+  hasHistoricalMatched: boolean;
 }
 
 export function describeBulletin(
@@ -72,6 +79,14 @@ export function describeBulletin(
   const matchedNeeds = evaluations
     .filter((evaluation) => evaluation.result === "matched")
     .map((evaluation) => evaluation.needName);
+
+  // matched 但非当前问题模板或未记录当前策略快照 → 历史判定，未按本策略重算。
+  const hasHistoricalMatched = evaluations.some(
+    (evaluation) =>
+      evaluation.result === "matched" &&
+      (evaluation.ruleVersion !== RULE_VERSION ||
+        evaluation.decisionPolicyVersion !== MATCH_CONFIRMATION_POLICY_VERSION),
+  );
 
   // 状态以数据库判定为准；`??` 仅兜底理论上的缺失行，不重新实现优先级。
   const status =
@@ -91,6 +106,7 @@ export function describeBulletin(
     evaluations,
     deliveries,
     notification,
+    hasHistoricalMatched,
     processing: processing
       ? {
           runId: processing.runId,

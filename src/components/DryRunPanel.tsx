@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { Button } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
-import { EVALUATION_LABELS, type DryRunResultDto } from "@/components/api-types";
+import {
+  EVALUATION_LABELS,
+  MODEL_CHOICE_LABELS,
+  formatConfidence,
+  formatDecisionReason,
+  formatProbabilities,
+  type DryRunResultDto,
+} from "@/components/api-types";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
@@ -22,13 +29,6 @@ const EXAMPLES = [
   { label: "反例：卷纸", title: "心相印卷纸12卷", content: "心相印卷纸12卷 19.9元" },
   { label: "待确认：只有品牌", title: "心相印9.9元", content: "心相印9.9元" },
 ];
-
-function formatProbabilities(value: Record<string, number> | null): string {
-  if (!value) return "—";
-  return Object.entries(value)
-    .map(([key, score]) => `${key}=${score}`)
-    .join("，");
-}
 
 export function DryRunPanel() {
   const [title, setTitle] = useState("");
@@ -73,7 +73,8 @@ export function DryRunPanel() {
       description={
         <>
           粘贴一段线报样例，用与生产相同的问题与解析逻辑调用真实 Jev，
-          逐需求显示三态结果。<strong>不会写入判断记录，也不会发送任何通知</strong>；
+          逐需求显示模型原始选择与匹配确认后的业务结果。
+          <strong>不会写入判断记录，也不会发送任何通知</strong>；
           真实线报只能被动等待，这个入口用于立即验证语义正反例。
         </>
       }
@@ -167,39 +168,64 @@ export function DryRunPanel() {
                 使用模型 {result.model || "—"}，规则版本 {result.ruleVersion}，配置版本{" "}
                 {result.configVersion}，共 {result.needsCount} 个启用需求。
               </p>
-              <TableScroll label="需求试判结果" minTableWidth={820}>
+              <TableScroll label="需求试判结果" minTableWidth={1040}>
                 <table>
                   <thead>
                     <tr>
                       <th>需求</th>
-                      <th>结果</th>
-                      <th>置信度</th>
-                      <th>概率</th>
-                      <th>说明 / 错误</th>
+                      <th>模型原始选择</th>
+                      <th>业务结果</th>
+                      <th>概率 / 置信度</th>
+                      <th>程序判定</th>
+                      <th>错误</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {result.results.map((item) => (
-                      <tr key={item.needId}>
-                        <td>
-                          {item.needName}
-                          {item.needNote ? (
-                            <div className="muted small">备注：{item.needNote}</div>
-                          ) : null}
-                        </td>
-                        <td>
-                          <StatusBadge status={item.result}>
-                            {EVALUATION_LABELS[item.result]}
-                          </StatusBadge>
-                        </td>
-                        <td className="small">{item.confidence ?? "—"}</td>
-                        <td className="small">{formatProbabilities(item.probabilities)}</td>
-                        <td className="small error">{item.error ?? ""}</td>
-                      </tr>
-                    ))}
+                    {result.results.map((item) => {
+                      const minMatched = item.decisionPolicy.minMatchedProbability;
+                      return (
+                        <tr key={item.needId}>
+                          <td>
+                            {item.needName}
+                            {item.needNote ? (
+                              <div className="muted small">备注：{item.needNote}</div>
+                            ) : null}
+                          </td>
+                          <td className="small">
+                            {item.modelResult
+                              ? MODEL_CHOICE_LABELS[item.modelResult]
+                              : "未记录"}
+                          </td>
+                          <td>
+                            <StatusBadge status={item.result}>
+                              {EVALUATION_LABELS[item.result]}
+                            </StatusBadge>
+                          </td>
+                          <td className="small">
+                            {formatProbabilities(item.probabilities)}
+                            <div className="muted small">
+                              置信度：{formatConfidence(item.confidence)}
+                            </div>
+                          </td>
+                          <td className="small">
+                            {formatDecisionReason(item.decisionReason, {
+                              matchedProbability: item.probabilities?.matched ?? null,
+                              minMatchedProbability: minMatched,
+                            })}
+                            <div className="muted small">
+                              策略 {item.decisionPolicyVersion}（门槛 {minMatched}）
+                            </div>
+                          </td>
+                          <td className="small error">{item.error ?? ""}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </TableScroll>
+              <p className="muted small" style={{ margin: 0 }}>
+                结果已应用匹配确认策略（缺概率或低于门槛降为待确认）；置信度不代表业务正确率。
+              </p>
             </div>
           )
         ) : null}

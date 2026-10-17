@@ -12,8 +12,17 @@ import {
   JevCallBlockedError,
   callJevWithLedger,
 } from "@/lib/service/jev-requests";
+import {
+  MATCH_CONFIRMATION_POLICY,
+  MATCH_CONFIRMATION_POLICY_VERSION,
+  decideMatchConfirmation,
+} from "@/lib/jev/match-policy";
 import { RULE_VERSION } from "@/lib/domain/constants";
-import type { ChoiceOutcome } from "@/lib/domain/types";
+import type {
+  ChoiceOutcome,
+  DecisionReason,
+  MatchConfirmationPolicy,
+} from "@/lib/domain/types";
 
 /**
  * 需求试判（dry-run）——仅用于验收。
@@ -36,9 +45,16 @@ export interface DryRunNeedResult {
   needName: string;
   needNote: string;
   needVersion: number;
+  /** 匹配确认后的业务结果；failed 只在基础解析失败时出现。 */
   result: ChoiceOutcome | "failed";
+  /** 模型原始三态选择；解析失败时为 null。 */
+  modelResult: ChoiceOutcome | null;
   probabilities: Record<string, number> | null;
   confidence: number | null;
+  decisionReason: DecisionReason;
+  decisionPolicyVersion: string;
+  decisionPolicy: MatchConfirmationPolicy;
+  jevRequestId: string;
   error: string | null;
 }
 
@@ -107,20 +123,28 @@ export async function runJevDryRun(
     const need = needByQuestionId.get(questionId);
     if (!need) continue;
     const answer = answers[questionId];
+    // 与自动判断共用同一纯决策函数与策略快照，保证同输入结论一致。
+    const decision = decideMatchConfirmation(answer, MATCH_CONFIRMATION_POLICY);
     results.push({
       needId: need.id,
       needName: need.name,
       needNote: need.note,
       needVersion: need.version,
-      result: answer.result,
+      result: decision.result,
+      modelResult: decision.modelResult,
       probabilities: answer.probabilities,
       confidence: answer.confidence,
+      decisionReason: decision.reason,
+      decisionPolicyVersion: MATCH_CONFIRMATION_POLICY_VERSION,
+      decisionPolicy: MATCH_CONFIRMATION_POLICY,
+      jevRequestId: outcome.requestId,
       error: answer.error,
     });
   }
 
   return {
-    configVersion,
+    // 追溯实际预约的配置版本；仅在缺失（理论可空）时回退到请求前快照。
+    configVersion: outcome.semanticConfig.configVersion ?? configVersion,
     model: outcome.response.model ?? "",
     ruleVersion: RULE_VERSION,
     needsCount: needs.length,
