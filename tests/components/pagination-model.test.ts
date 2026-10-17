@@ -3,6 +3,7 @@ import {
   clampPage,
   pageCount,
   pageRange,
+  pageSlice,
 } from "@/components/pagination-model";
 
 describe("分页纯函数（越界收敛 / 范围计算）", () => {
@@ -40,5 +41,33 @@ describe("分页纯函数（越界收敛 / 范围计算）", () => {
 
     // 越界页码用收敛后的范围，不产生超出 total 的 end
     expect(pageRange(9, 10, 25)).toEqual({ start: 21, end: 25 });
+  });
+
+  it("pageSlice：空集、整除、末页不满、越界页码、非法页大小、total 缩减", () => {
+    const items = Array.from({ length: 25 }, (_, index) => index + 1);
+
+    // 空集永远返回空数组，不抛错
+    expect(pageSlice([], 0, 10)).toEqual([]);
+
+    // 整除：两页各 10 条
+    expect(pageSlice(items.slice(0, 20), 0, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(pageSlice(items.slice(0, 20), 1, 10)).toEqual([
+      11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    ]);
+
+    // 末页不满：第 3 页只有 5 条
+    expect(pageSlice(items, 2, 10)).toEqual([21, 22, 23, 24, 25]);
+
+    // 越界页码收敛到末页，而不是返回空
+    expect(pageSlice(items, 99, 10)).toEqual([21, 22, 23, 24, 25]);
+    expect(pageSlice(items, -3, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+    // 非法页大小
+    expect(pageSlice(items, 0, 0)).toEqual([]);
+    expect(pageSlice(items, 0, -10)).toEqual([]);
+    expect(pageSlice(items, 0, Number.NaN)).toEqual([]);
+
+    // total 缩减后从末页取到正确切片
+    expect(pageSlice(items.slice(0, 5), 2, 10)).toEqual([1, 2, 3, 4, 5]);
   });
 });
