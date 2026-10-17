@@ -128,6 +128,26 @@ This matters because the status vocabulary is a shared contract: the server's
 `STATUS_LABELS` / `JE_REQUEST_STATUS_LABELS` are the only places that translate
 them. A page-level `if/else` chain is a second copy of that contract.
 
+### One Formatter Per Display Concern
+
+The same rule applies to display formatters, not just label maps. A formatter that
+is copy-pasted into every page is a second contract: fix the `null` handling in one
+copy and the others still render `Invalid Date`.
+
+**Current state (2026-10)**: `formatTime(value: string | null)` is declared **locally in 6 places**
+(`bulletins/page.tsx`、`bulletins/[id]/page.tsx`、`needs/page.tsx`、`status/page.tsx`、`channels/page.tsx`
+和 `jev/page.tsx` 里那个内联版本). During the `jev-keys-modal-pagination` task the jev scope was
+unified onto `src/components/format.ts`:
+
+```ts
+// src/components/format.ts —— 新增格式化器放这里，不要在新页面里再抄一份
+import { formatTime } from "@/components/format";
+```
+
+The other five copies are **known, deliberate** debt (that task's scope was jev-only).
+When you next touch a page that uses a local `formatTime`, migrate that page to the import
+instead of copying the body again — do not bundle the remaining five into an unrelated task.
+
 ---
 
 ## Checklist Before Commit

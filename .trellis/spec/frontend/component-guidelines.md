@@ -106,7 +106,7 @@ failure is not shown in green.
 
 ## Pattern: 分页与越界收敛
 
-四处列表共用 `Pagination`；`api-types.ts` 里的 `*_PAGE_SIZE` 是唯一页大小来源。
+所有列表共用 `Pagination`；`api-types.ts` 里的 `*_PAGE_SIZE` 是唯一页大小来源。
 
 ```tsx
 const [page, setPage] = useState(0);
@@ -128,6 +128,88 @@ if (total !== null) {
 - 前端分页 `total` 的来源：`/api/bulletins.total`、`/api/needs.total`、`/api/channels.stats.total`、
   `/api/settings/jev/usage.recent.total`。**不要把 `stats.total` 额外复制成一个 `total` 字段。**
 
+### 变体：客户端分页（数据已全量在前端）
+
+服务端返回完整数组、`total` 由数组长度决定时（例：`/api/settings/jev.keys`、`usage.byKey`），
+**不要**照搬上面的「渲染期比较后 setState」——那套只在服务端 `total` 会独立变化时才需要。
+客户端分页的 `safePage` 与 `total` 全部是纯派生，写 state 只会引入 `set-state-in-render` 风险：
+
+```tsx
+export function JevUsageByKey(props: { rows: JevUsageByKeyDto[] }) {
+  const [page, setPage] = useState(0);
+  const total = props.rows.length;                                  // total = 数组长度
+  const safePage = clampPage(page, total, JEV_USAGE_BY_KEY_PAGE_SIZE); // 纯派生，不 setState
+
+  return (
+    <>
+      <ByKeyTable rows={props.rows.slice(0, JEV_USAGE_BY_KEY_PREVIEW)} label="…（预览）" />
+      <Modal opened={opened} onClose={…} size={1000}>
+        <ByKeyTable rows={pageSlice(props.rows, safePage, PAGE_SIZE)} label="…（全部）" />
+        <Pagination page={safePage} total={total} pageSize={PAGE_SIZE} onPage={setPage} unit="个 Key" />
+      </Modal>
+    </>
+  );
+}
+```
+
+- `pageSlice(items, page, pageSize)`（`pagination-model.ts`）是唯一的切片实现：内部先 `clampPage`，
+  空集或非法页大小返回 `[]`。**不要在各组件里自己写 `items.slice(page * n, …)`。**
+- 页码重置：把持有 `page` 的组件放在 `Modal` body 内部即可——`keepMounted` 默认 `false`，
+  弹窗关闭即卸载，重开自动回到第 1 页，不需要 `useEffect`。
+- 预览 + 弹窗共用**同一个**表格组件（只差 `rows` 与 `label`），避免两套单元格逻辑漂移。
+- 客户端分页的页大小是纯展示参数，服务端没有镜像常量，不受「两边必须同步」的约束（见 `type-safety.md`）。
+
+## Pattern: 弹窗栈（一个弹窗里再开弹窗）
+
+需求是「列表弹窗 → 编辑弹窗 → 确认弹窗」这类多层结构时，用 `Modal.Stack` + 每个 `Modal` 的 `stackId`，
+而不是并列写几个独立 `Modal`：
+
+```tsx
+<Modal.Stack>
+  <Modal opened={props.opened}  onClose={closeKeys} stackId="jev-keys"     size={1200} centered … />
+  <Modal opened={editingKey !== null} onClose={…}   stackId="jev-key-edit" size="lg"   centered … />
+  <Modal opened={pendingConfirm !== null} onClose={…} stackId="jev-confirm"            centered … />
+</Modal.Stack>
+```
+
+- 只有**同时**给了 `stackId` 且处于 `Modal.Stack` 的 context 内，Mantine 才会接管栈：
+  z-index 变成 `calc(maxZIndex + 栈内下标 + 1)`，`closeOnEscape` / `trapFocus` 只对栈顶生效，
+  非栈顶的 content 带 `data-hidden`（`opacity:0; pointer-events:none`），用户点不到下层。
+- 三个 `Modal` 必须都在**同一个** `Modal.Stack` 里，`stackId` 必须唯一。栈顶由 `opened` 的转换顺序决定：
+  先开基础弹窗、再开编辑、最后开确认，顺序才对（不要靠 JSX 书写顺序）。
+- 分层弹窗里**不要**用 `useModalsStack`，当基础弹窗的 `opened` 由页面持有时（例如触发按钮在 `Section.actions`），
+  `useModalsStack` 会引入第二个 state owner；`stackId` 只要求 context，不要求状态放在弹窗组件里。
+- `size` 只接受内置尺寸名或**数字**（数字走 `rem(n)`，即 `size={1200}` → 1200px）。
+  写 CSS 字符串（`size="min(1200px, 96vw)"`）会被拼成 `var(--modal-size-min(...))`，是无效 CSS。
+  超宽弹窗在窄屏由 Mantine 自己的 `max-width: 100%` + `--modal-inner-x-offset: 5vw` 收敛到 90vw。
+- 弹窗内容保持卸载（不要开 `keepMounted`）：200 行 Mantine 控件的表格只在打开时才渲染。
+
+## Gotcha: 弹窗内的反馈会被遮罩挡住
+
+**症状**：点「保存」后一切正常，但用户看不到任何成功 / 失败提示；或者只在关掉弹窗后才看到。
+
+**原因**：页面顶部的 `notice` / `actionError` 反馈区在弹窗遮罩**下面**（`Modal` 默认 `withinPortal`，
+遮罩覆盖全屏），弹窗打开期间那条消息等于不存在。
+
+**修复**：反馈必须渲染在用户当前能看到的那一层。分层弹窗的写法是把同一个 `notice` 在**每个**
+Modal body 里渲染一次（顶层弹窗总能看到；关闭上层后同一条消息仍在下层可见）：
+
+```tsx
+<Modal opened={props.opened} …>
+  <KeysModalBody notice={notice} loadError={props.loadError} … />
+</Modal>
+<Modal opened={editingKey !== null} …>
+  <PanelNotice notice={notice} />
+  …
+</Modal>
+```
+
+配套约定：
+
+- 打开下一层弹窗前先 `setNotice(null)`，避免旧结果被读成新操作的结果。
+- 破坏性操作**失败**时保持确认弹窗打开（错误就显示在它里面，可直接重试）；成功时关闭它。
+- 操作结果不要同时写页面顶部与弹窗内，否则同一句话会出现两遍。
+
 ## Pattern: Mantine 的使用边界
 
 用库：`Button` / `TextInput` / `PasswordInput` / `NumberInput` / `Textarea` / `Select` / `Switch` /
@@ -138,7 +220,9 @@ if (total !== null) {
 不混入 `Group` / `Stack` 的 spacing。
 
 - 忙态用 `Button loading={busy}`，不要再手写「保存中…」文案切换。
-- 破坏性确认用 `Modal`（可键盘操作），不要再新增 `window.confirm`。
+- 破坏性确认用 `Modal`（可键盘操作），不要再新增 `window.confirm`。把行内操作搬进弹窗时，
+  顺手把该处已有的 `window.confirm` 也换成确认弹窗——`src/app/(admin)/jev/page.tsx` 的三处已在
+  2026-10 全部替换（切换列表只读 + 编辑弹窗的任务）。
 - 状态颜色只由 `StatusBadge` 决定；状态文案只由 `api-types.ts` 的 label 映射决定。
 
 ## Convention: wide tables scroll themselves
