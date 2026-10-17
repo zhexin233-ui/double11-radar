@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "服务端边界、统一请求服务与三模式契约"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "增量迁移、owner 事务、幂等与统一状态表达式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "失败与业务待确认分离，保留重试和 Key 健康语义"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "服务端和客户端 DTO 镜像、可空值及禁止跨边界导入"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "状态文案、程序说明来源及浅深主题验收"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "保持表格、TableScroll 与页面结构约束"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "数据流边界与字段往返验证"}
+{"file": ".trellis/tasks/10-17-match-confirmation/research/current-behavior.md", "reason": "本次代码锚点、分数契约证据与未校准限制"}
