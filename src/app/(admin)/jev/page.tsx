@@ -4,8 +4,8 @@ import { useState } from "react";
 import {
   Button,
   Fieldset,
+  Modal,
   NumberInput,
-  PasswordInput,
   Radio,
   Textarea,
   TextInput,
@@ -13,49 +13,38 @@ import {
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import { DryRunPanel } from "@/components/DryRunPanel";
+import { JevKeysPanel } from "@/components/JevKeysPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Pagination } from "@/components/ui/Pagination";
 import { Feedback } from "@/components/ui/Feedback";
 import { StatusBadge } from "@/components/status-badge";
-import { clampPage } from "@/components/pagination-model";
+import { clampPage, pageSlice } from "@/components/pagination-model";
+import { formatTime } from "@/components/format";
 import {
   EVALUATION_MODE_OPTIONS,
   JE_CONCURRENCY_RANGE,
   JE_JOBS_PER_ROUND_RANGE,
   JE_KEY_FAILURE_THRESHOLD,
+  JEV_USAGE_BY_KEY_PAGE_SIZE,
+  JEV_USAGE_BY_KEY_PREVIEW,
   MAX_REGEX_RULE_LENGTH,
   MAX_REGEX_RULES,
   type EvaluationModeDto,
   type JevConfigDto,
-  type JevKeyDto,
   type JevSettingsDto,
+  type JevUsageByKeyDto,
   type JevUsageDto,
-  type SecretStateDto,
   type TestResultDto,
 } from "@/components/api-types";
-
-type SecretAction = "keep" | "replace" | "clear";
 
 /** 最近调用分页大小（与服务端默认一致）。 */
 const USAGE_PAGE_SIZE = 20;
 
-function formatTime(value: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
-}
-
 /** NumberInput 的 onChange 可能是数字或空串；统一收窄成数字。 */
 function toNumber(value: number | string): number {
   return value === "" ? 0 : Number(value);
-}
-
-function secretStateLabel(state: SecretStateDto): string {
-  if (state.unreadable) return "无法解密（加密密钥可能已变更）";
-  if (!state.configured) return "未配置";
-  return state.masked ? `已配置 ${state.masked}` : "已配置";
 }
 
 /** 基础配置表单：只提交非敏感配置，密钥改由下方的密钥池管理。 */
@@ -224,272 +213,117 @@ function JevForm(props: {
   );
 }
 
-/** 新增密钥表单：只把明文交给服务端加密保存，成功后清空输入。 */
-function JevKeyAddForm(props: {
-  onDone: (notice: string) => void;
-  onError: (message: string) => void;
-  reload: () => Promise<void>;
-}) {
-  const [label, setLabel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!label.trim() || !apiKey.trim()) return;
-    setBusy(true);
-    try {
-      await apiSend<JevKeyDto>("/api/settings/jev/keys", "POST", {
-        label: label.trim(),
-        apiKey: apiKey.trim(),
-      });
-      setLabel("");
-      setApiKey("");
-      props.onDone("已添加 Jev 密钥。");
-      await props.reload();
-    } catch (caught) {
-      props.onError(errorMessage(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
+/**
+ * 按 Key 汇总表：预览与弹窗共用同一组件，避免两套单元格逻辑漂移。
+ * `knownRequestCount === 0` 时显示「—（暂无可计价调用）」而不是 `$0.00`。
+ */
+function ByKeyTable(props: { rows: JevUsageByKeyDto[]; label: string }) {
   return (
-    <form className="row" onSubmit={submit}>
-      <TextInput
-        placeholder="Key 名称，例如：主账号"
-        aria-label="Key 名称"
-        value={label}
-        onChange={(event) => setLabel(event.currentTarget.value)}
-        maxLength={100}
-        disabled={busy}
-        style={{ flex: "1 1 160px" }}
-      />
-      <PasswordInput
-        placeholder="API 密钥（只在服务端加密保存）"
-        aria-label="API 密钥"
-        value={apiKey}
-        onChange={(event) => setApiKey(event.currentTarget.value)}
-        maxLength={500}
-        autoComplete="off"
-        disabled={busy}
-        style={{ flex: "2 1 260px" }}
-      />
-      <Button
-        type="submit"
-        loading={busy}
-        disabled={!label.trim() || !apiKey.trim()}
-        style={{ alignSelf: "flex-start" }}
-      >
-        添加密钥
-      </Button>
-    </form>
+    <TableScroll label={props.label} minTableWidth={900}>
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>实际调用</th>
+            <th>已计价</th>
+            <th>未知费用</th>
+            <th>失败</th>
+            <th>输入 Token</th>
+            <th>输出 Token</th>
+            <th>已知估算费用</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((row) => (
+            <tr key={row.keyId ?? "unknown"}>
+              <td>{row.keyLabel ?? "未关联 Key"}</td>
+              <td className="small">{row.requestCount}</td>
+              <td className="small">{row.requestCount - row.unknownCostCount}</td>
+              <td className="small">{row.unknownCostCount}</td>
+              <td className="small">{row.failedCount}</td>
+              <td className="small">{row.inputTokens.toLocaleString()}</td>
+              <td className="small">{row.outputTokens.toLocaleString()}</td>
+              <td className="small">
+                {row.knownRequestCount === 0
+                  ? "—（暂无可计价调用）"
+                  : `$${row.knownCostUsd}`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableScroll>
   );
 }
 
-/** 单个密钥的展示与操作（重命名、替换/清除、启停恢复、测试、删除）。 */
-function JevKeyRow(props: {
-  item: JevKeyDto;
-  onDone: (notice: string) => void;
-  onError: (message: string) => void;
-  reload: () => Promise<void>;
-}) {
-  const { item } = props;
-  const [secretAction, setSecretAction] = useState<SecretAction>("keep");
-  const [secret, setSecret] = useState("");
-  const [busy, setBusy] = useState(false);
+/**
+ * 「按 Key 汇总」页面表现：前 N 行预览 + 「查看全部」弹窗分页。
+ *
+ * `rows` 是服务端按 `knownCostNanos DESC, requestCount DESC` 排好序的完整数组；
+ * 预览是纯派生，不复制进 state。
+ */
+function JevUsageByKey(props: { rows: JevUsageByKeyDto[] }) {
+  const [opened, setOpened] = useState(false);
+  const [page, setPage] = useState(0);
+  const { rows } = props;
 
-  const base = `/api/settings/jev/keys/${item.id}`;
-
-  async function guard(action: () => Promise<string>) {
-    setBusy(true);
-    try {
-      const message = await action();
-      setSecretAction("keep");
-      setSecret("");
-      props.onDone(message);
-      await props.reload();
-    } catch (caught) {
-      props.onError(errorMessage(caught));
-    } finally {
-      setBusy(false);
-    }
+  if (rows.length === 0) {
+    return (
+      <p className="muted" style={{ margin: 0 }}>
+        还没有按 Key 的调用记录。
+      </p>
+    );
   }
 
-  function rename(next: string) {
-    void guard(async () => {
-      await apiSend(base, "PATCH", { label: next });
-      return `已重命名为「${next}」。`;
-    });
-  }
-
-  function applySecret() {
-    if (secretAction === "clear") {
-      if (
-        !window.confirm(
-          `清除「${item.label}」的密钥？清除后会停用该 Key，需要替换密钥后才能再次启用。`,
-        )
-      ) {
-        return;
-      }
-      void guard(async () => {
-        await apiSend(base, "PATCH", { apiKey: { clear: true } });
-        return `已清除「${item.label}」的密钥并停用该 Key。`;
-      });
-      return;
-    }
-    if (secretAction === "replace") {
-      const value = secret.trim();
-      if (!value) return;
-      void guard(async () => {
-        await apiSend(base, "PATCH", { apiKey: value });
-        return `已替换「${item.label}」的密钥，失败计数清零并进入新 generation。`;
-      });
-    }
-  }
-
-  function toggleEnabled() {
-    const next = !item.enabled;
-    if (
-      !next &&
-      !window.confirm(`停用「${item.label}」？停用后不再分配新请求，可在需要时手动恢复。`)
-    ) {
-      return;
-    }
-    void guard(async () => {
-      await apiSend(base, "PATCH", { enabled: next });
-      return next ? `已恢复「${item.label}」，失败计数清零。` : `已停用「${item.label}」。`;
-    });
-  }
-
-  function testKey() {
-    void guard(async () => {
-      const result = await apiSend<TestResultDto>("/api/settings/jev/test", "POST", {
-        keyId: item.id,
-      });
-      if (!result.ok) {
-        throw new Error(`「${item.label}」连接测试失败：${result.message ?? "未知原因"}`);
-      }
-      return `「${item.label}」连接测试成功：${result.message ?? ""}`;
-    });
-  }
-
-  function removeKey() {
-    if (
-      !window.confirm(
-        `删除 Key「${item.label}」？密钥密文会被清除，历史调用账本保留非敏感快照。`,
-      )
-    ) {
-      return;
-    }
-    void guard(async () => {
-      await apiSend(base, "DELETE");
-      return `已删除 Key「${item.label}」。`;
-    });
-  }
+  const total = rows.length;
+  const safePage = clampPage(page, total, JEV_USAGE_BY_KEY_PAGE_SIZE);
+  const preview = rows.slice(0, JEV_USAGE_BY_KEY_PREVIEW);
 
   return (
-    <tr>
-      <td>
-        <TextInput
-          key={`${item.id}:${item.updatedAt}:label`}
-          defaultValue={item.label}
-          aria-label="密钥名称"
-          size="sm"
-          disabled={busy}
-          onBlur={(event) => {
-            const next = event.currentTarget.value.trim();
-            if (next && next !== item.label) rename(next);
-            else if (!next) event.currentTarget.value = item.label;
-          }}
-        />
-      </td>
-      <td className="small">{secretStateLabel(item.secretState)}</td>
-      <td>
-        <StatusBadge status={item.enabled ? "matched" : "baseline"}>
-          {item.enabled ? "已启用" : "已停用"}
-        </StatusBadge>
-      </td>
-      <td className="small">
-        {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
-      </td>
-      <td className="small">
-        {item.disabledReason ? <div>{item.disabledReason}</div> : null}
-        {item.lastError ? <div className="muted">{item.lastError}</div> : null}
-        {!item.disabledReason && !item.lastError ? "—" : null}
-      </td>
-      <td className="small">{formatTime(item.lastUsedAt)}</td>
-      <td>
-        <div className="stack">
-          <Fieldset legend="密钥">
-            <div className="stack">
-              <Radio.Group
-                value={secretAction}
-                onChange={(next) => setSecretAction(next as SecretAction)}
-                aria-label={`${item.label}密钥处理方式`}
-              >
-                <div className="row small">
-                  <Radio value="keep" label="保留" disabled={busy} />
-                  <Radio value="replace" label="替换" disabled={busy} />
-                  <Radio value="clear" label="清除" disabled={busy} />
-                </div>
-              </Radio.Group>
-              {secretAction === "replace" ? (
-                <PasswordInput
-                  placeholder="新的 API 密钥"
-                  aria-label="新的 API 密钥"
-                  value={secret}
-                  disabled={busy}
-                  onChange={(event) => setSecret(event.currentTarget.value)}
-                />
-              ) : null}
-              {secretAction !== "keep" ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  loading={busy}
-                  disabled={secretAction === "replace" && !secret.trim()}
-                  onClick={applySecret}
-                  style={{ alignSelf: "flex-start" }}
-                >
-                  应用密钥变更
-                </Button>
-              ) : null}
-            </div>
-          </Fieldset>
-          <div className="row">
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              disabled={busy}
-              onClick={toggleEnabled}
-            >
-              {item.enabled ? "停用" : "恢复"}
-            </Button>
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              disabled={busy}
-              onClick={testKey}
-            >
-              测试
-            </Button>
-            <Button
-              type="button"
-              variant="subtle"
-              color="red"
-              size="sm"
-              disabled={busy}
-              onClick={removeKey}
-            >
-              删除
-            </Button>
-          </div>
+    <>
+      <ByKeyTable
+        rows={preview}
+        label={`按 Key 调用汇总（前 ${JEV_USAGE_BY_KEY_PREVIEW} 行预览）`}
+      />
+      {total > JEV_USAGE_BY_KEY_PREVIEW ? (
+        <div className="row">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              setPage(0);
+              setOpened(true);
+            }}
+          >
+            查看全部 {total} 个 Key
+          </Button>
+          <span className="muted small">
+            按已知估算费用从高到低排序，这里只显示前 {JEV_USAGE_BY_KEY_PREVIEW} 行。
+          </span>
         </div>
-      </td>
-    </tr>
+      ) : null}
+      <Modal
+        opened={opened}
+        onClose={() => setOpened(false)}
+        title={`按 Key 调用汇总（共 ${total} 个）`}
+        size={1000}
+        centered
+      >
+        <div className="stack">
+          <ByKeyTable
+            rows={pageSlice(rows, safePage, JEV_USAGE_BY_KEY_PAGE_SIZE)}
+            label="按 Key 调用汇总（全部）"
+          />
+          <Pagination
+            page={safePage}
+            total={total}
+            pageSize={JEV_USAGE_BY_KEY_PAGE_SIZE}
+            onPage={setPage}
+            unit="个 Key"
+          />
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -544,46 +378,7 @@ function JevUsagePanel(props: {
           </dl>
 
           <h3>按 Key 汇总</h3>
-          {usage.byKey.length === 0 ? (
-            <p className="muted" style={{ margin: 0 }}>
-              还没有按 Key 的调用记录。
-            </p>
-          ) : (
-            <TableScroll label="按 Key 调用汇总" minTableWidth={900}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Key</th>
-                    <th>实际调用</th>
-                    <th>已计价</th>
-                    <th>未知费用</th>
-                    <th>失败</th>
-                    <th>输入 Token</th>
-                    <th>输出 Token</th>
-                    <th>已知估算费用</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {usage.byKey.map((row) => (
-                    <tr key={row.keyId ?? "unknown"}>
-                      <td>{row.keyLabel ?? "未关联 Key"}</td>
-                      <td className="small">{row.requestCount}</td>
-                      <td className="small">{row.requestCount - row.unknownCostCount}</td>
-                      <td className="small">{row.unknownCostCount}</td>
-                      <td className="small">{row.failedCount}</td>
-                      <td className="small">{row.inputTokens.toLocaleString()}</td>
-                      <td className="small">{row.outputTokens.toLocaleString()}</td>
-                      <td className="small">
-                        {row.knownRequestCount === 0
-                          ? "—（暂无可计价调用）"
-                          : `$${row.knownCostUsd}`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableScroll>
-          )}
+          <JevUsageByKey rows={usage.byKey} />
 
           <h3>最近调用</h3>
           {usage.recent.total === 0 ? (
@@ -660,6 +455,7 @@ export default function JevPage() {
   } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [keysOpened, setKeysOpened] = useState(false);
   const [usagePage, setUsagePage] = useState(0);
 
   const settings = useApiResource<JevSettingsDto>("/api/settings/jev");
@@ -790,44 +586,31 @@ export default function JevPage() {
             密钥只在服务端加密使用，网页只显示掩码。
           </>
         }
+        actions={
+          <Button variant="default" size="sm" onClick={() => setKeysOpened(true)}>
+            管理密钥
+          </Button>
+        }
       >
-        <div className="stack">
-          <JevKeyAddForm onDone={reportResult} onError={setActionError} reload={reloadAll} />
-
-          {data.keys.length === 0 ? (
-            <p className="muted" style={{ margin: 0 }}>
-              还没有配置 Jev 密钥。添加后，后台判断、连接测试与需求试判都会从密钥池调度。
-            </p>
-          ) : (
-            <TableScroll label="Jev API 密钥列表" minTableWidth={1100}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>名称</th>
-                    <th>密钥</th>
-                    <th>状态</th>
-                    <th>连续失败</th>
-                    <th>禁用原因 / 最近错误</th>
-                    <th>最近使用</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.keys.map((item) => (
-                    <JevKeyRow
-                      key={`${item.id}:${item.updatedAt}`}
-                      item={item}
-                      onDone={reportResult}
-                      onError={setActionError}
-                      reload={reloadAll}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </TableScroll>
-          )}
-        </div>
+        {data.keys.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            还没有配置 Jev 密钥。添加后，后台判断、连接测试与需求试判都会从密钥池调度。
+          </p>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            共 {data.keys.length} 个 Key · {enabledKeys} 个启用。密钥较多时不再把长表铺在页面上，
+            改为在弹窗内分页查看与编辑。
+          </p>
+        )}
       </Section>
+
+      <JevKeysPanel
+        opened={keysOpened}
+        onClose={() => setKeysOpened(false)}
+        keys={data.keys}
+        loadError={settings.error}
+        reload={reloadAll}
+      />
 
       <Section
         id="jev-usage"
