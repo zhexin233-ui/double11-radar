@@ -1,18 +1,41 @@
-# 线报需求匹配与推送
+<div align="center">
 
-在本地 NAS 上持续监控线报酷（https://new.xianbao.fun），用 TypeSafe Jev 的原生 System One
-接口把新线报与你配置的购买需求逐项做语义匹配，只把**明确匹配**的线报推送到 Bark 与飞书群。
+# 双十一雷达 · Double11 Radar
 
-- 单管理员密码登录，局域网网页配置需求、频道、Jev 与推送渠道。
-- 采集、判断、投递由独立后台进程执行，关掉网页不会停止。
-- 首次启动只建立基线，只处理之后出现的新线报。
-- 一条线报命中多个需求时合并为一条通知。
-- 支持保存多个 Jev API Key 并发判断；同一 Key 连续 3 次实际请求失败会自动禁用，可手动恢复或替换。
-- Jev 页展示按官方公布费率估算的美元费用与用量，记录页支持状态筛选、分页与可开关的 5 秒自动刷新。
+**把购买需求交给 Jev，让值得关注的线报主动找到你。**
 
-> 交付状态：产品代码与自动化测试已完成，`pnpm typecheck` / `lint` / `test` / `build` 通过，
-> 并用真实线报酷公开 API 验证过采集与基线行为。**尚未使用真实的 Jev / Bark / 飞书凭据做端到端
-> 验证**；单元测试与冒烟测试全部基于注入的假传输层，不代表真实模型准确率或真实送达。
+为双十一准备，也适合日常使用的自托管线报需求匹配与推送工具。
+
+在 NAS 上持续采集线报酷，用 TypeSafe Jev 做语义判断，将明确匹配的线报推送到 Bark 与飞书群。
+
+[快速部署](#1-快速部署docker-compose) · [网页配置](#2-网页配置顺序) · [本地开发](#3-本地开发) · [行为边界](#4-行为说明与边界) · [备份恢复](#5-备份与恢复)
+
+`Next.js 16` · `React 19` · `TypeScript` · `SQLite` · `Docker Compose`
+
+</div>
+
+---
+
+## 从「刷线报」到「等通知」
+
+填写「抽纸，不要湿巾」这样的购买需求，让后台持续采集、判断并投递。网页关闭后，独立 worker 仍会继续运行。
+
+```text
+线报酷 → 新线报采集 → 可选预筛 → Jev 语义判断 → 匹配确认 → Bark / 飞书
+              首次只建基线                    待确认与失败留在记录页
+```
+
+| 能力 | 说明 |
+| --- | --- |
+| 按需匹配 | 每条线报对全部启用需求做语义判断，支持名称与附加约束。 |
+| 三种处理模式 | 默认逐条判断；可选批次初筛或正则预筛，在覆盖范围与调用成本之间取舍。 |
+| 匹配确认 | 校验模型概率分布与匹配门槛，保留原始选择、业务结果和策略追溯。 |
+| 双渠道推送 | Bark 与飞书独立启停、测试和重试；一条线报命中多个需求时合并通知。 |
+| 多密钥与用量 | 多 Key 调度、失败自动禁用、估算费用与调用明细，密钥和汇总支持弹窗分页。 |
+| 可视化管理 | 单管理员登录，支持深色主题、需求与频道管理、记录筛选和分页。 |
+| 本地持久化 | SQLite 保存配置与任务，凭据加密存储，容器重启后继续处理。 |
+
+> **验证范围**：仓库包含自动化测试，并有公开采集 API 的验证记录；真实 Jev / Bark / 飞书的送达与匹配效果仍需在自己的部署中验收。模型概率与费用估算均不代表实际准确率或服务商账单。
 
 ## 1 快速部署（Docker Compose）
 
@@ -21,7 +44,8 @@
 > 供应链策略会拒绝当天刚发布的传递依赖，导致 `docker compose build` 失败。
 
 ```sh
-git clone <本仓库> && cd 11jev
+git clone https://github.com/zhexin233-ui/double11-radar.git
+cd double11-radar
 cp .env.example .env
 
 # 生成 32 字节 base64 加密密钥，填入 .env 的 APP_ENCRYPTION_KEY
@@ -66,6 +90,11 @@ Jev 可通过部署变量 `JEV_PROXY_URL=http://代理地址:端口` 使用专�
 
    这两项保存后立即生效（worker 每轮重新读取），不需要重启容器。点击「测试连接」做单次验证
    （不会回放历史线报），也可在 Key 列表里对单个 Key 测试。
+
+   **后台判断模式**：默认逐条判断；可切换为「批次初筛后全批逐条」或「全局正则预筛后逐条」。
+   批次内全部明确无关时才整批排除，有命中或待确认成员时全批展开；相关批次会多一次初筛调用，
+   不保证一定省费。正则模式仅放行命中规则的线报，规则未覆盖的内容可能漏报。
+   模式切换只影响之后新采集的线报，不回放历史；已有批次沿用创建时的策略快照。
 
    **API Key 池**：可以保存多个 Key，每个独立启停、独立显示失败计数与禁用原因。
    同一 Key **连续 3 次实际请求失败**（含认证错误、超时、429/5xx 与非法响应）会自动禁用；
@@ -146,9 +175,12 @@ docker compose build
 - **Jev 上下文上限**：官方限制为 64k（state + 全部问题）与 32k（state + 最长单题）。
   本应用保留完整内容、不按字符裁剪冒充精确 Token 数；上游返回上下文超限时按一次失败记录并显示原因，
   不会静默丢掉某个需求。
-- **判断三态**：`matched` 才通知；`uncertain`（信息不足）留在网页待确认；
+- **判断三态**：`matched` 才通知；`uncertain`（信息不足或未通过匹配确认）留在网页待确认；
   `not_matched` 只保存记录。模型调用失败或返回结构不合法记为「处理失败」，
-  与「没有匹配」严格区分，绝不伪造成命中。分类说明由程序模板生成，不是模型生成的理由。
+  与「没有匹配」严格区分，绝不伪造成命中。模型原始选择为 `matched` 时，还需完整合法的三态概率分布、
+  匹配概率不低于其它选项且达到当前门槛 `0.80`，才确认为匹配；否则降为待确认，不作为调用失败重试。
+  `0.80` 是业务门槛，尚未经真实总体校准；页面展示的置信度不参与该门槛，也不等于正确率。
+  分类说明由程序模板生成，不是模型生成的理由。
 - **投递**：两个渠道独立启停、独立状态、独立重试。一个成功一个失败时只重试失败渠道；
   已成功渠道不会被本地重放。飞书必须 HTTP 200 且业务 `code === 0` 才算成功；
   `19021/19022/19024` 视为配置错误，停止自动重试并在网页提示。
@@ -161,11 +193,10 @@ docker compose build
 必须同时备份**数据库与加密密钥**，缺一不可：
 
 ```sh
-# 备份（例如通过容器）
-docker compose stop worker
-docker run --rm -v xianbao-data:/data -v "$PWD":/backup alpine \
-  tar czf /backup/xianbao-backup-$(date +%Y%m%d).tar.gz -C /data .
-docker compose start worker
+# 暂停两个写入进程后，从实际服务容器复制整个数据目录（含 SQLite WAL 文件）
+docker compose stop web worker
+docker compose cp web:/data "../double11-radar-backup-$(date +%Y%m%d-%H%M%S)"
+docker compose start web worker
 ```
 
 同时保存 `.env` 中的 `APP_ENCRYPTION_KEY`。恢复时把数据卷内容还原到 `DATA_DIR`，
@@ -187,15 +218,22 @@ docker compose start worker
 | 判断一直失败 | 检查 Jev 配置与 API 密钥；「处理失败」不等于没有匹配。 |
 | 未登录直接调 API 被拒 | 属预期行为：配置、记录、测试与重试接口都要求登录会话。 |
 
-## 7 架构
+## 7 架构与工程文档
 
 - TypeScript + Next.js（App Router，serverExternalPackages 中排除 `better-sqlite3`）
 - SQLite（better-sqlite3，WAL）持久化配置、线报、判断与投递记录
 - 独立 worker 进程：采集 → 判断 → 投递，事务 + 租约领取，崩溃可恢复
 - 凭据使用 AES-256-GCM 加密存储；会话使用服务端可验证的 HttpOnly Cookie
-- 所有外部请求（线报酷 / Jev / Bark / 飞书）都由 NAS 主动发出，不开放入站端口
+- 线报酷 / Jev / Bark / 飞书请求均由 NAS 主动发出；仅管理网页发布端口，无需推送回调入站端口
 
 工程契约与设计细节见归档任务 `.trellis/tasks/archive/2026-10/10-14-jev-key-pool-usage-records/` 下的
 `prd.md`、`design.md`、`implement.md` 与 `research/current-behavior.md`；
 更早的上游系统实现与基线/投递语义见 `.trellis/tasks/archive/2026-10/10-13-xianbao-needs-matching/`。
 编码规范见 `.trellis/spec/backend/` 与 `.trellis/spec/frontend/`。
+
+## 8 参与与反馈
+
+使用中遇到问题或有改进建议，欢迎提交 [Issue](https://github.com/zhexin233-ui/double11-radar/issues)。
+请附上部署方式、复现步骤与脱敏日志，不要上传凭据文件、API Key、Webhook 或数据库。
+
+本项目为个人工具，与线报酷、TypeSafe Jev、Bark、飞书无隶属关系。
