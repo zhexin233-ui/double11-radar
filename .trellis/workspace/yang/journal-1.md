@@ -249,3 +249,47 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: Jev 密钥列表与按 Key 汇总改为弹窗分页表格
+
+**Date**: 2026-10-17
+**Task**: Jev 密钥列表与按 Key 汇总改为弹窗分页表格
+**Branch**: `main`
+
+### Summary
+
+把 Jev 配置页两处未分页的长列表（约 200 个 API 密钥、按 Key 汇总）改为页面只留摘要与入口按钮、点击后在弹窗内分页展示（每页 10 条）；密钥写操作整体搬进弹窗，破坏性操作从 window.confirm 换成确认弹窗，并让操作反馈渲染在弹窗内。纯前端改动，不改服务端接口。
+
+### Main Changes
+
+- 新增 src/components/JevKeysPanel.tsx：Modal.Stack + 三个 stackId 弹窗（管理 / 编辑 / 确认）+ 只读分页表 + 新增表单 + 弹窗内 PanelNotice
+- 新增 src/components/format.ts 统一 formatTime；jev 范围不再保留内联副本
+- src/app/(admin)/jev/page.tsx：#jev-keys 改摘要+「管理密钥」按钮；「按 Key 汇总」改 5 行预览 + 「查看全部 N 个 Key」弹窗分页
+- pagination-model.ts 新增纯函数 pageSlice；api-types.ts 新增 JEV_KEYS_PAGE_SIZE / JEV_USAGE_BY_KEY_PAGE_SIZE / JEV_USAGE_BY_KEY_PREVIEW
+- 替换 3 处 window.confirm（清除密钥 / 停用 / 删除）为确认弹窗
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ebfa9e` | (see git log) |
+| `4e5e8c9` | (see git log) |
+| `771e581` | (see git log) |
+| `2d8908c` | (see git log) |
+
+### Testing
+
+- [OK] pnpm typecheck / pnpm lint 无输出；pnpm test 36 files / 285 tests 通过；pnpm build 成功且 / 与 /login 静态、/api/* 全动态
+- [OK] 新增 tests/components/pagination-model.test.ts 的 pageSlice 用例（空集 / 整除 / 末页不满 / 越界收敛 / 非法页大小 / total 缩减）
+- [OK] grep window.confirm 与 globals.css 硬编码颜色校验均无输出
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 手工冒烟 design.md §8 的 V2–V11：200+ Key 首屏、弹窗翻页行数、八类操作的弹窗内反馈、确认框取消不发请求、浅色与深色对比度、hydration 警告
+- 后续若 Key 数进入数千级，需要另开任务为 /api/settings/jev.keys 与 usage.byKey 做服务端分页
+- 其余 5 个页面（bulletins、bulletins/[id]、needs、status、channels）的 formatTime 局部副本是已知债务，下次触及时改为从 src/components/format 导入
