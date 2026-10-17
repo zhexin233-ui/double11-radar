@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestDb, testKey } from "../helpers/db";
 import { loadEnv, type AppEnv } from "@/lib/env";
 import { syncChannelsFromCatalog } from "@/lib/db/repos/channels";
-import { createNeed, listNeeds } from "@/lib/db/repos/needs";
-import { listBulletins, insertBulletinIfAbsent } from "@/lib/db/repos/bulletins";
-import { listEvaluationsByBulletin } from "@/lib/db/repos/evaluations";
+import { createNeed, listNeeds, updateNeed } from "@/lib/db/repos/needs";
+import {
+  listBulletins,
+  insertBulletinIfAbsent,
+  getBulletinDisplayStatus,
+} from "@/lib/db/repos/bulletins";
+import { listEvaluationsByBulletin, upsertEvaluation } from "@/lib/db/repos/evaluations";
 import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
 import { enqueueJob } from "@/lib/db/repos/jobs";
 import { makeNormalized } from "../helpers/bulletins";
@@ -15,7 +19,13 @@ import {
 } from "@/lib/worker/collector";
 import { runEvaluatorOnce } from "@/lib/worker/evaluator";
 import { runDelivererOnce } from "@/lib/worker/deliverer";
-import { saveJevConfig, saveNotifyConfig } from "@/lib/service/config";
+import {
+  saveJevConfig,
+  saveNotifyConfig,
+  getJevConfigView,
+} from "@/lib/service/config";
+import { RULE_VERSION } from "@/lib/domain/constants";
+import { questionIdForNeed } from "@/lib/jev/prompt";
 import {
   fetchFeed as xbFetchFeed,
   fetchMeta as xbFetchMeta,
@@ -201,7 +211,11 @@ describe("worker 判断与投递（mock 传输层，未做真实接口验证）"
         answers: Object.fromEntries(
           Object.keys(request.questions).map((id) => [
             id,
-            { type: "choice", choice: "matched" },
+            {
+              type: "choice",
+              choice: "matched",
+              probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+            },
           ]),
         ),
       }),
@@ -338,9 +352,12 @@ describe("worker 判断与投递（mock 传输层，未做真实接口验证）"
         callSystemOne: invalidCall as never,
       });
       expect(invalid.failed).toBe(1);
-      expect(
-        listEvaluationsByBulletin(ctx.db, invalidBulletin.id)[0].result,
-      ).toBe("failed");
+      const invalidRow = listEvaluationsByBulletin(ctx.db, invalidBulletin.id)[0];
+      expect(invalidRow.result).toBe("failed");
+      // 原始失败：真实错误保留，且不伪称模型选择或降级为待确认。
+      expect(invalidRow.error).toBeTruthy();
+      expect(invalidRow.modelResult).toBeNull();
+      expect(invalidRow.decisionReason).toBe("parse_failed");
       expect(listDeliveriesByBulletin(ctx.db, invalidBulletin.id)).toHaveLength(0);
       const notificationsAfter = ctx.db
         .prepare("SELECT COUNT(*) AS c FROM notifications")
@@ -429,7 +446,11 @@ describe("配置错误的判断任务可自动恢复（AC12）", () => {
           answers: Object.fromEntries(
             Object.keys(request.questions).map((id) => [
               id,
-              { type: "choice", choice: "matched" },
+              {
+                type: "choice",
+                choice: "matched",
+                probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+              },
             ]),
           ),
         }),
@@ -443,6 +464,146 @@ describe("配置错误的判断任务可自动恢复（AC12）", () => {
         .prepare("SELECT status FROM jobs LIMIT 1")
         .get() as { status: string };
       expect(after.status).toBe("succeeded");
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("配置版本追溯（R2）", () => {
+  it("请求期间配置变化时，落库 configVersion 指向实际请求版本", async () => {
+    const ctx = createTestDb();
+    try {
+      syncChannelsFromCatalog(
+        ctx.db,
+        [{ id: "haodan", name: "好单线报", alias: "haodan", origin: "feed" }],
+        { mode: "custom", customIds: ["haodan"] },
+      );
+      createNeed(ctx.db, { name: "抽纸" });
+      saveJevConfig(ctx.db, { apiKey: "sk-version" }, KEY);
+
+      const t1 = new Date("2026-10-14T01:00:00.000Z");
+      await runCollectorOnce(ctx.db, ENV, { ...makeCollectorDeps().deps, now: () => t1 });
+      await runCollectorOnce(ctx.db, ENV, {
+        ...makeCollectorDeps(FEED_HAODAN_NEW_ITEM).deps,
+        now: () => new Date(t1.getTime() + 120_000),
+      });
+      const bulletinId = listBulletins(ctx.db).items.find((b) => !b.baseline)!.id;
+      const versionBefore = getJevConfigView(ctx.db).version;
+
+      const callSystemOne = vi.fn(
+        async (_config: unknown, request: { questions: Record<string, unknown> }) => {
+          // 模拟响应返回前管理员改了模型：追溯仍指向实际请求时的版本。
+          saveJevConfig(ctx.db, { model: "jev-changed" }, KEY);
+          return {
+            answers: Object.fromEntries(
+              Object.keys(request.questions).map((id) => [
+                id,
+                {
+                  type: "choice",
+                  choice: "matched",
+                  probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+                },
+              ]),
+            ),
+          };
+        },
+      );
+      await runEvaluatorOnce(ctx.db, ENV, { callSystemOne: callSystemOne as never });
+
+      const [evaluation] = listEvaluationsByBulletin(ctx.db, bulletinId);
+      expect(evaluation.configVersion).toBe(versionBefore);
+      expect(getJevConfigView(ctx.db).version).toBeGreaterThan(versionBefore);
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("匹配确认通知成员（R1/R2）", () => {
+  it("只通知本次通过确认的需求，降级与历史 matched 不混入", async () => {
+    const ctx = createTestDb();
+    try {
+      syncChannelsFromCatalog(
+        ctx.db,
+        [{ id: "haodan", name: "好单线报", alias: "haodan", origin: "feed" }],
+        { mode: "custom", customIds: ["haodan"] },
+      );
+      const paper = createNeed(ctx.db, { name: "抽纸" });
+      const makeup = createNeed(ctx.db, { name: "卸妆膏" });
+      const historical = createNeed(ctx.db, { name: "历史需求" });
+      updateNeed(ctx.db, historical.id, { enabled: false });
+      saveJevConfig(ctx.db, { apiKey: "sk-confirm" }, KEY);
+
+      const t1 = new Date("2026-10-14T01:00:00.000Z");
+      await runCollectorOnce(ctx.db, ENV, { ...makeCollectorDeps().deps, now: () => t1 });
+      await runCollectorOnce(ctx.db, ENV, {
+        ...makeCollectorDeps(FEED_HAODAN_NEW_ITEM).deps,
+        now: () => new Date(t1.getTime() + 120_000),
+      });
+      const bulletinId = listBulletins(ctx.db).items.find((b) => !b.baseline)!.id;
+
+      // 预先存在一条同规则版本的历史 matched（模拟旧策略/旧通知场景）。
+      upsertEvaluation(ctx.db, {
+        bulletinId,
+        needId: historical.id,
+        needName: historical.name,
+        needNote: historical.note,
+        needVersion: historical.version,
+        configVersion: 1,
+        ruleVersion: RULE_VERSION,
+        result: "matched",
+        probabilities: { matched: 1, not_matched: 0, uncertain: 0 },
+        confidence: 1,
+        rawAnswer: "{}",
+        error: null,
+        modelResult: "matched",
+        decisionReason: "matched_confirmed",
+        decisionPolicyVersion: "match-confirmation-v1",
+        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        jevRequestId: "req-historical",
+      });
+
+      const callSystemOne = vi.fn(
+        async (_config: unknown, request: { questions: Record<string, unknown> }) => ({
+          answers: {
+            [questionIdForNeed(paper.id)]: {
+              type: "choice",
+              choice: "matched",
+              probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+            },
+            [questionIdForNeed(makeup.id)]: {
+              type: "choice",
+              choice: "matched",
+              probabilities: { matched: 0.5, not_matched: 0.25, uncertain: 0.25 },
+            },
+          },
+        }),
+      );
+      const result = await runEvaluatorOnce(ctx.db, ENV, {
+        callSystemOne: callSystemOne as never,
+      });
+
+      // 只有一个需求通过门槛。
+      expect(result.matched).toBe(1);
+      const evaluations = listEvaluationsByBulletin(ctx.db, bulletinId);
+      const byNeed = Object.fromEntries(evaluations.map((e) => [e.needId, e]));
+      expect(byNeed[paper.id].result).toBe("matched");
+      expect(byNeed[makeup.id].result).toBe("uncertain");
+      expect(byNeed[makeup.id].modelResult).toBe("matched");
+      expect(byNeed[makeup.id].decisionReason).toBe(
+        "matched_probability_below_threshold",
+      );
+
+      // 新通知只含本次确认项，不含降级项，也不重扫历史 matched。
+      const notification = ctx.db
+        .prepare("SELECT payload FROM notifications WHERE bulletin_id = ?")
+        .get(bulletinId) as { payload: string };
+      const payload = JSON.parse(notification.payload) as { needs: string[] };
+      expect(payload.needs).toEqual(["抽纸"]);
+
+      // 兼容性：历史 matched 仍参与列表聚合，整体仍显示为 matched。
+      expect(getBulletinDisplayStatus(ctx.db, bulletinId)).toBe("matched");
     } finally {
       ctx.close();
     }

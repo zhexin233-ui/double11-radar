@@ -64,7 +64,7 @@ describe("db/migrate", () => {
       const versions = ctx.db
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((row) => row.version)).toEqual([1, 2, 3]);
+      expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
     } finally {
       ctx.close();
     }
@@ -100,8 +100,8 @@ describe("db/migrate", () => {
       migrate(db, [migrations[0]]);
       setSecret(db, LEGACY_JEV_SECRET_NAMESPACE, "sk-legacy-secret", key);
 
-      // 升级到 V2/V3：数据迁移在同一事务内执行。
-      expect(migrate(db).applied).toEqual([2, 3]);
+      // 升级到 V2/V3/V4：数据迁移在同一事务内执行。
+      expect(migrate(db).applied).toEqual([2, 3, 4]);
       expect(listJevKeys(db)).toHaveLength(1);
       expect(getJevKey(db, LEGACY_JEV_KEY_ID)?.enabled).toBe(true);
       expect(getSecret(db, LEGACY_JEV_KEY_NAMESPACE, key)).toBe("sk-legacy-secret");
@@ -159,6 +159,43 @@ describe("db/migrate", () => {
       );
 
       // 重复迁移为幂等：不会因二次 ALTER 报错或重复应用。
+      expect(migrate(ctx.db).applied).toEqual([]);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("V4 追加判定追溯列，旧行可空，重复迁移不重复加列（AC5）", () => {
+    const ctx = createTestDb();
+    try {
+      const columns = ctx.db
+        .prepare("PRAGMA table_info(evaluations)")
+        .all() as Array<{ name: string; notnull: number }>;
+      const names = columns.map((row) => row.name);
+      expect(names).toEqual(
+        expect.arrayContaining([
+          "model_result",
+          "decision_reason",
+          "decision_policy_version",
+          "decision_policy_json",
+          "jev_request_id",
+        ]),
+      );
+      // 全部为可空列：旧行保持 NULL，不回填。
+      for (const column of columns) {
+        if (
+          [
+            "model_result",
+            "decision_reason",
+            "decision_policy_version",
+            "decision_policy_json",
+            "jev_request_id",
+          ].includes(column.name)
+        ) {
+          expect(column.notnull).toBe(0);
+        }
+      }
+
       expect(migrate(ctx.db).applied).toEqual([]);
     } finally {
       ctx.close();

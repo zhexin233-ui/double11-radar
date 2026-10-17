@@ -29,7 +29,12 @@ describe("需求试判 dry-run（验收工具，不写库）", () => {
 
       const callSystemOne = answering((id) =>
         id === questionIdForNeed(paper.id)
-          ? { type: "choice", choice: "matched", confidence: 0.91 }
+          ? {
+              type: "choice",
+              choice: "matched",
+              confidence: 0.91,
+              probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+            }
           : { type: "choice", choice: "not_matched" },
       );
 
@@ -45,7 +50,13 @@ describe("需求试判 dry-run（验收工具，不写库）", () => {
       expect(byName["抽纸"].result).toBe("matched");
       expect(byName["抽纸"].confidence).toBe(0.91);
       expect(byName["抽纸"].needNote).toBe("不要湿巾");
+      expect(byName["抽纸"].modelResult).toBe("matched");
+      expect(byName["抽纸"].decisionReason).toBe("matched_confirmed");
+      expect(byName["抽纸"].decisionPolicyVersion).toBe("match-confirmation-v1");
+      expect(byName["抽纸"].decisionPolicy.minMatchedProbability).toBe(0.8);
+      expect(byName["抽纸"].jevRequestId).toBeTruthy();
       expect(byName["咖啡豆"].result).toBe("not_matched");
+      expect(byName["咖啡豆"].decisionReason).toBe("model_not_matched");
 
       // 不写任何判断/通知/投递记录
       expect(
@@ -101,6 +112,39 @@ describe("需求试判 dry-run（验收工具，不写库）", () => {
       );
       expect(result.results[0].result).toBe("failed");
       expect(result.results[0].error).toContain("未知");
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("用户案例：模型 matched 但 p_matched 低于门槛时降为待确认并给原因", async () => {
+    const ctx = createTestDb();
+    try {
+      createNeed(ctx.db, { name: "安踏" });
+      saveJevConfig(ctx.db, { apiKey: "sk-dry-run" }, KEY);
+      const result = await runJevDryRun(
+        ctx.db,
+        { title: "ON/安乃安短款外套" },
+        {
+          callSystemOne: answering(() => ({
+            type: "choice",
+            choice: "matched",
+            confidence: 0.28,
+            probabilities: { matched: 0.52, not_matched: 0.15, uncertain: 0.33 },
+          })) as never,
+        },
+      );
+      const [row] = result.results;
+      expect(row.result).toBe("uncertain");
+      expect(row.modelResult).toBe("matched");
+      expect(row.decisionReason).toBe("matched_probability_below_threshold");
+      expect(row.probabilities).toEqual({
+        matched: 0.52,
+        not_matched: 0.15,
+        uncertain: 0.33,
+      });
+      expect(row.confidence).toBe(0.28);
+      expect(row.error).toBeNull();
     } finally {
       ctx.close();
     }

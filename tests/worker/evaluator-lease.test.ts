@@ -179,7 +179,11 @@ describe("阻塞与容量问题不耗尽普通尝试（AC3）", () => {
       const callSystemOne = vi.fn(
         async (_config: unknown, request: { questions: Record<string, unknown> }) => ({
           answers: {
-            [questionIdForNeed(paper.id)]: { type: "choice", choice: "matched" },
+            [questionIdForNeed(paper.id)]: {
+              type: "choice",
+              choice: "matched",
+              probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+            },
             [questionIdForNeed(makeup.id)]: { type: "choice", choice: "not_matched" },
           },
         }),
@@ -211,6 +215,12 @@ describe("阻塞与容量问题不耗尽普通尝试（AC3）", () => {
       expect(countRows(ctx.db, "notifications")).toBe(1);
       // 一次实际调用 → 账本也恰好一行。
       expect(countRows(ctx.db, "jev_requests")).toBe(1);
+      // 追溯字段与实际调用账本关联。
+      const paperRow = evaluations.find((e) => e.needName === "抽纸")!;
+      expect(paperRow.modelResult).toBe("matched");
+      expect(paperRow.decisionReason).toBe("matched_confirmed");
+      expect(paperRow.decisionPolicyVersion).toBe("match-confirmation-v1");
+      expect(paperRow.jevRequestId).toBeTruthy();
     } finally {
       ctx.close();
     }

@@ -27,6 +27,10 @@ import {
   markDeliveryResult,
 } from "@/lib/db/repos/deliveries";
 import { createNotificationIfAbsent } from "@/lib/db/repos/notifications";
+import {
+  listEvaluationsByBulletin,
+  upsertEvaluation,
+} from "@/lib/db/repos/evaluations";
 import { createNotificationAndDeliveries } from "@/lib/notify/dispatch";
 import { makeBulletin } from "../helpers/bulletins";
 import type { Evaluation } from "@/lib/domain/types";
@@ -223,6 +227,11 @@ describe("通知创建（AC8/AC10）", () => {
     attempts: 1,
     createdAt: "2026-10-14T00:00:00.000Z",
     updatedAt: "2026-10-14T00:00:00.000Z",
+    modelResult: "matched",
+    decisionReason: "matched_confirmed",
+    decisionPolicyVersion: "match-confirmation-v1",
+    decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+    jevRequestId: null,
   });
 
   it("两渠道关闭时不创建投递但保留判断/通知", () => {
@@ -254,6 +263,139 @@ describe("通知创建（AC8/AC10）", () => {
       const second = createNotificationAndDeliveries(ctx.db, makeBulletin(), [matched("抽纸")]);
       expect(second.created).toBe(false);
       expect(second.notification.id).toBe(first.notification.id);
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("判断追溯字段（AC5）", () => {
+  function seedBulletin(ctx: ReturnType<typeof createTestDb>): string {
+    return insertBulletinIfAbsent(ctx.db, makeNormalized({ sourceId: "trace-1" }), {
+      baseline: false,
+    }).id;
+  }
+
+  it("原始概率/置信度/最终结果与追溯快照可往返，策略 JSON 正确解码", () => {
+    const ctx = createTestDb();
+    try {
+      const bulletinId = seedBulletin(ctx);
+      upsertEvaluation(ctx.db, {
+        bulletinId,
+        needId: "need-1",
+        needName: "抽纸",
+        needNote: "",
+        needVersion: 1,
+        configVersion: 3,
+        ruleVersion: "r1",
+        result: "uncertain",
+        probabilities: { matched: 0.52, not_matched: 0.15, uncertain: 0.33 },
+        confidence: 0.28,
+        rawAnswer: '{"choice":"matched"}',
+        error: null,
+        modelResult: "matched",
+        decisionReason: "matched_probability_below_threshold",
+        decisionPolicyVersion: "match-confirmation-v1",
+        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        jevRequestId: "req-1",
+      });
+
+      const [row] = listEvaluationsByBulletin(ctx.db, bulletinId);
+      expect(row.result).toBe("uncertain");
+      expect(row.modelResult).toBe("matched");
+      expect(row.decisionReason).toBe("matched_probability_below_threshold");
+      expect(row.decisionPolicyVersion).toBe("match-confirmation-v1");
+      expect(row.decisionPolicy).toEqual({
+        minMatchedProbability: 0.8,
+        probabilitySumTolerance: 0.01,
+      });
+      expect(row.jevRequestId).toBe("req-1");
+      expect(JSON.parse(row.probabilities!)).toEqual({
+        matched: 0.52,
+        not_matched: 0.15,
+        uncertain: 0.33,
+      });
+      expect(row.confidence).toBe(0.28);
+      expect(row.rawAnswer).toBe('{"choice":"matched"}');
+      expect(row.error).toBeNull();
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("同键重试同步覆盖追溯信息、attempts 累加、created_at 不变", () => {
+    const ctx = createTestDb();
+    try {
+      const bulletinId = seedBulletin(ctx);
+      const base = {
+        bulletinId,
+        needId: "need-1",
+        needName: "抽纸",
+        needNote: "",
+        needVersion: 1,
+        configVersion: 1,
+        ruleVersion: "r1",
+      };
+      upsertEvaluation(ctx.db, {
+        ...base,
+        result: "uncertain",
+        modelResult: "matched",
+        decisionReason: "probabilities_missing",
+        decisionPolicyVersion: "match-confirmation-v1",
+        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        jevRequestId: "req-old",
+      });
+      const before = listEvaluationsByBulletin(ctx.db, bulletinId)[0];
+
+      upsertEvaluation(ctx.db, {
+        ...base,
+        result: "matched",
+        modelResult: "matched",
+        decisionReason: "matched_confirmed",
+        decisionPolicyVersion: "match-confirmation-v1",
+        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        jevRequestId: "req-new",
+      });
+      const after = listEvaluationsByBulletin(ctx.db, bulletinId)[0];
+      expect(after.result).toBe("matched");
+      expect(after.decisionReason).toBe("matched_confirmed");
+      expect(after.jevRequestId).toBe("req-new");
+      expect(after.attempts).toBe(2);
+      expect(after.createdAt).toBe(before.createdAt);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("旧行追溯字段为 NULL；异常策略 JSON 解码为 null，不默认为当前策略", () => {
+    const ctx = createTestDb();
+    try {
+      const bulletinId = seedBulletin(ctx);
+      const now = new Date().toISOString();
+      ctx.db
+        .prepare(
+          `INSERT INTO evaluations (
+             id, bulletin_id, need_id, need_name, need_note, need_version, config_version,
+             rule_version, result, attempts, created_at, updated_at
+           ) VALUES ('old-1', ?, 'n1', '旧需求', '', 1, 1, 'r0', 'matched', 1, ?, ?)`,
+        )
+        .run(bulletinId, now, now);
+      const [old] = listEvaluationsByBulletin(ctx.db, bulletinId);
+      expect(old.modelResult).toBeNull();
+      expect(old.decisionReason).toBeNull();
+      expect(old.decisionPolicyVersion).toBeNull();
+      expect(old.decisionPolicy).toBeNull();
+      expect(old.jevRequestId).toBeNull();
+
+      // 异常 JSON 不使详情崩溃，也不回退成默认策略。
+      ctx.db
+        .prepare("UPDATE evaluations SET decision_policy_json = ? WHERE id = 'old-1'")
+        .run("{not-json");
+      expect(listEvaluationsByBulletin(ctx.db, bulletinId)[0].decisionPolicy).toBeNull();
+      ctx.db
+        .prepare("UPDATE evaluations SET decision_policy_json = ? WHERE id = 'old-1'")
+        .run('{"minMatchedProbability":"0.8"}');
+      expect(listEvaluationsByBulletin(ctx.db, bulletinId)[0].decisionPolicy).toBeNull();
     } finally {
       ctx.close();
     }

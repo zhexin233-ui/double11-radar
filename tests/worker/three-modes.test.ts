@@ -161,6 +161,43 @@ describe("逐条模式（AC1）", () => {
       ctx.close();
     }
   });
+
+  it("低概率 matched 降为待确认，不通知且调用次数不变（同策略）", async () => {
+    const ctx = createTestDb();
+    try {
+      createNeed(ctx.db, { name: "抽纸" });
+      saveJevConfig(ctx.db, { apiKey: "sk-individual-low", jobsPerRound: 10 }, KEY);
+      const id = seedBulletin(ctx, "i-low");
+      seedRun(ctx, { mode: "individual", bulletinIds: [id] });
+
+      const calls = vi.fn(
+        async (_config: unknown, request: { questions: Record<string, unknown> }) => ({
+          answers: Object.fromEntries(
+            Object.keys(request.questions).map((q) => [
+              q,
+              {
+                type: "choice",
+                choice: "matched",
+                probabilities: { matched: 0.52, not_matched: 0.15, uncertain: 0.33 },
+              },
+            ]),
+          ),
+        }),
+      );
+      await runEvaluatorOnce(ctx.db, ENV, { callSystemOne: calls as never });
+
+      // 仍然只发一次请求，不因降级而额外调用或重判。
+      expect(calls).toHaveBeenCalledTimes(1);
+      const [evaluation] = listEvaluationsByBulletin(ctx.db, id);
+      expect(evaluation.result).toBe("uncertain");
+      expect(evaluation.modelResult).toBe("matched");
+      expect(evaluation.decisionReason).toBe("matched_probability_below_threshold");
+      expect(countRows(ctx.db, "notifications")).toBe(0);
+      expect(getBulletinDisplayStatus(ctx.db, id)).toBe("uncertain");
+    } finally {
+      ctx.close();
+    }
+  });
 });
 
 describe("批次预筛模式（AC3/AC4/AC5）", () => {
@@ -243,7 +280,11 @@ describe("批次预筛模式（AC3/AC4/AC5）", () => {
           // 展开后的逐条判断：全部命中。
           return {
             answers: {
-              [questionIdForNeed(paper.id)]: { type: "choice", choice: "matched" },
+              [questionIdForNeed(paper.id)]: {
+                type: "choice",
+                choice: "matched",
+                probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+              },
             },
           };
         },
@@ -460,7 +501,11 @@ describe("正则预筛模式（AC7/AC8）", () => {
           answers: Object.fromEntries(
             Object.keys(request.questions).map((q) => [
               q,
-              { type: "choice", choice: "matched" },
+              {
+                type: "choice",
+                choice: "matched",
+                probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+              },
             ]),
           ),
         }),
