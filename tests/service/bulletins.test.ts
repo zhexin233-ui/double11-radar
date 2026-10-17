@@ -7,6 +7,8 @@ import {
 } from "@/lib/db/repos/bulletins";
 import { enqueueJob } from "@/lib/db/repos/jobs";
 import { upsertEvaluation } from "@/lib/db/repos/evaluations";
+import { MATCH_CONFIRMATION_POLICY_VERSION } from "@/lib/jev/match-policy";
+import { RULE_VERSION } from "@/lib/domain/constants";
 import {
   describeBulletin,
   listBulletinDetails,
@@ -97,6 +99,96 @@ describe("线报状态投影（AC12：故障与「没有匹配」必须可区分
       const page = listBulletinDetails(ctx.db, { baseline: false });
       expect(page.items[0].status).toBe("matched");
       expect(page.items[0].explanation).toBe("该线报被 Jev 判为符合需求：抽纸");
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("混合历史 matched 与本次降级 uncertain 时整体仍 matched，逐需求原因可区分", () => {
+    const ctx = createTestDb();
+    try {
+      const { id } = insertBulletinIfAbsent(ctx.db, makeNormalized(), { baseline: false });
+      // 历史（旧规则版本）matched：不重算、不撤销，仍参与聚合。
+      upsertEvaluation(ctx.db, {
+        bulletinId: id,
+        needId: "need-old",
+        needName: "历史需求",
+        needNote: "",
+        needVersion: 1,
+        configVersion: 1,
+        ruleVersion: "r0",
+        result: "matched",
+        probabilities: { matched: 1, not_matched: 0, uncertain: 0 },
+        confidence: 1,
+        rawAnswer: "{}",
+        error: null,
+        modelResult: "matched",
+        decisionReason: "matched_confirmed",
+        decisionPolicyVersion: "match-confirmation-v1",
+        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        jevRequestId: "req-old",
+      });
+      // 本次在新策略下降级的需求：原始选择保留，业务结果与原因分开。
+      upsertEvaluation(ctx.db, {
+        bulletinId: id,
+        needId: "need-cur",
+        needName: "本次需求",
+        needNote: "",
+        needVersion: 1,
+        configVersion: 1,
+        ruleVersion: "r1",
+        result: "uncertain",
+        probabilities: { matched: 0.52, not_matched: 0.15, uncertain: 0.33 },
+        confidence: 0.28,
+        rawAnswer: "{}",
+        error: null,
+        modelResult: "matched",
+        decisionReason: "matched_probability_below_threshold",
+        decisionPolicyVersion: "match-confirmation-v1",
+        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        jevRequestId: "req-cur",
+      });
+
+      const page = listBulletinDetails(ctx.db, { baseline: false });
+      expect(page.items[0].status).toBe("matched");
+      expect(page.items[0].matchedNeeds).toEqual(["历史需求"]);
+      // 跨版本/旧记录 matched → 提示历史判定未按本策略重算。
+      expect(page.items[0].hasHistoricalMatched).toBe(true);
+      const current = page.items[0].evaluations.find((e) => e.needId === "need-cur");
+      expect(current?.result).toBe("uncertain");
+      expect(current?.modelResult).toBe("matched");
+      expect(current?.decisionReason).toBe("matched_probability_below_threshold");
+      expect(current?.error).toBeNull();
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("只有当前策略版本的 matched 时不提示历史判定", () => {
+    const ctx = createTestDb();
+    try {
+      const { id } = insertBulletinIfAbsent(ctx.db, makeNormalized(), { baseline: false });
+      upsertEvaluation(ctx.db, {
+        bulletinId: id,
+        needId: "need-now",
+        needName: "当前需求",
+        needNote: "",
+        needVersion: 1,
+        configVersion: 1,
+        ruleVersion: RULE_VERSION,
+        result: "matched",
+        probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+        confidence: 0.9,
+        rawAnswer: "{}",
+        error: null,
+        modelResult: "matched",
+        decisionReason: "matched_confirmed",
+        decisionPolicyVersion: MATCH_CONFIRMATION_POLICY_VERSION,
+        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        jevRequestId: "req-now",
+      });
+      const page = listBulletinDetails(ctx.db, { baseline: false });
+      expect(page.items[0].hasHistoricalMatched).toBe(false);
     } finally {
       ctx.close();
     }
