@@ -10,8 +10,13 @@ import {
   DELIVERY_LABELS,
   EVALUATION_LABELS,
   EVALUATION_MODE_LABELS,
+  MODEL_CHOICE_LABELS,
   PROCESSING_SOURCE_LABELS,
   STATUS_LABELS,
+  formatConfidence,
+  formatDecisionReason,
+  formatProbabilities,
+  parseProbabilityRecord,
   type BulletinDetailDto,
 } from "@/components/api-types";
 import { Section } from "@/components/ui/Section";
@@ -23,18 +28,6 @@ function formatTime(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
-}
-
-function formatProbabilities(raw: string | null): string {
-  if (!raw) return "";
-  try {
-    const parsed = JSON.parse(raw) as Record<string, number>;
-    return Object.entries(parsed)
-      .map(([key, value]) => `${key}=${value}`)
-      .join("，");
-  } catch {
-    return "";
-  }
 }
 
 export default function BulletinDetailPage() {
@@ -186,12 +179,19 @@ export default function BulletinDetailPage() {
       ) : null}
 
       <Section title="命中需求与分类说明">
+        {detail.hasHistoricalMatched ? (
+          <Feedback kind="notice">
+            含历史判定，未按本策略重算；下方追溯字段仅适用于升级后新产生的判断。
+          </Feedback>
+        ) : null}
         {detail.matchedNeeds.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
             {detail.status === "failed"
               ? "本次判断存在处理失败，不能视为「没有匹配」。"
               : detail.status === "uncertain"
-                ? "信息不足，留在待确认，未发送通知。"
+                ? detail.notification
+                  ? "本次为待确认，不产生新的匹配通知；已有通知与投递见下方。"
+                  : "本次为待确认，不产生新的匹配通知。"
                 : detail.processing?.stage === "filtered"
                   ? (detail.processing.screeningReason ??
                     "该条未匹配本地规则，未调用 JEV。")
@@ -214,39 +214,78 @@ export default function BulletinDetailPage() {
             尚无判断记录（可能仍在队列中）。
           </p>
         ) : (
-          <TableScroll label="逐需求判断列表">
-            <table>
-              <thead>
-                <tr>
-                  <th>需求</th>
-                  <th>结果</th>
-                  <th>置信度</th>
-                  <th>概率</th>
-                  <th>说明 / 错误</th>
-                  <th>时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.evaluations.map((evaluation) => (
-                  <tr key={evaluation.id}>
-                    <td>
-                      {evaluation.needName}
-                      <div className="muted small">v{evaluation.needVersion}</div>
-                    </td>
-                    <td>
-                      <StatusBadge status={evaluation.result}>
-                        {EVALUATION_LABELS[evaluation.result]}
-                      </StatusBadge>
-                    </td>
-                    <td className="small">{evaluation.confidence ?? "—"}</td>
-                    <td className="small">{formatProbabilities(evaluation.probabilities)}</td>
-                    <td className="small error">{evaluation.error ?? ""}</td>
-                    <td className="small">{formatTime(evaluation.updatedAt)}</td>
+          <>
+            <TableScroll label="逐需求判断列表" minTableWidth={1100}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>需求</th>
+                    <th>模型原始选择</th>
+                    <th>业务结果</th>
+                    <th>概率 / 置信度</th>
+                    <th>程序判定</th>
+                    <th>错误</th>
+                    <th>时间</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
+                </thead>
+                <tbody>
+                  {detail.evaluations.map((evaluation) => {
+                    const probabilities = parseProbabilityRecord(
+                      evaluation.probabilities,
+                    );
+                    const minMatched =
+                      evaluation.decisionPolicy?.minMatchedProbability ?? null;
+                    return (
+                      <tr key={evaluation.id}>
+                        <td>
+                          {evaluation.needName}
+                          <div className="muted small">v{evaluation.needVersion}</div>
+                        </td>
+                        <td className="small">
+                          {evaluation.modelResult
+                            ? MODEL_CHOICE_LABELS[evaluation.modelResult]
+                            : "未记录（历史）"}
+                        </td>
+                        <td>
+                          <StatusBadge status={evaluation.result}>
+                            {EVALUATION_LABELS[evaluation.result]}
+                          </StatusBadge>
+                        </td>
+                        <td className="small">
+                          {formatProbabilities(probabilities)}
+                          <div className="muted small">
+                            置信度：{formatConfidence(evaluation.confidence)}
+                          </div>
+                        </td>
+                        <td className="small">
+                          {evaluation.decisionReason
+                            ? formatDecisionReason(evaluation.decisionReason, {
+                                matchedProbability:
+                                  probabilities?.matched ?? null,
+                                minMatchedProbability: minMatched,
+                              })
+                            : "历史记录：未记录匹配确认策略"}
+                          <div className="muted small">
+                            {`规则 ${evaluation.ruleVersion} · 配置 v${evaluation.configVersion}`}
+                            {evaluation.decisionPolicyVersion
+                              ? ` · 策略 ${evaluation.decisionPolicyVersion}` +
+                                (minMatched !== null ? `（门槛 ${minMatched}）` : "")
+                              : " · 策略未记录"}
+                          </div>
+                        </td>
+                        <td className="small error">{evaluation.error ?? ""}</td>
+                        <td className="small">{formatTime(evaluation.updatedAt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableScroll>
+            <p className="muted small" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
+              置信度表示上游概率分布的集中程度，<strong>不代表业务正确率</strong>；
+              是否确认匹配只看完整概率分布与门槛。
+            </p>
+          </>
         )}
       </Section>
 

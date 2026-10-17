@@ -334,6 +334,21 @@ CREATE INDEX IF NOT EXISTS idx_jev_requests_run ON jev_requests(evaluation_run_i
 CREATE INDEX IF NOT EXISTS idx_jev_requests_part ON jev_requests(batch_part_id);
 `;
 
+/**
+ * V4：逐需求判定追溯。
+ *
+ * 追加 nullable 追溯列，便于区分模型的原始选择与业务确认结果；
+ * 旧行保持 NULL（显示「策略未记录」），不回填、不伪造，也不改变唯一键与 upsert 语义。
+ * `jev_request_id` 仅记录成功响应对应的实际调用账本 ID，不做级联删除。
+ */
+const V4_MATCH_CONFIRMATION_TRACE = `
+ALTER TABLE evaluations ADD COLUMN model_result TEXT;
+ALTER TABLE evaluations ADD COLUMN decision_reason TEXT;
+ALTER TABLE evaluations ADD COLUMN decision_policy_version TEXT;
+ALTER TABLE evaluations ADD COLUMN decision_policy_json TEXT;
+ALTER TABLE evaluations ADD COLUMN jev_request_id TEXT;
+`;
+
 export const migrations: Migration[] = [
   {
     version: 1,
@@ -350,5 +365,10 @@ export const migrations: Migration[] = [
     version: 3,
     name: "evaluation_modes_runs_batch_parts_processing",
     sql: V3_EVALUATION_MODES,
+  },
+  {
+    version: 4,
+    name: "evaluations_match_confirmation_trace",
+    sql: V4_MATCH_CONFIRMATION_TRACE,
   },
 ];

@@ -14,6 +14,30 @@ export type ChoiceOutcome = "matched" | "not_matched" | "uncertain";
  */
 export type EvaluationResult = ChoiceOutcome | "failed";
 
+/**
+ * 匹配确认的确定性程序原因码。
+ *
+ * 与模型原始选择分开保存：`modelResult` 是模型给出的三态，`result` 是本策略
+ * 确认后的业务结果；原因码解释两者为何不同（或为何未变）。
+ */
+export type DecisionReason =
+  | "parse_failed"
+  | "model_not_matched"
+  | "model_uncertain"
+  | "probabilities_missing"
+  | "probabilities_invalid"
+  | "choice_probability_conflict"
+  | "matched_probability_below_threshold"
+  | "matched_confirmed";
+
+/** 匹配确认策略参数（随策略版本冻结，改变算法/参数必须提升版本）。 */
+export interface MatchConfirmationPolicy {
+  /** 自动确认 matched 的最小 p_matched（原始值比较）。 */
+  minMatchedProbability: number;
+  /** 概率分布总和与 1 的最大可接受误差。 */
+  probabilitySumTolerance: number;
+}
+
 /** 任务状态。`leased` 为租约持有中，`dead` 为超过最大尝试次数。 */
 export type JobStatus = "pending" | "leased" | "succeeded" | "dead";
 
@@ -153,6 +177,16 @@ export interface Evaluation {
   attempts: number;
   createdAt: string;
   updatedAt: string;
+  /** 模型原始三态选择；解析失败或旧记录为 null（不伪称 failed 是模型选择）。 */
+  modelResult: ChoiceOutcome | null;
+  /** 程序判定原因码；旧记录为 null。 */
+  decisionReason: DecisionReason | null;
+  /** 匹配确认策略版本；旧记录为 null。 */
+  decisionPolicyVersion: string | null;
+  /** 匹配确认策略快照；旧记录或快照异常为 null。 */
+  decisionPolicy: MatchConfirmationPolicy | null;
+  /** 产生该判断的实际调用账本 ID；旧记录为 null。 */
+  jevRequestId: string | null;
 }
 
 /** 单渠道投递记录。 */

@@ -34,6 +34,11 @@ import {
 } from "@/lib/jev/batch-prompt";
 import { measureBatchGateBytes } from "@/lib/jev/batch-packing";
 import { buildQuestions, buildState, parseAnswers } from "@/lib/jev/prompt";
+import {
+  MATCH_CONFIRMATION_POLICY,
+  MATCH_CONFIRMATION_POLICY_VERSION,
+  decideMatchConfirmation,
+} from "@/lib/jev/match-policy";
 import { createNotificationAndDeliveries } from "@/lib/notify/dispatch";
 import { buildRegexMatchText } from "@/lib/regex/rules";
 import { getSharedRegexRunner, type RegexRunner } from "@/lib/service/regex-runner";
@@ -291,9 +296,12 @@ async function evaluateJob(
     return { persisted: false, result: null, matched: 0 };
   }
 
-  const configVersion = getJevConfigView(db).version;
+  const configVersionFallback = getJevConfigView(db).version;
   const { questions, needByQuestionId } = buildQuestions(needs);
   const state = buildState(bulletin);
+
+  // 策略在逐条请求开始前捕获一次，响应后使用同一快照（改变参数必须提升版本）。
+  const policySnapshot = MATCH_CONFIRMATION_POLICY;
 
   // 统一服务负责容量、Key 选择、失败计数与用量账本；一次调用最多计一次失败。
   const outcome = await callJevWithLedger(
@@ -321,10 +329,14 @@ async function evaluateJob(
 
   const questionIds = Object.keys(questions);
   const answers = parseAnswers(outcome.response, questionIds);
+  // 落库使用实际调用的配置版本（请求期间配置变化也不会写错）；仅在缺失时回退到请求前快照。
+  const configVersion =
+    outcome.semanticConfig.configVersion ?? configVersionFallback;
 
   let matched = 0;
   let uncertain = 0;
   let failedCount = 0;
+  const matchedNeedIds: string[] = [];
   const persistNow = nowFrom(deps).toISOString();
 
   // 一次多问题请求最多计一次调用失败，但每条需求的答案独立落库。
@@ -335,6 +347,8 @@ async function evaluateJob(
       const need = needByQuestionId.get(questionId);
       if (!need) continue;
       const answer = answers[questionId];
+      // 共享纯决策函数：保留原始选择，必要时将 matched 降为待确认。
+      const decision = decideMatchConfirmation(answer, policySnapshot);
       upsertEvaluation(db, {
         bulletinId: bulletin.id,
         needId: need.id,
@@ -343,22 +357,36 @@ async function evaluateJob(
         needVersion: need.version,
         configVersion,
         ruleVersion: RULE_VERSION,
-        result: answer.result,
+        result: decision.result,
         probabilities: answer.probabilities,
         confidence: answer.confidence,
         rawAnswer: answer.raw,
         error: answer.error,
+        modelResult: decision.modelResult,
+        decisionReason: decision.reason,
+        decisionPolicyVersion: MATCH_CONFIRMATION_POLICY_VERSION,
+        decisionPolicy: policySnapshot,
+        jevRequestId: outcome.requestId,
       });
-      if (answer.result === "matched") matched += 1;
-      else if (answer.result === "uncertain") uncertain += 1;
-      else if (answer.result === "failed") failedCount += 1;
+      if (decision.result === "matched") {
+        matched += 1;
+        matchedNeedIds.push(need.id);
+      } else if (decision.result === "uncertain") uncertain += 1;
+      else if (decision.result === "failed") failedCount += 1;
     }
 
-    if (matched > 0) {
+    if (matchedNeedIds.length > 0) {
+      // 只汇总本次真正落库的确认匹配项，禁止重扫全部历史 matched 混入旧项。
+      const confirmed = new Set(matchedNeedIds);
       const matchedEvaluations = listEvaluationsByBulletin(db, bulletin.id).filter(
-        (evaluation) => evaluation.result === "matched",
+        (evaluation) =>
+          evaluation.ruleVersion === RULE_VERSION &&
+          evaluation.result === "matched" &&
+          confirmed.has(evaluation.needId),
       );
-      createNotificationAndDeliveries(db, bulletin, matchedEvaluations);
+      if (matchedEvaluations.length > 0) {
+        createNotificationAndDeliveries(db, bulletin, matchedEvaluations);
+      }
     }
     if (processing) {
       updateProcessing(
