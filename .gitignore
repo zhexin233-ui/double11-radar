@@ -33,3 +33,6 @@ pnpm-debug.log*
 
 # test / coverage
 coverage/
+
+# 本地凭据（绝不提交）
+jevapikey
