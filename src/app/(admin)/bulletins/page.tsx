@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
+import { Button, Select, Switch } from "@mantine/core";
 import { useApiResource } from "@/components/use-api";
 import {
   BULLETIN_AUTO_REFRESH_MS,
@@ -14,8 +15,11 @@ import {
 } from "@/components/api-types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
-import { TableScroll } from "@/components/ui/TableScroll";
+import { List, ListItem, Eyebrow } from "@/components/ui/List";
+import { Pagination } from "@/components/ui/Pagination";
 import { Feedback } from "@/components/ui/Feedback";
+import { StatusBadge } from "@/components/status-badge";
+import { clampPage } from "@/components/pagination-model";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -28,10 +32,16 @@ interface BulletinsResponse {
   total: number;
 }
 
-/** 把 `<select>` 的字符串收窄成筛选枚举，避免对 API 响应做断言。 */
-function isFilterStatus(value: string): value is "" | BulletinFilterStatusDto {
+/** 把下拉的字符串收窄成筛选枚举，避免对 API 响应做断言。 */
+function isFilterStatus(value: string): value is BulletinFilterStatusDto {
   return BULLETIN_FILTER_OPTIONS.some((option) => option.value === value);
 }
+
+/** Mantine `Select` 用非空字符串更省心，「全部」映射成哨兵值 `all`。 */
+const FILTER_DATA = BULLETIN_FILTER_OPTIONS.map((option) => ({
+  value: option.value || "all",
+  label: option.label,
+}));
 
 export default function BulletinsPage() {
   const [status, setStatus] = useState<"" | BulletinFilterStatusDto>("");
@@ -50,19 +60,16 @@ export default function BulletinsPage() {
     autoRefresh ? { refreshMs: BULLETIN_AUTO_REFRESH_MS } : {},
   );
 
-  // total 缩减（例如筛选后的数据被清理）时，收敛到最后一个有效页，避免停在空白页。
-  // 这是对服务端返回数据的收敛，不是从 props 派生 state。
-  useEffect(() => {
-    if (!data) return;
-    const lastPage =
-      data.total === 0 ? 0 : Math.ceil(data.total / BULLETIN_PAGE_SIZE) - 1;
-    if (page > lastPage) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- total 缩减后回退到有效页，避免展示越界空白页
-      setPage(lastPage);
-    }
-  }, [data, page]);
-
-  const hasNext = data ? offset + data.items.length < data.total : false;
+  // 数据缩减（例如筛选后的记录被清理）导致页码越界时，在渲染期收敛到最后一个有效页。
+  // 用「比较后修正 state」而不是 useEffect（react-hooks/set-state-in-effect），
+  // 且修正只在越界的那一次渲染发生，条件随后不再成立。
+  const total = data?.total ?? null;
+  if (total !== null) {
+    const clamped = clampPage(page, total, BULLETIN_PAGE_SIZE);
+    if (clamped !== page) setPage(clamped);
+  }
+  // 派生当前有效页码用于展示；越界时与修正后的 page 一致。
+  const safePage = total === null ? page : clampPage(page, total, BULLETIN_PAGE_SIZE);
 
   return (
     <div className="page">
@@ -74,38 +81,37 @@ export default function BulletinsPage() {
       <Section>
         <div className="toolbar" style={{ marginBottom: "var(--sp-5)" }}>
           <div className="toolbar-start">
-            <div className="field-inline">
-              <label htmlFor="status-filter">状态筛选</label>
-              <select
-                id="status-filter"
-                value={status}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  if (!isFilterStatus(next)) return;
+            <Select
+              id="status-filter"
+              label="状态筛选"
+              size="sm"
+              data={FILTER_DATA}
+              value={status || "all"}
+              onChange={(next) => {
+                if (next === null) return;
+                if (next === "all") {
+                  setStatus("");
+                  setPage(0);
+                  return;
+                }
+                if (isFilterStatus(next)) {
                   setStatus(next);
                   setPage(0);
-                }}
-              >
-                {BULLETIN_FILTER_OPTIONS.map((option) => (
-                  <option key={option.value || "all"} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+                }
+              }}
+              allowDeselect={false}
+            />
           </div>
           <div className="toolbar-end">
-            <button type="button" className="btn-ghost" onClick={() => void reload()}>
+            <Button variant="default" size="sm" onClick={() => void reload()}>
               刷新
-            </button>
-            <button
-              type="button"
-              className="btn-ghost"
-              aria-pressed={autoRefresh}
-              onClick={() => setAutoRefresh((value) => !value)}
-            >
-              自动刷新：{autoRefresh ? "开启" : "关闭"}（5 秒）
-            </button>
+            </Button>
+            <Switch
+              size="sm"
+              checked={autoRefresh}
+              onChange={(event) => setAutoRefresh(event.currentTarget.checked)}
+              label="自动刷新（5 秒）"
+            />
           </div>
         </div>
 
@@ -121,80 +127,58 @@ export default function BulletinsPage() {
         ) : null}
 
         {data && data.items.length > 0 ? (
-          <TableScroll label="线报记录列表">
-            <table>
-              <thead>
-                <tr>
-                  <th>状态</th>
-                  <th>线报</th>
-                  <th>命中需求</th>
-                  <th>价格</th>
-                  <th>时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((item) => (
-                  <tr key={item.bulletin.id}>
-                    <td>
-                      <span className={`badge ${item.status}`}>
-                        {STATUS_LABELS[item.status]}
-                      </span>
-                      {item.processing?.screeningSource ? (
-                        <div className="muted small">
-                          {PROCESSING_SOURCE_LABELS[item.processing.screeningSource]}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      <Link href={`/bulletins/${item.bulletin.id}`}>
+          <List>
+            {data.items.map((item) => {
+              const eyebrowItems: ReactNode[] = [
+                <StatusBadge key="status" status={item.status}>
+                  {STATUS_LABELS[item.status]}
+                </StatusBadge>,
+                item.bulletin.sourceNs,
+              ];
+              if (item.bulletin.category) eyebrowItems.push(item.bulletin.category);
+              eyebrowItems.push(formatTime(item.bulletin.publishedAt));
+
+              const price = item.bulletin.price;
+
+              return (
+                <ListItem key={item.bulletin.id}>
+                  <div className="list-body">
+                    <div>
+                      <Eyebrow items={eyebrowItems} />
+                      <Link className="list-title" href={`/bulletins/${item.bulletin.id}`}>
                         {item.bulletin.title}
                       </Link>
-                      <div className="muted small">
-                        {item.bulletin.sourceNs}
-                        {item.bulletin.category ? ` · ${item.bulletin.category}` : ""}
+                      <div className="list-meta">
+                        {price === null ? null : <span>价格：{price} 元</span>}
+                        <span>
+                          命中需求：
+                          {item.matchedNeeds.length ? item.matchedNeeds.join("、") : "—"}
+                        </span>
+                        {item.processing?.screeningSource ? (
+                          <span>
+                            {PROCESSING_SOURCE_LABELS[item.processing.screeningSource]}
+                          </span>
+                        ) : null}
                       </div>
-                    </td>
-                    <td className="small">
-                      {item.matchedNeeds.length ? item.matchedNeeds.join("、") : "—"}
-                    </td>
-                    <td className="small">
-                      {item.bulletin.price === null ? "" : `${item.bulletin.price} 元`}
-                    </td>
-                    <td className="small">{formatTime(item.bulletin.publishedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
+                    </div>
+                    <span className="list-trailing muted small" aria-hidden="true">
+                      查看 →
+                    </span>
+                  </div>
+                </ListItem>
+              );
+            })}
+          </List>
         ) : null}
 
         {data && data.total > 0 ? (
-          <div className="toolbar" style={{ marginTop: "var(--sp-5)" }}>
-            <span className="muted small">
-              共 {data.total} 条
-              {data.items.length > 0
-                ? `，当前显示第 ${offset + 1}–${offset + data.items.length} 条`
-                : ""}
-            </span>
-            <span className="toolbar-end">
-              <button
-                type="button"
-                className="btn-ghost"
-                disabled={page === 0}
-                onClick={() => setPage((value) => Math.max(0, value - 1))}
-              >
-                上一页
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                disabled={!hasNext}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                下一页
-              </button>
-            </span>
-          </div>
+          <Pagination
+            page={safePage}
+            total={data.total}
+            pageSize={BULLETIN_PAGE_SIZE}
+            onPage={setPage}
+            unit="条"
+          />
         ) : null}
       </Section>
     </div>

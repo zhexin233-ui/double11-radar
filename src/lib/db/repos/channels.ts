@@ -182,6 +182,31 @@ export function listChannels(db: Database.Database): ChannelState[] {
   return rows.map(toChannel);
 }
 
+/**
+ * 服务端分页读取采集频道。
+ *
+ * 排序追加唯一键 `id`，否则 `origin`/`name` 并列时翻页可能重复/漏项；
+ * `items` 与 `total` 在同一个只读事务内读取，保证两者一致。
+ * 只影响展示；`listChannels` / `listDueChannels` 及 worker 调用点不变。
+ */
+export function listChannelsPage(
+  db: Database.Database,
+  query: { limit: number; offset: number },
+): { items: ChannelState[]; total: number } {
+  const read = db.transaction(() => {
+    const total = db.prepare("SELECT COUNT(*) AS count FROM channels").get() as {
+      count: number;
+    };
+    const rows = db
+      .prepare(
+        "SELECT * FROM channels ORDER BY origin ASC, name ASC, id ASC LIMIT ? OFFSET ?",
+      )
+      .all(query.limit, query.offset) as ChannelRow[];
+    return { items: rows.map(toChannel), total: total.count };
+  });
+  return read();
+}
+
 export function getChannel(
   db: Database.Database,
   id: string,

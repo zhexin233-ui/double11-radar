@@ -14,6 +14,7 @@ src/
 │   ├── env.ts                 # loadEnv(): the ONLY application env reader
 │   ├── http/
 │   │   ├── json.ts            # ok/fail/HttpError/requireSameOrigin/handleRoute
+│   │   ├── query.ts           # parseIntegerParam/clampLimit/parsePageQuery（分页参数解析唯一入口）
 │   │   └── server.ts          # getDatabase/getEnv/requireAuth/getClientIp
 │   ├── auth/                  # password (scrypt), session (cookie + db), guard (rate limit)
 │   ├── crypto/secrets.ts      # AES-256-GCM <-> "iv:tag:ciphertext"
@@ -37,6 +38,10 @@ src/
 
 - **`app/api` = boundary only.** Validate input with zod, call a repo/service function, return
   `ok(...)`. No business branching beyond mapping errors to `HttpError`.
+- **分页参数只在一个地方解析。** `limit` / `offset` 一律走 `src/lib/http/query.ts` 的
+  `parsePageQuery`（非法值回退默认、`offset` 下限 0、`limit` 夹上限，**绝不允许抛 500**）。
+  路由不得自写 `parseIntegerParam`，仓库层只负责 `ORDER BY` 稳定排序（并列键要追加唯一列，
+  否则分页会重复/漏项）与 `total` 与 `items` 同事务读取。
 - **`db/repos` = SQL owner.** One file per table, exported functions named for the operation
   (`insertBulletinIfAbsent`, `claimJob`, `markDeliveryResult`). Repos never call the network.
   Two exceptions to "one table per file": `settings.ts` owns both `settings` and `secrets`, and

@@ -32,6 +32,21 @@ const RawEnvSchema = z.object({
 /** 允许注入的环境来源，默认 process.env。 */
 export type EnvSource = Record<string, string | undefined>;
 
+/** Jev 专用 HTTP CONNECT 代理；空值表示直连，非法配置必须阻止请求。 */
+export function getJevProxyUrl(source: EnvSource = process.env): string | undefined {
+  const value = source.JEV_PROXY_URL?.trim();
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      throw new Error();
+    }
+    return url.href;
+  } catch {
+    throw new Error("JEV_PROXY_URL 必须是无认证信息的 HTTP 或 HTTPS 代理地址");
+  }
+}
+
 const DEFAULT_DATA_DIR = "/data";
 const DEFAULT_XIANBAO_API_BASE = "https://new.xianbao.fun";
 

@@ -1,6 +1,11 @@
 import { z } from "zod";
-import { createNeed, listNeeds } from "@/lib/db/repos/needs";
+import { createNeed, listNeedsPage } from "@/lib/db/repos/needs";
+import {
+  NEEDS_LIST_DEFAULT_LIMIT,
+  NEEDS_LIST_MAX_LIMIT,
+} from "@/lib/domain/constants";
 import { invalidBodyError, handleRoute, ok, requireSameOrigin } from "@/lib/http/json";
+import { parsePageQuery } from "@/lib/http/query";
 import { requireAuth } from "@/lib/http/server";
 
 const CreateSchema = z.object({
@@ -15,7 +20,13 @@ const CreateSchema = z.object({
 
 export const GET = handleRoute(async (req) => {
   const db = requireAuth(req);
-  return ok({ items: listNeeds(db) });
+  const url = new URL(req.url);
+  const { limit, offset } = parsePageQuery(url.searchParams, {
+    defaultLimit: NEEDS_LIST_DEFAULT_LIMIT,
+    maxLimit: NEEDS_LIST_MAX_LIMIT,
+  });
+  const page = listNeedsPage(db, { limit, offset });
+  return ok({ items: page.items, total: page.total });
 });
 
 export const POST = handleRoute(async (req) => {

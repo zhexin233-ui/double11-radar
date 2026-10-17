@@ -46,6 +46,22 @@ Key 池、费用统计与记录页筛选的客户端契约集中在 `api-types.t
 - 常量：`BULLETIN_PAGE_SIZE = 50`、`BULLETIN_AUTO_REFRESH_MS = 5000`、
   `JE_KEY_FAILURE_THRESHOLD = 3`。
 
+## 分页与列表枚的客户端契约（2026-10 增补）
+
+```ts
+export interface PagedItems<T> { items: T[]; total: number }
+export const NEEDS_PAGE_SIZE = 10;
+export const CHANNELS_PAGE_SIZE = 20;
+```
+
+- 页大小常量的服务端对应值在 `src/lib/domain/constants.ts`（`*_LIST_DEFAULT_LIMIT`）；客户端**不能**
+  引 `@/lib`，所以这里是镜像常量。两边改动必须同步。
+- 分页 `total` 的来源固定：`/api/bulletins.total`、`/api/needs.total`、`/api/channels.stats.total`、
+  `/api/settings/jev/usage.recent.total`。
+- `/api/channels` **没有** `total` 字段：总数一律取 `stats.total`（两者同义，重复字段会漂移）。
+- `/api/status` 的 `counts.delivery` 是用字符串作键的聚合计数，展示时必须走 `deliveryLabel(status)`；
+  未知状态原样返回，不得伪装成已知状态。
+
 > **Warning**: 金额一律用 `estimatedUsd` / `knownCostUsd` 字符串展示，未知为 `null`，
 > **绝不显示为 $0.00**（极小正费用也必须可见）。状态/筛选枚举不要在组件里另写一套映射，
 > 直接复用 `api-types.ts` 的 DTO 与常量。

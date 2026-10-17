@@ -1,0 +1,9 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "编辑式列表与分页必须遵守的组件约定：keyed form、uncontrolled blur 提交、presentational primitives、TableScroll 约定"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "lint 规则与文案契约（状态标签、金额未知、程序生成说明、每页一个 h1）"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "新组件的放置规则：src/components/ui 只放展示原语，纯逻辑放 src/components/*.ts"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "客户端 DTO 与新增分页常量的落点，禁止 as 断言"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "仓库层分页查询的事务与排序约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "服务端不可违反的规则（requireAuth、错误回退不 500）"}
+{"file": ".trellis/tasks/10-16-admin-ui-redesign/research/current-ui-inventory.md", "reason": "改动前的逐页类名、列表基数与服务端分页工具盘点"}
+{"file": ".trellis/tasks/10-16-admin-ui-redesign/research/mantine-integration.md", "reason": "Mantine v9 + Next App Router 接线、颜色方案 API、PostCSS preset 与版本兼容性（已核实）"}

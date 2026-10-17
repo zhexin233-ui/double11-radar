@@ -6,6 +6,11 @@ import {
   insertBulletinIfAbsent,
   listBulletins,
 } from "@/lib/db/repos/bulletins";
+import { createNeed, listNeedsPage } from "@/lib/db/repos/needs";
+import {
+  listChannelsPage,
+  syncChannelsFromCatalog,
+} from "@/lib/db/repos/channels";
 import {
   claimJob,
   completeJob,
@@ -249,6 +254,108 @@ describe("通知创建（AC8/AC10）", () => {
       const second = createNotificationAndDeliveries(ctx.db, makeBulletin(), [matched("抽纸")]);
       expect(second.created).toBe(false);
       expect(second.notification.id).toBe(first.notification.id);
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("服务端分页仓库（total / offset 窗口 / 并列键稳定）", () => {
+  it("listNeedsPage 返回 total 与 offset 窗口，越界返回空但保留 total", () => {
+    const ctx = createTestDb();
+    try {
+      for (let i = 0; i < 5; i += 1) createNeed(ctx.db, { name: `需求 ${i}` });
+
+      const first = listNeedsPage(ctx.db, { limit: 2, offset: 0 });
+      expect(first.total).toBe(5);
+      expect(first.items).toHaveLength(2);
+
+      const last = listNeedsPage(ctx.db, { limit: 2, offset: 4 });
+      expect(last.total).toBe(5);
+      expect(last.items).toHaveLength(1);
+
+      const beyond = listNeedsPage(ctx.db, { limit: 2, offset: 5 });
+      expect(beyond.total).toBe(5);
+      expect(beyond.items).toHaveLength(0);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("listNeedsPage 在 created_at 并列时按 id 稳定排序，跨页不重不漏", () => {
+    const ctx = createTestDb();
+    try {
+      const ids: string[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        ids.push(createNeed(ctx.db, { name: `需求 ${i}` }).id);
+      }
+      // 强制 created_at 完全并列，验证排序追加 id 作为唯一并列键
+      ctx.db
+        .prepare("UPDATE needs SET created_at = '2026-10-16T00:00:00.000Z'")
+        .run();
+      const expected = [...ids].sort();
+
+      const collected: string[] = [];
+      for (let page = 0; page < 4; page += 1) {
+        const slice = listNeedsPage(ctx.db, { limit: 1, offset: page });
+        expect(slice.total).toBe(4);
+        collected.push(...slice.items.map((item) => item.id));
+      }
+      expect(collected).toEqual(expected);
+      expect(new Set(collected).size).toBe(4);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("listChannelsPage 返回 total 与 offset 窗口，越界返回空但保留 total", () => {
+    const ctx = createTestDb();
+    try {
+      syncChannelsFromCatalog(
+        ctx.db,
+        [
+          { id: "feed-a", name: "手机", alias: "a", origin: "feed" },
+          { id: "feed-b", name: "电脑", alias: "b", origin: "feed" },
+          { id: "zdm", name: "值得买", alias: null, origin: "zdm" },
+        ],
+        { mode: "all", customIds: [] },
+      );
+
+      const first = listChannelsPage(ctx.db, { limit: 2, offset: 0 });
+      expect(first.total).toBe(3);
+      expect(first.items).toHaveLength(2);
+      // origin ASC：feed 在前
+      expect(first.items.map((item) => item.origin)).toEqual(["feed", "feed"]);
+
+      const beyond = listChannelsPage(ctx.db, { limit: 2, offset: 3 });
+      expect(beyond.total).toBe(3);
+      expect(beyond.items).toHaveLength(0);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("listChannelsPage 在 origin/name 并列时按 id 稳定排序，跨页不重不漏", () => {
+    const ctx = createTestDb();
+    try {
+      syncChannelsFromCatalog(
+        ctx.db,
+        [
+          { id: "b", name: "同名", alias: null, origin: "feed" },
+          { id: "a", name: "同名", alias: null, origin: "feed" },
+          { id: "c", name: "同名", alias: null, origin: "feed" },
+        ],
+        { mode: "all", customIds: [] },
+      );
+
+      const collected: string[] = [];
+      for (let page = 0; page < 3; page += 1) {
+        const slice = listChannelsPage(ctx.db, { limit: 1, offset: page });
+        expect(slice.total).toBe(3);
+        collected.push(...slice.items.map((item) => item.id));
+      }
+      expect(collected).toEqual(["a", "b", "c"]);
+      expect(new Set(collected).size).toBe(3);
     } finally {
       ctx.close();
     }

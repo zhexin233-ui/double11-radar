@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验收要逐条对照的文案/结构/lint 契约"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "核对编辑式条目列表、分页组件与既有原语约定是否被破坏"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "核对客户端 DTO 与金额/状态映射是否仍单一来源"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "核对分页路由仍受鉴权与错误回退约束"}
+{"file": ".trellis/tasks/10-16-admin-ui-redesign/research/current-ui-inventory.md", "reason": "对照审计结论检查是否有列表被漏改或误加分页"}
+{"file": ".trellis/tasks/10-16-admin-ui-redesign/research/mantine-integration.md", "reason": "核对主题接线（ColorSchemeScript/mantineHtmlProps/data-mantine-color-scheme）与切换实现是否符合官方口径"}

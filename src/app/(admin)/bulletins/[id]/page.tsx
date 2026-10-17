@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import { Button } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import {
@@ -16,6 +17,7 @@ import {
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
+import { StatusBadge } from "@/components/status-badge";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -43,10 +45,10 @@ export default function BulletinDetailPage() {
   );
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   async function retry(deliveryId: string) {
-    setBusy(true);
+    setBusyId(deliveryId);
     setNotice(null);
     try {
       await apiSend(`/api/deliveries/${deliveryId}/retry`, "POST", {});
@@ -55,7 +57,7 @@ export default function BulletinDetailPage() {
     } catch (caught) {
       setActionError(errorMessage(caught));
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
@@ -91,7 +93,7 @@ export default function BulletinDetailPage() {
         </p>
         <h1 style={{ overflowWrap: "anywhere" }}>{bulletin.title}</h1>
         <div className="page-actions">
-          <span className={`badge ${detail.status}`}>{STATUS_LABELS[detail.status]}</span>
+          <StatusBadge status={detail.status}>{STATUS_LABELS[detail.status]}</StatusBadge>
           <span className="muted small">{bulletin.sourceNs}</span>
         </div>
       </header>
@@ -126,7 +128,7 @@ export default function BulletinDetailPage() {
         {bulletin.content ? (
           <>
             <h3 style={{ marginTop: "var(--sp-7)" }}>正文</h3>
-            <pre>{bulletin.content}</pre>
+            <pre className="reading">{bulletin.content}</pre>
           </>
         ) : null}
       </Section>
@@ -232,9 +234,9 @@ export default function BulletinDetailPage() {
                       <div className="muted small">v{evaluation.needVersion}</div>
                     </td>
                     <td>
-                      <span className={`badge ${evaluation.result}`}>
+                      <StatusBadge status={evaluation.result}>
                         {EVALUATION_LABELS[evaluation.result]}
-                      </span>
+                      </StatusBadge>
                     </td>
                     <td className="small">{evaluation.confidence ?? "—"}</td>
                     <td className="small">{formatProbabilities(evaluation.probabilities)}</td>
@@ -271,9 +273,9 @@ export default function BulletinDetailPage() {
                   <tr key={delivery.id}>
                     <td>{delivery.channel === "bark" ? "Bark" : "飞书"}</td>
                     <td>
-                      <span className={`badge ${delivery.status}`}>
+                      <StatusBadge status={delivery.status}>
                         {DELIVERY_LABELS[delivery.status]}
-                      </span>
+                      </StatusBadge>
                     </td>
                     <td className="small">{delivery.attempts}</td>
                     <td className="small">
@@ -284,14 +286,15 @@ export default function BulletinDetailPage() {
                       {delivery.status === "succeeded" ? (
                         <span className="muted small">无需重试</span>
                       ) : (
-                        <button
-                          type="button"
-                          className="btn-ghost"
-                          disabled={busy}
+                        <Button
+                          variant="default"
+                          size="compact-sm"
+                          loading={busyId === delivery.id}
+                          disabled={busyId !== null && busyId !== delivery.id}
                           onClick={() => void retry(delivery.id)}
                         >
                           重试该渠道
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button, PasswordInput } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { Feedback } from "@/components/ui/Feedback";
 
@@ -34,21 +35,18 @@ export default function LoginPage() {
           <p className="muted">使用部署时配置的 ADMIN_PASSWORD 登录。</p>
         </div>
         <form className="stack" onSubmit={submit}>
-          <label className="field" htmlFor="password">
-            密码
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-          </label>
+          <PasswordInput
+            id="password"
+            label="密码"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.currentTarget.value)}
+            required
+          />
           {error ? <Feedback kind="error">{error}</Feedback> : null}
-          <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? "登录中…" : "登录"}
-          </button>
+          <Button type="submit" loading={busy}>
+            登录
+          </Button>
         </form>
       </div>
     </main>
