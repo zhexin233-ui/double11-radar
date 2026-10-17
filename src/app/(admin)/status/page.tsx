@@ -1,11 +1,13 @@
 "use client";
 
+import { Button } from "@mantine/core";
 import { useApiResource } from "@/components/use-api";
-import type { StatusDto } from "@/components/api-types";
+import { deliveryLabel, type StatusDto } from "@/components/api-types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
+import { StatusBadge } from "@/components/status-badge";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -24,9 +26,9 @@ export default function StatusPage() {
       title="运行状态"
       lead="查看后台进程、采集与投递的真实健康状况。异常会紧随摘要显示，不会沉到底部。"
       actions={
-        <button type="button" className="btn-ghost" onClick={() => void reload()}>
+        <Button variant="default" size="sm" onClick={() => void reload()}>
           刷新
-        </button>
+        </Button>
       }
     />
   );
@@ -57,9 +59,9 @@ export default function StatusPage() {
 
       <Section alt>
         <div className="stack">
-          <span className={`badge ${status.processingHealthy ? "matched" : "failed"}`}>
+          <StatusBadge status={status.processingHealthy ? "matched" : "failed"}>
             {status.processingHealthy ? "后台运行正常" : "处理故障"}
-          </span>
+          </StatusBadge>
           {status.processingHealthy ? (
             <p className="muted small" style={{ margin: 0 }}>
               上次匹配时间：{formatTime(counts.lastMatchedAt)}。
@@ -85,7 +87,7 @@ export default function StatusPage() {
             <div className="stat-label">待确认线报</div>
           </div>
           <div>
-            <div className="stat-value" style={counts.failedEvaluations ? { color: "var(--danger)" } : undefined}>
+            <div className={counts.failedEvaluations ? "stat-value error" : "stat-value"}>
               {counts.failedEvaluations}
             </div>
             <div className="stat-label">处理失败线报</div>
@@ -159,7 +161,7 @@ export default function StatusPage() {
             <dl className="facts small">
               {Object.entries(counts.delivery).map(([state, value]) => (
                 <div key={state} style={{ display: "contents" }}>
-                  <dt>{state}</dt>
+                  <dt>{deliveryLabel(state)}</dt>
                   <dd>{value}</dd>
                 </div>
               ))}
@@ -176,7 +178,10 @@ export default function StatusPage() {
       </div>
 
       {channels.failing.length > 0 ? (
-        <Section title="频道错误">
+        <Section
+          title="频道错误"
+          description={`共 ${channels.stats.failing} 个频道采集报错（诊断快照，不分页）。`}
+        >
           <TableScroll label="频道错误列表">
             <table>
               <thead>
@@ -201,7 +206,10 @@ export default function StatusPage() {
       ) : null}
 
       {status.recentFailedJobs.length > 0 ? (
-        <Section title="最近失败任务">
+        <Section
+          title="最近失败任务"
+          description="最多显示最近 10 条（诊断快照，不分页）。"
+        >
           <TableScroll label="最近失败任务列表">
             <table>
               <thead>

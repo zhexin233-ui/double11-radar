@@ -52,6 +52,10 @@ docker compose logs -f worker
 web 与 worker 必须使用**完全相同的** `DATA_DIR`、`APP_ENCRYPTION_KEY`、`ADMIN_PASSWORD`。
 compose 已通过共享 `.env` 与同一数据卷保证这一点。
 
+Jev 可通过部署变量 `JEV_PROXY_URL=http://代理地址:端口` 使用专用 HTTP CONNECT 代理。
+仅 Jev 请求走此代理，web 与 worker 均生效；留空时直连。代理地址不支持内嵌认证信息，
+无效配置或代理故障不会回落到直连。若代理只监听宿主机回环地址，容器需要相应网络配置。
+
 ## 2 网页配置顺序
 
 1. **Jev 配置**：服务地址（默认 `https://api.typesafe.ai`）、模型标识（默认 `jev-latest`）、

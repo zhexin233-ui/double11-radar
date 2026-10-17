@@ -1,13 +1,7 @@
 import { getJevUsageView } from "@/lib/service/jev-usage";
 import { handleRoute, ok } from "@/lib/http/json";
+import { parsePageQuery } from "@/lib/http/query";
 import { requireAuth } from "@/lib/http/server";
-
-/** 参数非整数时回退默认值；越界由仓库层统一 clamp。 */
-function parseIntegerParam(raw: string | null, fallback: number): number {
-  if (raw === null || raw.trim() === "") return fallback;
-  const value = Number(raw);
-  return Number.isInteger(value) ? value : fallback;
-}
 
 /**
  * Jev 费用与用量统计。
@@ -18,10 +12,10 @@ function parseIntegerParam(raw: string | null, fallback: number): number {
 export const GET = handleRoute(async (req) => {
   const db = requireAuth(req);
   const url = new URL(req.url);
-  const usage = getJevUsageView(db, {
-    // LIMIT/OFFSET 只接受整数：非法输入必须回退而不是变成 500。
-    limit: parseIntegerParam(url.searchParams.get("limit"), 20),
-    offset: parseIntegerParam(url.searchParams.get("offset"), 0),
-  });
+  const usage = getJevUsageView(
+    db,
+    // LIMIT/OFFSET 只接受整数：非法输入回退而不是变成 500。
+    parsePageQuery(url.searchParams, { defaultLimit: 20, maxLimit: 200 }),
+  );
   return ok(usage);
 });

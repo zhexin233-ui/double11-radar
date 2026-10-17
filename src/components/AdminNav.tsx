@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { Button } from "@mantine/core";
 import { apiSend } from "@/components/api-client";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const LINKS = [
   { href: "/status", label: "运行状态" },
@@ -74,9 +76,10 @@ export function AdminNav() {
             );
           })}
         </nav>
-        <button type="button" className="btn-ghost" onClick={logout}>
+        <ThemeToggle />
+        <Button variant="default" size="compact-md" onClick={logout}>
           退出登录
-        </button>
+        </Button>
       </div>
     </header>
   );

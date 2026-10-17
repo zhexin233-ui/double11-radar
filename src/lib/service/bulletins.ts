@@ -14,6 +14,7 @@ import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
 import { getNotificationByBulletin } from "@/lib/db/repos/notifications";
 import { buildClassificationExplanation } from "@/lib/notify/dispatch";
 import { HttpError } from "@/lib/http/json";
+import { parseIntegerParam } from "@/lib/http/query";
 import type {
   Bulletin,
   BulletinProcessing,
@@ -149,12 +150,6 @@ export interface BulletinListRequestQuery {
   sourceNs?: string;
   status?: BulletinFilterStatus;
   baseline: false;
-}
-
-function parseIntegerParam(raw: string | null, fallback: number): number {
-  if (raw === null || raw.trim() === "") return fallback;
-  const value = Number(raw);
-  return Number.isInteger(value) ? value : fallback;
 }
 
 /**

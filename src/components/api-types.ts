@@ -1,5 +1,11 @@
 /** 前端使用的 API 响应类型（与 src/lib 的领域类型保持一致，客户端不依赖服务端模块）。 */
 
+/** 服务端分页响应：一页条目 + 总数。 */
+export interface PagedItems<T> {
+  items: T[];
+  total: number;
+}
+
 export interface NeedDto {
   id: string;
   name: string;
@@ -391,6 +397,12 @@ export const BULLETIN_FILTER_OPTIONS: ReadonlyArray<{
 /** 记录页每页条数（与服务端默认一致）。 */
 export const BULLETIN_PAGE_SIZE = 50;
 
+/** 需求清单每页条数（与服务端默认一致）。 */
+export const NEEDS_PAGE_SIZE = 10;
+
+/** 采集频道每页条数（与服务端默认一致）。 */
+export const CHANNELS_PAGE_SIZE = 20;
+
 /** 记录页自动刷新间隔（毫秒）；默认关闭，由用户显式开启。 */
 export const BULLETIN_AUTO_REFRESH_MS = 5000;
 
@@ -401,6 +413,18 @@ export const DELIVERY_LABELS: Record<DeliveryDto["status"], string> = {
   failed: "失败（可重试）",
   disabled: "已停用/需人工处理",
 };
+
+/**
+ * 聚合计数里的投递状态 → 中文标签。
+ *
+ * 状态计数来自服务端的 `GROUP BY status`，类型上只是一个字符串：
+ * 未知值原样返回（不伪造标签，也不假装它是已知状态）。
+ */
+export function deliveryLabel(status: string): string {
+  return Object.hasOwn(DELIVERY_LABELS, status)
+    ? DELIVERY_LABELS[status as DeliveryDto["status"]]
+    : status;
+}
 
 export const EVALUATION_LABELS: Record<EvaluationDto["result"], string> = {
   matched: "匹配",

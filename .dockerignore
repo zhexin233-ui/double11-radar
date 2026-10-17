@@ -18,5 +18,12 @@ data
 .pi
 .DS_Store
 coverage
+.deployment
+runtime.conf
+compose.lenovo.yml
+source.tar.gz
+build.log
+build.pid
+build-background.py
 tsconfig.tsbuildinfo
 next-env.d.ts

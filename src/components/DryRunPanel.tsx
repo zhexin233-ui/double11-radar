@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { EVALUATION_LABELS, type DryRunResultDto } from "@/components/api-types";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
+import { StatusBadge } from "@/components/status-badge";
 
 /**
  * 需求试判面板（仅验收用）。
@@ -79,10 +81,11 @@ export function DryRunPanel() {
       <div className="stack">
         <div className="row small">
           {EXAMPLES.map((example) => (
-            <button
+            <Button
               key={example.label}
               type="button"
-              className="btn-ghost"
+              variant="default"
+              size="sm"
               onClick={() => {
                 setTitle(example.title);
                 setContent(example.content);
@@ -91,7 +94,7 @@ export function DryRunPanel() {
               }}
             >
               {example.label}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -142,9 +145,9 @@ export function DryRunPanel() {
             </label>
           </div>
           <div className="row">
-            <button type="submit" className="btn-primary" disabled={busy || !title.trim()}>
-              {busy ? "试判中…" : "运行试判"}
-            </button>
+            <Button type="submit" loading={busy} disabled={!title.trim()}>
+              运行试判
+            </Button>
             <span className="muted small">
               价格留空会作为「来源未提供」传入，不会被当成 0 元。
             </span>
@@ -155,9 +158,9 @@ export function DryRunPanel() {
 
         {result ? (
           result.needsCount === 0 ? (
-            <p className="notice" style={{ margin: 0 }}>
+            <Feedback kind="notice">
               还没有启用的需求，请先在「需求清单」中添加并启用。
-            </p>
+            </Feedback>
           ) : (
             <div className="stack">
               <p className="muted small" style={{ margin: 0 }}>
@@ -185,9 +188,9 @@ export function DryRunPanel() {
                           ) : null}
                         </td>
                         <td>
-                          <span className={`badge ${item.result}`}>
+                          <StatusBadge status={item.result}>
                             {EVALUATION_LABELS[item.result]}
-                          </span>
+                          </StatusBadge>
                         </td>
                         <td className="small">{item.confidence ?? "—"}</td>
                         <td className="small">{formatProbabilities(item.probabilities)}</td>

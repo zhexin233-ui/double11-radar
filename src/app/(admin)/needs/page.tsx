@@ -1,24 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { Button, Modal, Switch, TextInput } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
-import type { NeedDto } from "@/components/api-types";
+import {
+  NEEDS_PAGE_SIZE,
+  type NeedDto,
+  type PagedItems,
+} from "@/components/api-types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
-import { TableScroll } from "@/components/ui/TableScroll";
+import { List, ListItem, Eyebrow } from "@/components/ui/List";
+import { Pagination } from "@/components/ui/Pagination";
 import { Feedback } from "@/components/ui/Feedback";
+import { clampPage } from "@/components/pagination-model";
 
-interface NeedsResponse {
-  items: NeedDto[];
+function formatTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
 export default function NeedsPage() {
-  const { data, error, loading, reload } = useApiResource<NeedsResponse>("/api/needs");
+  const [page, setPage] = useState(0);
+  const path = `/api/needs?limit=${NEEDS_PAGE_SIZE}&offset=${page * NEEDS_PAGE_SIZE}`;
+  const { data, error, loading, reload } = useApiResource<PagedItems<NeedDto>>(path);
+
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<NeedDto | null>(null);
+
+  // 删除/数据缩减导致页码越界时，在渲染期收敛到最后一个有效页。
+  // 用「比较后修正 state」而不是 useEffect（react-hooks/set-state-in-effect）；
+  // 修正只在越界的那一次渲染发生，条件随后不再成立。
+  const total = data?.total ?? null;
+  if (total !== null) {
+    const clamped = clampPage(page, total, NEEDS_PAGE_SIZE);
+    if (clamped !== page) setPage(clamped);
+  }
+  const safePage = total === null ? page : clampPage(page, total, NEEDS_PAGE_SIZE);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -44,10 +66,8 @@ export default function NeedsPage() {
   }
 
   async function remove(need: NeedDto) {
-    if (!window.confirm(`删除需求「${need.name}」？历史判断记录会保留需求快照。`)) {
-      return;
-    }
     await run(() => apiSend(`/api/needs/${need.id}`, "DELETE"));
+    setPendingDelete(null);
   }
 
   const needs = data?.items ?? [];
@@ -67,127 +87,167 @@ export default function NeedsPage() {
 
       <Section title="新增需求">
         <form className="row" onSubmit={create}>
-          <label className="field" style={{ flex: "1 1 200px" }}>
-            需求名称
-            <input
-              placeholder="需求名称，例如：抽纸"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={100}
-            />
-          </label>
-          <label className="field" style={{ flex: "2 1 320px" }}>
-            备注（可选）
-            <input
-              placeholder="可选备注，例如：不要湿巾"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              maxLength={500}
-            />
-          </label>
-          <button
+          <TextInput
+            label="需求名称"
+            placeholder="需求名称，例如：抽纸"
+            value={name}
+            onChange={(event) => setName(event.currentTarget.value)}
+            maxLength={100}
+            style={{ flex: "1 1 200px" }}
+          />
+          <TextInput
+            label="备注（可选）"
+            placeholder="可选备注，例如：不要湿巾"
+            value={note}
+            onChange={(event) => setNote(event.currentTarget.value)}
+            maxLength={500}
+            style={{ flex: "2 1 320px" }}
+          />
+          <Button
             type="submit"
-            className="btn-primary"
-            disabled={busy}
+            loading={busy}
+            disabled={!name.trim()}
             style={{ alignSelf: "flex-end" }}
           >
             新增需求
-          </button>
+          </Button>
         </form>
       </Section>
 
       <Section title="现有需求">
         {loading && !data ? <Feedback kind="loading">正在加载…</Feedback> : null}
-        {!loading && needs.length === 0 ? (
+        {data && data.total === 0 ? (
           <p className="empty">还没有需求。添加后，之后出现的新线报会逐项判断。</p>
         ) : null}
+        {data && data.total > 0 && needs.length === 0 ? (
+          <p className="empty">本页没有记录。</p>
+        ) : null}
+
         {needs.length > 0 ? (
-          <TableScroll label="需求清单" minTableWidth={860}>
-            <table>
-              <thead>
-                <tr>
-                  <th>名称</th>
-                  <th>备注</th>
-                  <th>状态</th>
-                  <th>版本</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {needs.map((need) => (
-                  <tr key={need.id}>
-                    <td>
-                      <input
+          <List>
+            {needs.map((need) => {
+              // 启停状态由行尾 `Switch` 直接表达，eyebrow 不再重复一遍徽标文案。
+              const eyebrowItems: ReactNode[] = [
+                `v${need.version}`,
+                `更新于 ${formatTime(need.updatedAt)}`,
+              ];
+
+              return (
+                <ListItem key={need.id}>
+                  <div className="list-body">
+                    <div>
+                      <Eyebrow items={eyebrowItems} />
+                      <TextInput
                         key={`${need.id}:${need.version}:name`}
                         defaultValue={need.name}
                         aria-label="需求名称"
+                        disabled={busy}
+                        variant="unstyled"
+                        classNames={{ input: "list-title" }}
                         onBlur={(event) => {
-                          const next = event.target.value.trim();
+                          const next = event.currentTarget.value.trim();
                           if (next && next !== need.name) {
                             void run(() =>
                               apiSend(`/api/needs/${need.id}`, "PATCH", { name: next }),
                             );
                           } else if (!next) {
-                            event.target.value = need.name;
+                            event.currentTarget.value = need.name;
                           }
                         }}
                       />
-                    </td>
-                    <td>
-                      <input
+                      <TextInput
                         key={`${need.id}:${need.version}:note`}
                         defaultValue={need.note}
                         aria-label="需求备注"
+                        placeholder="添加备注（可选）"
+                        disabled={busy}
+                        variant="unstyled"
+                        classNames={{ input: "list-note" }}
                         onBlur={(event) => {
-                          if (event.target.value !== need.note) {
+                          if (event.currentTarget.value !== need.note) {
                             void run(() =>
                               apiSend(`/api/needs/${need.id}`, "PATCH", {
-                                note: event.target.value,
+                                note: event.currentTarget.value,
                               }),
                             );
                           }
                         }}
                       />
-                    </td>
-                    <td>
-                      <span className={`badge ${need.enabled ? "matched" : "baseline"}`}>
-                        {need.enabled ? "已启用" : "已停用"}
-                      </span>
-                    </td>
-                    <td className="small">v{need.version}</td>
-                    <td>
-                      <div className="row">
-                        <button
-                          type="button"
-                          className="btn-ghost"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(() =>
-                              apiSend(`/api/needs/${need.id}`, "PATCH", {
-                                enabled: !need.enabled,
-                              }),
-                            )
-                          }
-                        >
-                          {need.enabled ? "停用" : "启用"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost danger"
-                          disabled={busy}
-                          onClick={() => void remove(need)}
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
+                    </div>
+                    <div className="list-trailing">
+                      <Switch
+                        size="sm"
+                        checked={need.enabled}
+                        disabled={busy}
+                        aria-label={need.enabled ? "停用该需求" : "启用该需求"}
+                        onChange={(event) =>
+                          void run(() =>
+                            apiSend(`/api/needs/${need.id}`, "PATCH", {
+                              enabled: event.currentTarget.checked,
+                            }),
+                          )
+                        }
+                      />
+                      <Button
+                        variant="subtle"
+                        color="red"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => setPendingDelete(need)}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                </ListItem>
+              );
+            })}
+          </List>
+        ) : null}
+
+        {data && data.total > 0 ? (
+          <Pagination
+            page={safePage}
+            total={data.total}
+            pageSize={NEEDS_PAGE_SIZE}
+            onPage={setPage}
+            unit="条"
+          />
         ) : null}
       </Section>
+
+      <Modal
+        opened={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title="删除需求"
+        centered
+      >
+        <div className="stack">
+          <p style={{ margin: 0 }}>
+            删除需求「{pendingDelete?.name}」？历史判断记录会保留需求快照。
+          </p>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <Button
+              variant="default"
+              size="sm"
+              disabled={busy}
+              onClick={() => setPendingDelete(null)}
+            >
+              取消
+            </Button>
+            <Button
+              color="red"
+              size="sm"
+              loading={busy}
+              onClick={() => {
+                if (pendingDelete) void remove(pendingDelete);
+              }}
+            >
+              删除
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

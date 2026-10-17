@@ -1,13 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Button,
+  Fieldset,
+  NumberInput,
+  PasswordInput,
+  Radio,
+  Textarea,
+  TextInput,
+} from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import { DryRunPanel } from "@/components/DryRunPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
+import { Pagination } from "@/components/ui/Pagination";
 import { Feedback } from "@/components/ui/Feedback";
+import { StatusBadge } from "@/components/status-badge";
+import { clampPage } from "@/components/pagination-model";
 import {
   EVALUATION_MODE_OPTIONS,
   JE_CONCURRENCY_RANGE,
@@ -33,6 +45,11 @@ function formatTime(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+/** NumberInput 的 onChange 可能是数字或空串；统一收窄成数字。 */
+function toNumber(value: number | string): number {
+  return value === "" ? 0 : Number(value);
 }
 
 function secretStateLabel(state: SecretStateDto): string {
@@ -84,115 +101,112 @@ function JevForm(props: {
   }
 
   return (
-    <form className="stack" onSubmit={save}>
-      <label className="field">
-        服务地址
-        <input
-          type="url"
-          value={baseUrl}
-          onChange={(event) => setBaseUrl(event.target.value)}
-          required
-        />
-      </label>
-      <label className="field">
-        模型标识
-        <input
-          value={model}
-          onChange={(event) => setModel(event.target.value)}
-          required
-        />
-      </label>
-      <label className="field">
-        调用超时（毫秒）
-        <input
-          type="number"
-          min={1000}
-          max={120000}
-          value={timeoutMs}
-          onChange={(event) => setTimeoutMs(Number(event.target.value))}
-        />
-      </label>
+    <form className="stack form-narrow" onSubmit={save}>
+      <TextInput
+        type="url"
+        label="服务地址"
+        value={baseUrl}
+        onChange={(event) => setBaseUrl(event.currentTarget.value)}
+        required
+      />
+      <TextInput
+        label="模型标识"
+        value={model}
+        onChange={(event) => setModel(event.currentTarget.value)}
+        required
+      />
+      <NumberInput
+        label="调用超时（毫秒）"
+        min={1000}
+        max={120000}
+        value={timeoutMs}
+        onChange={(value) => setTimeoutMs(toNumber(value))}
+      />
 
-      <fieldset className="stack" id="jev-strategy">
-        <legend>后台判断模式</legend>
-        <p className="muted small" style={{ margin: 0 }}>
-          只影响后台对<strong>之后新采集</strong>线报的自动处理；连接测试与需求试判仍直接调用，
-          不会被预筛吞掉。切换模式不会回放历史线报，已有批次按当时的策略快照继续完成。
-        </p>
-        {EVALUATION_MODE_OPTIONS.map((option) => (
-          <label key={option.value} className="stack">
-            <span>
-              <input
-                type="radio"
-                name="evaluationMode"
-                value={option.value}
-                checked={evaluationMode === option.value}
-                disabled={busy}
-                onChange={() => setEvaluationMode(option.value)}
-              />{" "}
-              <strong>{option.label}</strong>
-            </span>
-            <span className="muted small">{option.description}</span>
-          </label>
-        ))}
-
-        {evaluationMode === "regex_gate" ? (
-          <label className="field">
-            全局正则规则（一行一条，任意命中即放行）
-            <textarea
-              rows={6}
-              value={regexRulesText}
-              disabled={busy}
-              spellCheck={false}
-              aria-label="全局正则规则"
-              placeholder={"抽纸|软抽\n湿巾|洗脸巾"}
-              onChange={(event) => setRegexRulesText(event.target.value)}
-            />
-            <span className="muted small">
-              直接写 JS 正则 source，<strong>不要首尾斜杠</strong>，固定忽略大小写与 Unicode；
-              空白行忽略，相同规则去重。最多 {MAX_REGEX_RULES} 条，每条最多{" "}
-              {MAX_REGEX_RULE_LENGTH} 个字符，合计不超过 16 KiB。匹配标题、正文及现有品类/品牌/商城/来源价格；
-              规则未覆盖的线报不会调用 JEV，可能漏报。
-            </span>
-          </label>
-        ) : (
+      <Fieldset id="jev-strategy" legend="后台判断模式">
+        <div className="stack">
           <p className="muted small" style={{ margin: 0 }}>
-            已保存的全局正则规则会保留；切换到「正则预筛后逐条判断」即可查看与编辑。
+            只影响后台对<strong>之后新采集</strong>线报的自动处理；连接测试与需求试判仍直接调用，
+            不会被预筛吞掉。切换模式不会回放历史线报，已有批次按当时的策略快照继续完成。
           </p>
-        )}
-      </fieldset>
+          <Radio.Group
+            value={evaluationMode}
+            onChange={(next) => setEvaluationMode(next as EvaluationModeDto)}
+            aria-label="后台判断模式"
+          >
+            <div className="stack">
+              {EVALUATION_MODE_OPTIONS.map((option) => (
+                <Radio
+                  key={option.value}
+                  value={option.value}
+                  disabled={busy}
+                  label={
+                    <span className="stack" style={{ gap: "var(--sp-1)" }}>
+                      <strong>{option.label}</strong>
+                      <span className="muted small">{option.description}</span>
+                    </span>
+                  }
+                />
+              ))}
+            </div>
+          </Radio.Group>
+
+          {evaluationMode === "regex_gate" ? (
+            <div className="stack">
+              <Textarea
+                label="全局正则规则（一行一条，任意命中即放行）"
+                rows={6}
+                value={regexRulesText}
+                disabled={busy}
+                spellCheck={false}
+                aria-label="全局正则规则"
+                placeholder={"抽纸|软抽\n湿巾|洗脸巾"}
+                onChange={(event) => setRegexRulesText(event.currentTarget.value)}
+              />
+              <span className="muted small">
+                直接写 JS 正则 source，<strong>不要首尾斜杠</strong>，固定忽略大小写与 Unicode；
+                空白行忽略，相同规则去重。最多 {MAX_REGEX_RULES} 条，每条最多{" "}
+                {MAX_REGEX_RULE_LENGTH} 个字符，合计不超过 16 KiB。匹配标题、正文及现有品类/品牌/商城/来源价格；
+                规则未覆盖的线报不会调用 JEV，可能漏报。
+              </span>
+            </div>
+          ) : (
+            <p className="muted small" style={{ margin: 0 }}>
+              已保存的全局正则规则会保留；切换到「正则预筛后逐条判断」即可查看与编辑。
+            </p>
+          )}
+        </div>
+      </Fieldset>
 
       <div className="grid-2">
-        <label className="field">
-          Jev 并发数
-          <input
-            type="number"
+        <div className="stack">
+          <NumberInput
+            label="Jev 并发数"
             min={JE_CONCURRENCY_RANGE.min}
             max={JE_CONCURRENCY_RANGE.max}
             value={concurrency}
-            onChange={(event) => setConcurrency(Number(event.target.value))}
+            onChange={(value) => setConcurrency(toNumber(value))}
           />
           <span className="muted small">
             <strong>全局并发上限 {JE_CONCURRENCY_RANGE.min}—{JE_CONCURRENCY_RANGE.max}</strong>
             （默认 {JE_CONCURRENCY_RANGE.min} = 严格串行）。后台判断、连接测试与需求试判共用这一上限，
             增加密钥数量不会放大并发；同时进行的请求数越多，向 Jev 施加的压力越大。
           </span>
-        </label>
-        <label className="field">
-          每轮判断任务预算
-          <input
-            type="number"
+        </div>
+        <div className="stack">
+          <NumberInput
+            label="每轮判断任务预算"
             min={JE_JOBS_PER_ROUND_RANGE.min}
             max={JE_JOBS_PER_ROUND_RANGE.max}
             value={jobsPerRound}
-            onChange={(event) => setJobsPerRound(Number(event.target.value))}
+            onChange={(value) => setJobsPerRound(toNumber(value))}
           />
           <span className="muted small">
             上限 {JE_JOBS_PER_ROUND_RANGE.max}，默认 3。worker 每 2 秒触发一轮，
             每轮最多领取并处理这么多条<strong>判断任务</strong>（批次初筛也算一个调度任务，
             不是批次条数）；播放展开后的成员也各自占一个任务。实际吞吐还受并发数与单次调用耗时限制。
           </span>
-        </label>
+        </div>
       </div>
 
       <p className="muted small" style={{ margin: 0 }}>
@@ -202,9 +216,9 @@ function JevForm(props: {
       </p>
 
       <div className="row">
-        <button type="submit" className="btn-primary" disabled={busy}>
+        <Button type="submit" loading={busy}>
           保存配置
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -242,33 +256,33 @@ function JevKeyAddForm(props: {
 
   return (
     <form className="row" onSubmit={submit}>
-      <input
+      <TextInput
         placeholder="Key 名称，例如：主账号"
         aria-label="Key 名称"
         value={label}
-        onChange={(event) => setLabel(event.target.value)}
+        onChange={(event) => setLabel(event.currentTarget.value)}
         maxLength={100}
         disabled={busy}
         style={{ flex: "1 1 160px" }}
       />
-      <input
-        type="password"
+      <PasswordInput
         placeholder="API 密钥（只在服务端加密保存）"
         aria-label="API 密钥"
         value={apiKey}
-        onChange={(event) => setApiKey(event.target.value)}
+        onChange={(event) => setApiKey(event.currentTarget.value)}
         maxLength={500}
         autoComplete="off"
         disabled={busy}
         style={{ flex: "2 1 260px" }}
       />
-      <button
+      <Button
         type="submit"
-        className="btn-primary"
-        disabled={busy || !label.trim() || !apiKey.trim()}
+        loading={busy}
+        disabled={!label.trim() || !apiKey.trim()}
+        style={{ alignSelf: "flex-start" }}
       >
         添加密钥
-      </button>
+      </Button>
     </form>
   );
 }
@@ -377,23 +391,24 @@ function JevKeyRow(props: {
   return (
     <tr>
       <td>
-        <input
+        <TextInput
           key={`${item.id}:${item.updatedAt}:label`}
           defaultValue={item.label}
           aria-label="密钥名称"
+          size="sm"
           disabled={busy}
           onBlur={(event) => {
-            const next = event.target.value.trim();
+            const next = event.currentTarget.value.trim();
             if (next && next !== item.label) rename(next);
-            else if (!next) event.target.value = item.label;
+            else if (!next) event.currentTarget.value = item.label;
           }}
         />
       </td>
       <td className="small">{secretStateLabel(item.secretState)}</td>
       <td>
-        <span className={`badge ${item.enabled ? "matched" : "baseline"}`}>
+        <StatusBadge status={item.enabled ? "matched" : "baseline"}>
           {item.enabled ? "已启用" : "已停用"}
-        </span>
+        </StatusBadge>
       </td>
       <td className="small">
         {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
@@ -406,54 +421,71 @@ function JevKeyRow(props: {
       <td className="small">{formatTime(item.lastUsedAt)}</td>
       <td>
         <div className="stack">
-          <fieldset>
-            <legend className="small">密钥</legend>
-            <div className="row small">
-              {(["keep", "replace", "clear"] as SecretAction[]).map((action) => (
-                <label key={action}>
-                  <input
-                    type="radio"
-                    name={`secret-${item.id}`}
-                    checked={secretAction === action}
-                    disabled={busy}
-                    onChange={() => setSecretAction(action)}
-                  />{" "}
-                  {action === "keep" ? "保留" : action === "replace" ? "替换" : "清除"}
-                </label>
-              ))}
-            </div>
-            {secretAction === "replace" ? (
-              <input
-                type="password"
-                placeholder="新的 API 密钥"
-                aria-label="新的 API 密钥"
-                value={secret}
-                disabled={busy}
-                onChange={(event) => setSecret(event.target.value)}
-                style={{ width: "100%" }}
-              />
-            ) : null}
-            {secretAction !== "keep" ? (
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={busy || (secretAction === "replace" && !secret.trim())}
-                onClick={applySecret}
+          <Fieldset legend="密钥">
+            <div className="stack">
+              <Radio.Group
+                value={secretAction}
+                onChange={(next) => setSecretAction(next as SecretAction)}
+                aria-label={`${item.label}密钥处理方式`}
               >
-                应用密钥变更
-              </button>
-            ) : null}
-          </fieldset>
+                <div className="row small">
+                  <Radio value="keep" label="保留" disabled={busy} />
+                  <Radio value="replace" label="替换" disabled={busy} />
+                  <Radio value="clear" label="清除" disabled={busy} />
+                </div>
+              </Radio.Group>
+              {secretAction === "replace" ? (
+                <PasswordInput
+                  placeholder="新的 API 密钥"
+                  aria-label="新的 API 密钥"
+                  value={secret}
+                  disabled={busy}
+                  onChange={(event) => setSecret(event.currentTarget.value)}
+                />
+              ) : null}
+              {secretAction !== "keep" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  loading={busy}
+                  disabled={secretAction === "replace" && !secret.trim()}
+                  onClick={applySecret}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  应用密钥变更
+                </Button>
+              ) : null}
+            </div>
+          </Fieldset>
           <div className="row">
-            <button type="button" className="btn-ghost" disabled={busy} onClick={toggleEnabled}>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={busy}
+              onClick={toggleEnabled}
+            >
               {item.enabled ? "停用" : "恢复"}
-            </button>
-            <button type="button" className="btn-ghost" disabled={busy} onClick={testKey}>
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={busy}
+              onClick={testKey}
+            >
               测试
-            </button>
-            <button type="button" className="btn-ghost danger" disabled={busy} onClick={removeKey}>
+            </Button>
+            <Button
+              type="button"
+              variant="subtle"
+              color="red"
+              size="sm"
+              disabled={busy}
+              onClick={removeKey}
+            >
               删除
-            </button>
+            </Button>
           </div>
         </div>
       </td>
@@ -554,73 +586,65 @@ function JevUsagePanel(props: {
           )}
 
           <h3>最近调用</h3>
-          {usage.recent.items.length === 0 ? (
+          {usage.recent.total === 0 ? (
             <p className="muted" style={{ margin: 0 }}>
               尚无调用记录。
             </p>
           ) : (
             <>
-              <TableScroll label="最近调用记录" minTableWidth={900}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>时间</th>
-                      <th>来源</th>
-                      <th>模型</th>
-                      <th>状态</th>
-                      <th>Key</th>
-                      <th>用量（输入 / 输出）</th>
-                      <th>估算费用</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usage.recent.items.map((request) => (
-                      <tr key={request.id}>
-                        <td className="small">{formatTime(request.startedAt)}</td>
-                        <td className="small">{request.purposeLabel}</td>
-                        <td className="small">
-                          {request.responseModel ?? request.requestedModel}
-                        </td>
-                        <td className="small">
-                          <span className={`badge ${request.status === "failed" ? "failed" : ""}`}>
-                            {request.statusLabel}
-                          </span>
-                        </td>
-                        <td className="small">{request.keyLabel ?? "—"}</td>
-                        <td className="small">
-                          {request.inputTokens ?? "未知"} / {request.outputTokens ?? "未知"}
-                        </td>
-                        <td className="small">
-                          {request.estimatedUsd !== null
-                            ? `$${request.estimatedUsd}`
-                            : (request.unknownReason ?? "费用未知")}
-                        </td>
+              {usage.recent.items.length === 0 ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  本页没有调用记录。
+                </p>
+              ) : (
+                <TableScroll label="最近调用记录" minTableWidth={900}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>时间</th>
+                        <th>来源</th>
+                        <th>模型</th>
+                        <th>状态</th>
+                        <th>Key</th>
+                        <th>用量（输入 / 输出）</th>
+                        <th>估算费用</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableScroll>
-              <div className="toolbar">
-                <span className="muted small">共 {usage.recent.total} 次调用</span>
-                <span className="toolbar-end">
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    disabled={props.page === 0}
-                    onClick={() => props.onPage(Math.max(0, props.page - 1))}
-                  >
-                    上一页
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    disabled={(props.page + 1) * USAGE_PAGE_SIZE >= usage.recent.total}
-                    onClick={() => props.onPage(props.page + 1)}
-                  >
-                    下一页
-                  </button>
-                </span>
-              </div>
+                    </thead>
+                    <tbody>
+                      {usage.recent.items.map((request) => (
+                        <tr key={request.id}>
+                          <td className="small">{formatTime(request.startedAt)}</td>
+                          <td className="small">{request.purposeLabel}</td>
+                          <td className="small">
+                            {request.responseModel ?? request.requestedModel}
+                          </td>
+                          <td className="small">
+                            <StatusBadge status={request.status}>
+                              {request.statusLabel}
+                            </StatusBadge>
+                          </td>
+                          <td className="small">{request.keyLabel ?? "—"}</td>
+                          <td className="small">
+                            {request.inputTokens ?? "未知"} / {request.outputTokens ?? "未知"}
+                          </td>
+                          <td className="small">
+                            {request.estimatedUsd !== null
+                              ? `$${request.estimatedUsd}`
+                              : (request.unknownReason ?? "费用未知")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableScroll>
+              )}
+              <Pagination
+                page={props.page}
+                total={usage.recent.total}
+                pageSize={USAGE_PAGE_SIZE}
+                onPage={props.onPage}
+                unit="次调用"
+              />
             </>
           )}
         </>
@@ -642,6 +666,15 @@ export default function JevPage() {
   const usage = useApiResource<JevUsageDto>(
     `/api/settings/jev/usage?limit=${USAGE_PAGE_SIZE}&offset=${usagePage * USAGE_PAGE_SIZE}`,
   );
+
+  // 调用记录被清理导致页码越界时在渲染期收敛（不用 set-state-in-effect，见 bulletins 页）。
+  const usageTotal = usage.data?.recent.total ?? null;
+  if (usageTotal !== null) {
+    const clamped = clampPage(usagePage, usageTotal, USAGE_PAGE_SIZE);
+    if (clamped !== usagePage) setUsagePage(clamped);
+  }
+  const safeUsagePage =
+    usageTotal === null ? usagePage : clampPage(usagePage, usageTotal, USAGE_PAGE_SIZE);
 
   async function reloadAll() {
     await Promise.all([settings.reload(), usage.reload()]);
@@ -729,14 +762,9 @@ export default function JevPage() {
           </>
         }
         actions={
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={() => void testPool()}
-            disabled={busy}
-          >
+          <Button variant="default" size="sm" onClick={() => void testPool()} loading={busy}>
             测试连接
-          </button>
+          </Button>
         }
       >
         <JevForm
@@ -817,7 +845,7 @@ export default function JevPage() {
           usage={usage.data}
           error={usage.error}
           loading={usage.loading}
-          page={usagePage}
+          page={safeUsagePage}
           onPage={setUsagePage}
         />
       </Section>

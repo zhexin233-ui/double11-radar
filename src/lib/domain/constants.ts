@@ -35,6 +35,17 @@ export const MAX_BATCH_GATE_BYTES = 16 * 1024;
 /** 会话 Cookie 名。 */
 export const SESSION_COOKIE = "xianbao_session";
 
+// ── 列表服务端分页（只读查询，无 schema 变更） ──────────────────────────
+
+/** 需求清单默认每页 10 条。 */
+export const NEEDS_LIST_DEFAULT_LIMIT = 10;
+/** 需求清单每页上限（防止单次拉取过大）。 */
+export const NEEDS_LIST_MAX_LIMIT = 100;
+/** 采集频道默认每页 20 条。 */
+export const CHANNELS_LIST_DEFAULT_LIMIT = 20;
+/** 采集频道每页上限（官方能力清单可达上百条）。 */
+export const CHANNELS_LIST_MAX_LIMIT = 200;
+
 /** 会话有效期：7 天（毫秒）。 */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 

@@ -38,6 +38,30 @@ export function listNeeds(db: Database.Database): Need[] {
   return rows.map(toNeed);
 }
 
+/**
+ * 服务端分页读取需求清单。
+ *
+ * 排序追加唯一键 `id`，否则 `created_at` 并列时翻页可能重复/漏项；
+ * `items` 与 `total` 在同一个只读事务内读取，保证两者一致。
+ */
+export function listNeedsPage(
+  db: Database.Database,
+  query: { limit: number; offset: number },
+): { items: Need[]; total: number } {
+  const read = db.transaction(() => {
+    const total = db.prepare("SELECT COUNT(*) AS count FROM needs").get() as {
+      count: number;
+    };
+    const rows = db
+      .prepare(
+        "SELECT * FROM needs ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?",
+      )
+      .all(query.limit, query.offset) as NeedRow[];
+    return { items: rows.map(toNeed), total: total.count };
+  });
+  return read();
+}
+
 export function listEnabledNeeds(db: Database.Database): Need[] {
   const rows = db
     .prepare("SELECT * FROM needs WHERE enabled = 1 ORDER BY created_at ASC")

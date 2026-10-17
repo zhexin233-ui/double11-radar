@@ -7,7 +7,8 @@
 # worker 使用 tsx 直接运行 TypeScript 源码，因此运行时镜像保留完整
 # node_modules（含 devDependencies）与 src/，避免额外的编译步骤出错。
 
-FROM node:22-bookworm-slim AS base
+ARG NODE_IMAGE=node:22-bookworm-slim
+FROM ${NODE_IMAGE} AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     NEXT_TELEMETRY_DISABLED=1 \

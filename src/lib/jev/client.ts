@@ -1,4 +1,5 @@
 import { describeNetworkFailure } from "@/lib/http/network-error";
+import { fetchJev } from "@/lib/jev/transport";
 import {
   SystemOneResponseSchema,
   extractUsageFromJson,
@@ -135,7 +136,7 @@ export async function callSystemOne(
   request: SystemOneRequest,
   options: JevCallOptions = {},
 ): Promise<SystemOneResponse> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? fetchJev;
   const timeoutMs = config.timeoutMs ?? DEFAULT_JE_TIMEOUT_MS;
   const signal = options.signal
     ? AbortSignal.any([AbortSignal.timeout(timeoutMs), options.signal])

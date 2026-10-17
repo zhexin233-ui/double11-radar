@@ -1,6 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Button,
+  Fieldset,
+  PasswordInput,
+  Radio,
+  Switch,
+  TextInput,
+} from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import type {
@@ -24,39 +32,40 @@ function SecretField(props: {
   placeholder: string;
 }) {
   return (
-    <fieldset>
-      <legend>
-        {props.label}（当前：
-        {props.state.unreadable
-          ? "无法解密（加密密钥可能已变更）"
-          : props.state.configured
-            ? `已配置 ${props.state.masked ?? ""}`
-            : "未配置"}）
-      </legend>
-      <div className="row">
-        {(["keep", "replace", "clear"] as SecretAction[]).map((action) => (
-          <label key={action}>
-            <input
-              type="radio"
-              name={props.label}
-              checked={props.action === action}
-              onChange={() => props.onAction(action)}
-            />{" "}
-            {action === "keep" ? "保留原值" : action === "replace" ? "替换" : "清除"}
-          </label>
-        ))}
+    <Fieldset
+      legend={
+        <>
+          {props.label}（当前：
+          {props.state.unreadable
+            ? "无法解密（加密密钥可能已变更）"
+            : props.state.configured
+              ? `已配置 ${props.state.masked ?? ""}`
+              : "未配置"}）
+        </>
+      }
+    >
+      <div className="stack">
+        <Radio.Group
+          value={props.action}
+          onChange={(next) => props.onAction(next as SecretAction)}
+          aria-label={`${props.label}处理方式`}
+        >
+          <div className="row">
+            <Radio value="keep" label="保留原值" />
+            <Radio value="replace" label="替换" />
+            <Radio value="clear" label="清除" />
+          </div>
+        </Radio.Group>
+        {props.action === "replace" ? (
+          <PasswordInput
+            placeholder={props.placeholder}
+            aria-label={props.placeholder}
+            value={props.value}
+            onChange={(event) => props.onValue(event.currentTarget.value)}
+          />
+        ) : null}
       </div>
-      {props.action === "replace" ? (
-        <input
-          type="password"
-          placeholder={props.placeholder}
-          aria-label={props.placeholder}
-          value={props.value}
-          onChange={(event) => props.onValue(event.target.value)}
-          style={{ width: "100%", marginTop: "var(--sp-3)" }}
-        />
-      ) : null}
-    </fieldset>
+    </Fieldset>
   );
 }
 
@@ -146,22 +155,17 @@ function PushForm(props: {
       <div className="grid-2">
         <Section title="Bark" headingLevel={2}>
           <div className="stack">
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={barkEnabled}
-                onChange={(event) => setBarkEnabled(event.target.checked)}
-              />
-              启用 Bark 推送
-            </label>
-            <label className="field">
-              服务地址
-              <input
-                type="url"
-                value={barkServer}
-                onChange={(event) => setBarkServer(event.target.value)}
-              />
-            </label>
+            <Switch
+              checked={barkEnabled}
+              onChange={(event) => setBarkEnabled(event.currentTarget.checked)}
+              label="启用 Bark 推送"
+            />
+            <TextInput
+              type="url"
+              label="服务地址"
+              value={barkServer}
+              onChange={(event) => setBarkServer(event.currentTarget.value)}
+            />
             <SecretField
               label="设备 Key"
               state={props.view.bark.deviceKey}
@@ -172,28 +176,26 @@ function PushForm(props: {
               placeholder="Bark 设备 Key"
             />
             <div className="row">
-              <button
+              <Button
                 type="button"
-                className="btn-ghost"
-                disabled={busy}
+                variant="default"
+                size="sm"
+                loading={busy}
                 onClick={() => void test("bark")}
               >
                 测试 Bark
-              </button>
+              </Button>
             </div>
           </div>
         </Section>
 
         <Section title="飞书群机器人" headingLevel={2}>
           <div className="stack">
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={feishuEnabled}
-                onChange={(event) => setFeishuEnabled(event.target.checked)}
-              />
-              启用飞书推送
-            </label>
+            <Switch
+              checked={feishuEnabled}
+              onChange={(event) => setFeishuEnabled(event.currentTarget.checked)}
+              label="启用飞书推送"
+            />
             <SecretField
               label="Webhook 地址"
               state={props.view.feishu.webhook}
@@ -203,14 +205,11 @@ function PushForm(props: {
               onValue={setWebhook}
               placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
             />
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={signingEnabled}
-                onChange={(event) => setSigningEnabled(event.target.checked)}
-              />
-              开启签名校验（需同时配置签名密钥）
-            </label>
+            <Switch
+              checked={signingEnabled}
+              onChange={(event) => setSigningEnabled(event.currentTarget.checked)}
+              label="开启签名校验（需同时配置签名密钥）"
+            />
             <SecretField
               label="签名密钥"
               state={props.view.feishu.signingSecret}
@@ -220,23 +219,22 @@ function PushForm(props: {
               onValue={setSigningSecret}
               placeholder="飞书签名密钥"
             />
-            <label className="field">
-              关键词前缀（可选，会写入通知标题，用于通过关键词校验）
-              <input
-                value={keywordPrefix}
-                onChange={(event) => setKeywordPrefix(event.target.value)}
-                maxLength={100}
-              />
-            </label>
+            <TextInput
+              label="关键词前缀（可选，会写入通知标题，用于通过关键词校验）"
+              value={keywordPrefix}
+              onChange={(event) => setKeywordPrefix(event.currentTarget.value)}
+              maxLength={100}
+            />
             <div className="row">
-              <button
+              <Button
                 type="button"
-                className="btn-ghost"
-                disabled={busy}
+                variant="default"
+                size="sm"
+                loading={busy}
                 onClick={() => void test("feishu")}
               >
                 测试飞书
-              </button>
+              </Button>
             </div>
           </div>
         </Section>
@@ -245,16 +243,16 @@ function PushForm(props: {
       {notice ? <Feedback kind={notice.kind}>{notice.text}</Feedback> : null}
 
       <div className="row">
-        <button type="submit" className="btn-primary" disabled={busy}>
+        <Button type="submit" loading={busy}>
           保存配置
-        </button>
+        </Button>
       </div>
     </form>
   );
 }
 
 export default function PushPage() {
-  const { data, error, loading, reload } = useApiResource<NotifyConfigDto>(
+  const { data, error, reload } = useApiResource<NotifyConfigDto>(
     "/api/settings/notify",
   );
   const [actionError, setActionError] = useState<string | null>(null);
