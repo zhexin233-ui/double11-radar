@@ -89,12 +89,23 @@ describe("estimateCost：公布费率下的美元估算（AC5/AC6）", () => {
     expect(estimate.estimatedUsdNanos).toBeNull();
   });
 
-  it("非官方 provider 时不套用公布费率", () => {
+  it("非支持 provider 时不套用公布费率", () => {
     const estimate = estimateCost(
       officialInput({ providerOrigin: "https://example.com" }),
     );
     expect(estimate.costStatus).toBe("unknown");
     expect(estimate.estimatedUsdNanos).toBeNull();
+  });
+
+  it("Command Code Provider (api.commandcode.ai) 且模型为 typesafe/jev-1.14.0 时计费已知", () => {
+    const estimate = estimateCost({
+      inputTokens: MTOK,
+      outputTokens: null,
+      responseModel: "typesafe/jev-1.14.0",
+      providerOrigin: "https://api.commandcode.ai",
+    });
+    expect(estimate.costStatus).toBe("known");
+    expect(estimate.estimatedUsdNanos).toBe(42_000_000);
   });
 
   it("输入为 0 是已知的 0 费用", () => {

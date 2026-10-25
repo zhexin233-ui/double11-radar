@@ -47,6 +47,28 @@ function toNumber(value: number | string): number {
   return value === "" ? 0 : Number(value);
 }
 
+/** 常用服务商预设 */
+const JEV_PROVIDER_PRESETS = [
+  {
+    name: "Command Code",
+    baseUrl: "https://api.commandcode.ai/provider",
+    model: "typesafe/jev",
+    desc: "第三方 Provider",
+  },
+  {
+    name: "TypeSafe 官方",
+    baseUrl: "https://api.typesafe.ai",
+    model: "jev-latest",
+    desc: "官方服务",
+  },
+  {
+    name: "本地 Laya",
+    baseUrl: "http://127.0.0.1:8000",
+    model: "laya-9b",
+    desc: "局域网/本地自建",
+  },
+] as const;
+
 /** 基础配置表单：只提交非敏感配置，密钥改由下方的密钥池管理。 */
 function JevForm(props: {
   view: JevSettingsDto;
@@ -91,6 +113,30 @@ function JevForm(props: {
 
   return (
     <form className="stack form-narrow" onSubmit={save}>
+      <div>
+        <label className="small muted" style={{ display: "block", marginBottom: "var(--sp-1)" }}>
+          常用服务商快速填充
+        </label>
+        <div style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap" }}>
+          {JEV_PROVIDER_PRESETS.map((preset) => (
+            <Button
+              key={preset.name}
+              type="button"
+              variant="default"
+              size="xs"
+              disabled={busy}
+              onClick={() => {
+                setBaseUrl(preset.baseUrl);
+                setModel(preset.model);
+              }}
+              title={`${preset.desc} (${preset.baseUrl})`}
+            >
+              {preset.name}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <TextInput
         type="url"
         label="服务地址"

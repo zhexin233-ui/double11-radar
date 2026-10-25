@@ -27,16 +27,27 @@ export interface PriceVersion {
   source: string;
 }
 
-/** 官方服务端主机名；非此主机（自定义 provider）不套用公布费率。 */
+/** 官方或官方转售/底价直连服务端主机名；非已知主机（自建/未知 provider）不套用公布费率。 */
 export const OFFICIAL_JE_PROVIDER_HOST = "api.typesafe.ai";
+export const COMMAND_CODE_PROVIDER_HOST = "api.commandcode.ai";
+
+export const KNOWN_JE_PROVIDER_HOSTS: readonly string[] = [
+  OFFICIAL_JE_PROVIDER_HOST,
+  COMMAND_CODE_PROVIDER_HOST,
+];
 
 export const PRICE_VERSIONS: readonly PriceVersion[] = [
   {
     version: "2026-10-14",
-    modelIds: ["jev-1.13.0"],
+    modelIds: [
+      "jev-1.13.0",
+      "typesafe/jev-1.13.0",
+      "jev-1.14.0",
+      "typesafe/jev-1.14.0",
+    ],
     inputNanosPerToken: 42,
     outputNanosPerToken: 0,
-    source: "https://docs.typesafe.ai/models.md",
+    source: "https://docs.typesafe.ai/models.md / https://commandcode.ai/docs/provider#decision-models-typesafe-jev",
   },
 ];
 
@@ -73,13 +84,19 @@ export function providerOriginFromBaseUrl(baseUrl: string): string | null {
   }
 }
 
-function isOfficialProvider(providerOrigin: string | null): boolean {
+export function isSupportedProvider(providerOrigin: string | null): boolean {
   if (!providerOrigin) return false;
   try {
-    return new URL(providerOrigin).hostname === OFFICIAL_JE_PROVIDER_HOST;
+    const hostname = new URL(providerOrigin).hostname;
+    return KNOWN_JE_PROVIDER_HOSTS.includes(hostname);
   } catch {
     return false;
   }
+}
+
+/** 兼容旧接口命名。 */
+export function isOfficialProvider(providerOrigin: string | null): boolean {
+  return isSupportedProvider(providerOrigin);
 }
 
 /** 按响应报告的模型版本查找费率；别名或未知模型返回 null。 */
@@ -115,8 +132,8 @@ export function estimateCost(input: EstimateCostInput): CostEstimate {
     estimatedUsdNanos: null,
   });
 
-  if (!isOfficialProvider(input.providerOrigin)) {
-    return unknown("非官方 Jev 服务端，无可用公布费率");
+  if (!isSupportedProvider(input.providerOrigin)) {
+    return unknown("非官方或未支持的 Jev 服务端，无可用公布费率");
   }
 
   const price = findPriceVersion(input.responseModel);

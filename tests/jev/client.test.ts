@@ -35,6 +35,39 @@ describe("Jev 客户端（mock 验证，未做真实接口验证）", () => {
     );
   });
 
+  it("支持 Command Code Provider baseUrl 且正确拼接路径 (AC1)", async () => {
+    const cmdConfig = {
+      baseUrl: "https://api.commandcode.ai/provider",
+      apiKey: "cmd-api-key",
+      model: "typesafe/jev",
+    };
+    const cmdRequest = {
+      state: "urgent bug report",
+      model: "typesafe/jev",
+      questions: {
+        is_urgent: {
+          type: "choice" as const,
+          instructions: "Is this urgent?",
+          criteria: { matched: "urgent", not_matched: "not urgent", uncertain: "unknown" },
+        },
+      },
+    };
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        model: "typesafe/jev-1.14.0",
+        answers: { is_urgent: { type: "choice", choice: "yes" } },
+        usage: { input_tokens: 120, output_tokens: 0 },
+      }),
+    );
+    const response = await callSystemOne(cmdConfig, cmdRequest, { fetchImpl });
+    expect(response.model).toBe("typesafe/jev-1.14.0");
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.commandcode.ai/provider/v1/systemone");
+    expect((init.headers as Record<string, string>).authorization).toBe(
+      "Bearer cmd-api-key",
+    );
+  });
+
   it("归一化 usage：缺失/非法为 null，合法为非负整数（AC5）", async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({
