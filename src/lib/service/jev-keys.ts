@@ -224,6 +224,18 @@ export function updateJevKeySettings(
   return getJevKeyView(db, id, key);
 }
 
+/**
+ * 清除单个 Key 的密文并删除元数据行；调用方负责包裹事务。
+ * 单 Key 删除与批量删除共用，避免两处 SQL / 步骤顺序漂移。
+ */
+function deleteJevKeyWithSecret(
+  db: Database.Database,
+  key: JevApiKey,
+): void {
+  clearSecret(db, key.secretNamespace);
+  deleteJevKeyRow(db, key.id);
+}
+
 /** 删除 Key 元数据与其密文；调用账本不级联删除，历史保留 key_id/key_label 快照。 */
 export function removeJevKey(
   db: Database.Database,
@@ -232,10 +244,28 @@ export function removeJevKey(
   const existing = getJevKey(db, id);
   if (!existing) return false;
   const run = db.transaction((): void => {
-    clearSecret(db, existing.secretNamespace);
-    deleteJevKeyRow(db, id);
+    deleteJevKeyWithSecret(db, existing);
     bumpJevConfigVersion(db);
   });
   run.immediate();
   return true;
+}
+
+/**
+ * 删除当前全部禁用（`enabled = false`）的 Key，返回被删除的 id。
+ *
+ * - 单个 `BEGIN IMMEDIATE` 事务内完成清密文 + 删行，并只 bump 一次配置版本；
+ * - 没有禁用 Key 时不写库、不 bump 版本，返回空数组；
+ * - 只删除禁用行，启用中的 Key 元数据与密文不受影响；
+ * - 调用账本不级联删除，历史保留 `key_id` / `key_label` 快照。
+ */
+export function removeDisabledJevKeys(db: Database.Database): string[] {
+  const run = db.transaction((): string[] => {
+    const disabled = listJevKeys(db).filter((key) => !key.enabled);
+    if (disabled.length === 0) return [];
+    for (const key of disabled) deleteJevKeyWithSecret(db, key);
+    bumpJevConfigVersion(db);
+    return disabled.map((key) => key.id);
+  });
+  return run.immediate();
 }

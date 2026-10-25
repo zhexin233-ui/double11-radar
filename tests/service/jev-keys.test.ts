@@ -9,12 +9,13 @@ import { LEGACY_JEV_KEY_ID } from "@/lib/db/migrations";
 import { getJevKey, listJevKeys, updateJevKey } from "@/lib/db/repos/jev-keys";
 import { insertInFlightRequest } from "@/lib/db/repos/jev-requests";
 import { getSecret } from "@/lib/db/repos/settings";
-import { getJevRuntimeConfig, saveJevConfig } from "@/lib/service/config";
+import { getJevRuntimeConfig, getJevConfigView, saveJevConfig } from "@/lib/service/config";
 import {
   addJevKey,
   getJevKeyView,
   jevKeySecretNamespace,
   listJevKeyViews,
+  removeDisabledJevKeys,
   removeJevKey,
   updateJevKeySettings,
 } from "@/lib/service/jev-keys";
@@ -208,6 +209,122 @@ describe("清除与删除（AC2）", () => {
         .get(ledgerId) as { key_id: string; key_label: string };
       expect(ledger.key_id).toBe(a.id);
       expect(ledger.key_label).toBe("A");
+    } finally {
+      ctx.close();
+    }
+  });
+});
+
+describe("批量删除禁用的 Key（AC1/AC2）", () => {
+  it("只删除禁用行，启用 Key 的元数据与密文保持不变", () => {
+    const ctx = createTestDb();
+    try {
+      const active = addJevKey(ctx.db, { label: "启用", apiKey: "sk-active" }, KEY);
+      const auto = addJevKey(ctx.db, { label: "自动禁用", apiKey: "sk-auto" }, KEY);
+      const manual = addJevKey(ctx.db, { label: "手动停用", apiKey: "sk-manual" }, KEY);
+      const cleared = addJevKey(ctx.db, { label: "已清除", apiKey: "sk-cleared" }, KEY);
+
+      updateJevKey(ctx.db, auto.id, {
+        enabled: false,
+        disabledReason: "连续 3 次实际请求失败，已自动禁用",
+      });
+      updateJevKeySettings(ctx.db, manual.id, { enabled: false }, KEY);
+      updateJevKeySettings(ctx.db, cleared.id, { apiKey: { clear: true } }, KEY);
+
+      const activeBefore = getJevKey(ctx.db, active.id)!;
+      const removedIds = removeDisabledJevKeys(ctx.db);
+
+      expect(removedIds).toHaveLength(3);
+      expect(new Set(removedIds)).toEqual(new Set([auto.id, manual.id, cleared.id]));
+      // 启用中的 Key 元数据与密文完全不变
+      expect(getJevKey(ctx.db, active.id)).toEqual(activeBefore);
+      expect(getSecret(ctx.db, jevKeySecretNamespace(active.id), KEY)).toBe("sk-active");
+      // 被删 Key 元数据消失、密文被清除
+      for (const id of removedIds) {
+        expect(getJevKey(ctx.db, id)).toBeNull();
+        expect(getSecret(ctx.db, jevKeySecretNamespace(id), KEY)).toBeNull();
+      }
+      expect(countKeys(ctx.db)).toBe(1);
+      expect(listJevKeys(ctx.db).map((row) => row.id)).toEqual([active.id]);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("配置版本只 bump 一次；没有禁用 Key 时返回 [] 且版本不变", () => {
+    const ctx = createTestDb();
+    try {
+      addJevKey(ctx.db, { label: "启用", apiKey: "sk-active" }, KEY);
+      const a = addJevKey(ctx.db, { label: "停用 A", apiKey: "sk-a" }, KEY);
+      const b = addJevKey(ctx.db, { label: "停用 B", apiKey: "sk-b" }, KEY);
+      updateJevKeySettings(ctx.db, a.id, { enabled: false }, KEY);
+      updateJevKeySettings(ctx.db, b.id, { enabled: false }, KEY);
+
+      const before = getJevConfigView(ctx.db).version;
+      const removedIds = removeDisabledJevKeys(ctx.db);
+      const after = getJevConfigView(ctx.db).version;
+
+      expect(removedIds).toHaveLength(2);
+      // 一次批量删除只推进一次版本，而不是按删除条数累加
+      expect(after - before).toBe(1);
+
+      expect(removeDisabledJevKeys(ctx.db)).toEqual([]);
+      expect(getJevConfigView(ctx.db).version).toBe(after);
+      expect(countKeys(ctx.db)).toBe(1);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("历史调用账本保留 key_id / key_label 快照", () => {
+    const ctx = createTestDb();
+    try {
+      const disabled = addJevKey(ctx.db, { label: "待删", apiKey: "sk-disabled" }, KEY);
+      const ledgerId = insertLedger(ctx, disabled.id, disabled.label, disabled.generation);
+      updateJevKeySettings(ctx.db, disabled.id, { enabled: false }, KEY);
+
+      expect(removeDisabledJevKeys(ctx.db)).toEqual([disabled.id]);
+      expect(countRequests(ctx.db)).toBe(1);
+      const ledger = ctx.db
+        .prepare("SELECT key_id, key_label FROM jev_requests WHERE id = ?")
+        .get(ledgerId) as { key_id: string; key_label: string };
+      expect(ledger.key_id).toBe(disabled.id);
+      expect(ledger.key_label).toBe("待删");
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("幂等：连续调用两次，第二次返回 [] 且 Key 总数不变", () => {
+    const ctx = createTestDb();
+    try {
+      addJevKey(ctx.db, { label: "启用", apiKey: "sk-active" }, KEY);
+      const disabled = addJevKey(ctx.db, { label: "停用", apiKey: "sk-disabled" }, KEY);
+      updateJevKeySettings(ctx.db, disabled.id, { enabled: false }, KEY);
+
+      expect(removeDisabledJevKeys(ctx.db)).toEqual([disabled.id]);
+      const totalAfterFirst = countKeys(ctx.db);
+      expect(removeDisabledJevKeys(ctx.db)).toEqual([]);
+      expect(countKeys(ctx.db)).toBe(totalAfterFirst);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("兼容层 Key 被禁用时同样删除，之后保存旧 apiKey 会按需重建", () => {
+    const ctx = createTestDb();
+    try {
+      saveJevConfig(ctx.db, { apiKey: "sk-legacy" }, KEY);
+      updateJevKeySettings(ctx.db, LEGACY_JEV_KEY_ID, { enabled: false }, KEY);
+
+      expect(removeDisabledJevKeys(ctx.db)).toEqual([LEGACY_JEV_KEY_ID]);
+      expect(getJevKey(ctx.db, LEGACY_JEV_KEY_ID)).toBeNull();
+      expect(getJevRuntimeConfig(ctx.db, KEY)).toBeNull();
+
+      // 兼容层按需重建：保存旧单密钥后仍能得到运行时配置
+      saveJevConfig(ctx.db, { apiKey: "sk-legacy-2" }, KEY);
+      expect(getJevKey(ctx.db, LEGACY_JEV_KEY_ID)?.enabled).toBe(true);
+      expect(getJevRuntimeConfig(ctx.db, KEY)?.apiKey).toBe("sk-legacy-2");
     } finally {
       ctx.close();
     }

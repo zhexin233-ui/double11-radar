@@ -19,23 +19,24 @@ import { formatTime } from "@/components/format";
 import {
   JE_KEY_FAILURE_THRESHOLD,
   JEV_KEYS_PAGE_SIZE,
+  type BatchDeleteJevKeysResultDto,
   type JevKeyDto,
   type SecretStateDto,
   type TestResultDto,
 } from "@/components/api-types";
 
 type SecretAction = "keep" | "replace" | "clear";
-type ConfirmKind = "clear" | "disable" | "delete";
+type KeyConfirmKind = "clear" | "disable" | "delete";
 
 interface Notice {
   kind: "success" | "error";
   text: string;
 }
 
-interface PendingConfirm {
-  kind: ConfirmKind;
-  key: JevKeyDto;
-}
+/** 单 Key 破坏性操作与批量删除禁用 Key 共用一个确认弹窗。 */
+type PendingConfirm =
+  | { kind: KeyConfirmKind; key: JevKeyDto }
+  | { kind: "purge-disabled"; keys: JevKeyDto[] };
 
 /** Radio.Group 的值是 string；只接受三个已知选项，避免在 JSX 里用 `as` 断言。 */
 function toSecretAction(value: string): SecretAction {
@@ -194,6 +195,7 @@ function KeysModalBody(props: {
   notice: Notice | null;
   loadError?: string | null;
   onEdit: (id: string) => void;
+  onRequestPurge: (keys: JevKeyDto[]) => void;
   onDone: (message: string) => void;
   onError: (message: string) => void;
   reload: () => Promise<void>;
@@ -201,14 +203,28 @@ function KeysModalBody(props: {
   const [page, setPage] = useState(0);
   const total = props.keys.length;
   const enabledCount = props.keys.filter((key) => key.enabled).length;
+  const disabledKeys = props.keys.filter((key) => !key.enabled);
   const safePage = clampPage(page, total, JEV_KEYS_PAGE_SIZE);
 
   return (
     <div className="stack">
       <PanelNotice notice={props.notice} loadError={props.loadError} />
-      <p className="muted small" style={{ margin: 0 }}>
-        共 {total} 个 Key · {enabledCount} 个启用。
-      </p>
+      <div className="toolbar">
+        <p className="muted small" style={{ margin: 0 }}>
+          共 {total} 个 Key · {enabledCount} 个启用 · {disabledKeys.length} 个禁用。
+        </p>
+        <Button
+          type="button"
+          variant="subtle"
+          color="red"
+          size="sm"
+          disabled={disabledKeys.length === 0}
+          aria-label={`批量删除禁用的 Key（当前 ${disabledKeys.length} 个）`}
+          onClick={() => props.onRequestPurge(disabledKeys)}
+        >
+          批量删除禁用的 Key（{disabledKeys.length}）
+        </Button>
+      </div>
       <JevKeyAddForm
         onDone={props.onDone}
         onError={props.onError}
@@ -247,7 +263,7 @@ function KeyEditForm(props: {
   item: JevKeyDto;
   onDone: (message: string) => void;
   onError: (message: string) => void;
-  onRequestConfirm: (kind: ConfirmKind, key: JevKeyDto) => void;
+  onRequestConfirm: (kind: KeyConfirmKind, key: JevKeyDto) => void;
   reload: () => Promise<void>;
 }) {
   const { item } = props;
@@ -424,7 +440,7 @@ function KeyEditForm(props: {
   );
 }
 
-/** 确认弹窗文案（沿用原破坏性操作的确认措辞，逐字不变）。 */
+/** 确认弹窗文案（既有三种单 Key 破坏性操作的措辞逐字不变）。 */
 function confirmText(pending: PendingConfirm): string {
   switch (pending.kind) {
     case "clear":
@@ -433,7 +449,18 @@ function confirmText(pending: PendingConfirm): string {
       return `停用「${pending.key.label}」？停用后不再分配新请求，可在需要时手动恢复。`;
     case "delete":
       return `删除 Key「${pending.key.label}」？密钥密文会被清除，历史调用账本保留非敏感快照。`;
+    case "purge-disabled":
+      return `批量删除 ${pending.keys.length} 个禁用的 Key？密钥密文会被清除，历史调用账本保留非敏感快照。删除后不可恢复，需要重新添加密钥。`;
   }
+}
+
+/** 确认弹窗中列出待删除的 Key 名称：最多 5 个，其余以「等 N 个」收尾。 */
+function purgeKeyNames(keys: JevKeyDto[]): string {
+  const names = keys
+    .slice(0, 5)
+    .map((key) => key.label)
+    .join("、");
+  return keys.length > 5 ? `${names} 等 ${keys.length} 个` : names;
 }
 
 /**
@@ -469,9 +496,15 @@ export function JevKeysPanel(props: {
     setEditingKeyId(id);
   }
 
-  function requestConfirm(kind: ConfirmKind, key: JevKeyDto) {
+  function requestConfirm(kind: KeyConfirmKind, key: JevKeyDto) {
     setNotice(null);
     setPendingConfirm({ kind, key });
+  }
+
+  function requestPurgeDisabled(keys: JevKeyDto[]) {
+    if (keys.length === 0) return;
+    setNotice(null);
+    setPendingConfirm({ kind: "purge-disabled", keys });
   }
 
   function finishEdit(message: string) {
@@ -502,28 +535,38 @@ export function JevKeysPanel(props: {
   async function confirmPending() {
     const pending = pendingConfirm;
     if (!pending) return;
-    const { kind, key } = pending;
-    const base = `/api/settings/jev/keys/${key.id}`;
-
-    const message =
-      kind === "clear"
-        ? `已清除「${key.label}」的密钥并停用该 Key。`
-        : kind === "disable"
-          ? `已停用「${key.label}」。`
-          : `已删除 Key「${key.label}」。`;
 
     const ok = await guard(async () => {
-      if (kind === "clear") {
-        await apiSend(base, "PATCH", { apiKey: { clear: true } });
-      } else if (kind === "disable") {
-        await apiSend(base, "PATCH", { enabled: false });
-      } else {
-        await apiSend(base, "DELETE");
+      switch (pending.kind) {
+        case "clear":
+          await apiSend(`/api/settings/jev/keys/${pending.key.id}`, "PATCH", {
+            apiKey: { clear: true },
+          });
+          return `已清除「${pending.key.label}」的密钥并停用该 Key。`;
+        case "disable":
+          await apiSend(`/api/settings/jev/keys/${pending.key.id}`, "PATCH", {
+            enabled: false,
+          });
+          return `已停用「${pending.key.label}」。`;
+        case "delete":
+          await apiSend(`/api/settings/jev/keys/${pending.key.id}`, "DELETE");
+          return `已删除 Key「${pending.key.label}」。`;
+        case "purge-disabled": {
+          // 服务端在执行时重新判定禁用集合，提示必须用返回数量而不是打开弹窗时的快照。
+          const result = await apiSend<BatchDeleteJevKeysResultDto>(
+            "/api/settings/jev/keys/batch-delete",
+            "POST",
+            { scope: "disabled" },
+          );
+          const removed = result.removedIds.length;
+          return removed === 0
+            ? "没有可删除的禁用的 Key。"
+            : `已删除 ${removed} 个禁用的 Key。`;
+        }
       }
-      return message;
     });
 
-    if (ok && kind === "delete") setEditingKeyId(null);
+    if (ok && pending.kind === "delete") setEditingKeyId(null);
   }
 
   return (
@@ -541,6 +584,7 @@ export function JevKeysPanel(props: {
           notice={notice}
           loadError={props.loadError}
           onEdit={openEdit}
+          onRequestPurge={requestPurgeDisabled}
           onDone={finishEdit}
           onError={failEdit}
           reload={props.reload}
@@ -580,6 +624,11 @@ export function JevKeysPanel(props: {
         <div className="stack">
           <PanelNotice notice={notice} />
           <p style={{ margin: 0 }}>{pendingConfirm ? confirmText(pendingConfirm) : ""}</p>
+          {pendingConfirm?.kind === "purge-disabled" ? (
+            <p className="muted small" style={{ margin: 0 }}>
+              {purgeKeyNames(pendingConfirm.keys)}
+            </p>
+          ) : null}
           <div className="row" style={{ justifyContent: "flex-end" }}>
             <Button
               variant="default"

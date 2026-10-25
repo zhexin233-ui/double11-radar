@@ -131,6 +131,11 @@ export interface JevSettingsDto extends JevConfigDto {
   keys: JevKeyDto[];
 }
 
+/** `POST /api/settings/jev/keys/batch-delete` 的响应：本次实际删除的 Key id。 */
+export interface BatchDeleteJevKeysResultDto {
+  removedIds: string[];
+}
+
 /** 连续失败达到该次数会自动禁用 Key（与服务端常量一致）。 */
 export const JE_KEY_FAILURE_THRESHOLD = 3;
 
