@@ -1,6 +1,6 @@
 # 联想服务器 Laya CPU 服务
 
-目标目录 `/home/yang/laya`，独立 Compose 项目 `laya`，API 为 `http://127.0.0.1:18080/v1/systemone`。仅使用 multilingual 322M，4 推理线程、同时接纳1个请求，限制4 CPU和6GiB内存。已有 11jev 服务和业务配置无需修改。
+目标目录 `/home/yang/laya`，独立 Compose 项目 `laya`，API 为 `http://127.0.0.1:18080/v1/systemone`。仅使用 multilingual 322M，4 推理线程、同时接纳1个请求，限制4 CPU和6GiB内存。当前11jev已按用户后续授权接入此服务，接入与回滚说明见文末。
 
 ## 固定版本与依据
 
@@ -79,10 +79,20 @@ docker compose stop laya
 docker compose up -d --wait --wait-timeout 600 laya
 ```
 
-日志默认不含请求体和鉴权 Header；查日志时不要开启调试输出或手动记录密钥。自动重启策略为 `unless-stopped`；Docker守护进程需由服务器现有开机服务管理。需要回滚时仅执行 `docker compose stop laya`，保留缓存与配置，不执行删卷、全局清理或停止其他项目。此次不切换 11jev 的模型地址、Key池或0.8业务阈值。
+日志默认不含请求体和鉴权 Header；查日志时不要开启调试输出或手动记录密钥。自动重启策略为 `unless-stopped`；Docker守护进程需由服务器现有开机服务管理。需要回滚时仅执行 `docker compose stop laya`，保留缓存与配置，不执行删卷、全局清理或停止其他项目。模型服务的停止回滚与11jev提供商回滚是两步；当前已接入11jev时应先按文末恢复应用提供商。0.8业务阈值保持不变。
 
 ## 2026-10-25 联想服务器实测
 
 已部署 Laya 0.4.15，CPU 推理，固定上述 multilingual revision。镜像ID：`sha256:a0cab7fa03ab6d0ec7b1868dcc42fc46de653362c04503f5b42eca61eda88fac`。暖机后约129输入Token、1个三态问题的保存的重启前6次耗时为202–269ms，中位数225ms；空闲暖机后内存约2.14GiB（Docker stats）。这些结果只代表短样例，不代表真实多需求长线报吞吐。
 
-**模型效果未达到生产筛选要求。** 3个不同样例中只有79元耳机符合参考标签；299元超预算、缺价格/成色均误判 matched（各重复两次）。匹配概率分别约0.6013、0.7186、0.6474，均未达到现有11jev的0.8确认门槛。此次只完成独立部署，不将服务可用描述为业务准确率达标，不切换生产。
+**模型效果未达到生产筛选要求。** 3个不同样例中只有79元耳机符合参考标签；299元超预算、缺价格/成色均误判 matched（各重复两次）。匹配概率分别约0.6013、0.7186、0.6474，均未达到现有11jev的0.8确认门槛。初次验收只完成独立部署；用户后续明确授权接入后已切换，仍不将服务可用描述为业务准确率达标。
+
+## 已接入当前 11jev（用户后续授权）
+
+2026-10-25 用户明确要求配置到当前11jev，已通过其正常管理员登录和设置API完成：baseUrl=`http://127.0.0.1:18080`、model=`multilingual`、concurrency=1；Key池仅启用“Laya 本地多语言”，原有1个Key保持禁用且保留。保留 timeoutMs=20000、jobsPerRound=10、evaluationMode=batch_gate，其余业务策略与0.8门槛不变。
+
+运行文件 `/home/yang/apps/11jev/compose.lenovo.yml` 使用 `runtime.conf`。因为专用 `JEV_PROXY_URL` 对回环地址也生效，已在备份后仅清空该应用变量，并重建web/worker，使两进程直连本机模型；代理服务本身未修改。
+
+正常登录API使用容器既有管理员环境，Laya密钥由远端文件经docker exec标准输入送入内存，未打印或下载。连接测试成功；对1个现有需求的dry-run成功返回not_matched、error=null。后台心跳已恢复。状态页整体processingHealthy仍为false，当前有176个dead任务；近期历史错误包含旧Key不可用，worker最近错误另有飞书限流，未重置历史任务或通知配置。
+
+回滚材料只在远端：`/home/yang/laya/11jev-before-switch.json` 保存原基础配置及Key启用状态；`runtime-before-laya.conf` 保存原运行配置（含敏感项，0600，仅远端保留，不能上传到Git）。恢复时暂停worker，先通过设置API恢复原地址/模型/并发及原Key状态，再恢复原专用代理配置并重建web/worker；不得直接把云端Key与Laya地址混用。
