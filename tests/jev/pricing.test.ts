@@ -97,11 +97,11 @@ describe("estimateCost：公布费率下的美元估算（AC5/AC6）", () => {
     expect(estimate.estimatedUsdNanos).toBeNull();
   });
 
-  it("Command Code Provider (api.commandcode.ai) 且模型为 typesafe/jev-1.14.0 时计费已知", () => {
+  it("Command Code Provider (api.commandcode.ai) 且模型为 typesafe/jev 时计费已知", () => {
     const estimate = estimateCost({
       inputTokens: MTOK,
       outputTokens: null,
-      responseModel: "typesafe/jev-1.14.0",
+      responseModel: "typesafe/jev",
       providerOrigin: "https://api.commandcode.ai",
     });
     expect(estimate.costStatus).toBe("known");

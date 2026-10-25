@@ -44,10 +44,11 @@ export const PRICE_VERSIONS: readonly PriceVersion[] = [
       "typesafe/jev-1.13.0",
       "jev-1.14.0",
       "typesafe/jev-1.14.0",
+      "typesafe/jev",
     ],
     inputNanosPerToken: 42,
     outputNanosPerToken: 0,
-    source: "https://docs.typesafe.ai/models.md / https://commandcode.ai/docs/provider#decision-models-typesafe-jev",
+    source: "https://docs.typesafe.ai/models.md / https://commandcode.ai/docs/resources/pricing-limits#models",
   },
 ];
 
