@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/channels", label: "采集频道" },
   { href: "/jev", label: "模型配置" },
   { href: "/push", label: "推送渠道" },
+  { href: "/storage", label: "存储设置" },
 ];
 
 /**

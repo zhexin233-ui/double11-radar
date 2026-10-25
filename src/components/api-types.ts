@@ -590,3 +590,55 @@ export const EVALUATION_LABELS: Record<EvaluationDto["result"], string> = {
   uncertain: "待确认",
   failed: "处理失败",
 };
+
+export interface StorageSettingsDto {
+  retentionDays: number;
+  autoCleanupEnabled: boolean;
+  cleanOnlyUnmatched: boolean;
+  lastCleanupAt: string | null;
+  lastCleanedCount: number | null;
+}
+
+export interface StorageStatsDto {
+  dbSizeBytes: number;
+  dbSizeFormatted: string;
+  walSizeBytes: number;
+  walSizeFormatted: string;
+  totalSizeBytes: number;
+  totalSizeFormatted: string;
+  dbPath: string;
+  tableCounts: {
+    bulletins: number;
+    evaluations: number;
+    deliveries: number;
+    notifications: number;
+    bulletinProcessing: number;
+    jevRequests: number;
+    jobs: number;
+  };
+  expiredBulletinsCount: number;
+}
+
+export interface StorageDataDto {
+  settings: StorageSettingsDto;
+  stats: StorageStatsDto;
+}
+
+export interface CleanupResultDto {
+  cleanedBulletins: number;
+  cleanedEvaluations: number;
+  cleanedDeliveries: number;
+  cleanedNotifications: number;
+  cleanedProcessing: number;
+  cleanedJobs: number;
+  durationMs: number;
+}
+
+export interface VacuumResultDto {
+  success: boolean;
+  beforeBytes: number;
+  afterBytes: number;
+  savedBytes: number;
+  savedFormatted: string;
+}
+

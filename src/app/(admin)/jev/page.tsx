@@ -633,14 +633,15 @@ export default function ModelSettingsPage() {
   const [selectedChannelIdForUsage, setSelectedChannelIdForUsage] = useState<string>("");
   const [usagePage, setUsagePage] = useState(0);
 
-  const [channels, setChannels] = useState<ModelChannelDto[]>([]);
-  const [channelsLoading, setChannelsLoading] = useState(false);
-
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(
     null,
   );
   const [busy, setBusy] = useState(false);
+
+  const channelsResource = useApiResource<ModelChannelDto[]>("/api/settings/channels");
+  const channels = channelsResource.data ?? [];
+  const channelsLoading = channelsResource.loading;
 
   const settings = useApiResource<JevSettingsDto>("/api/settings/jev");
   const usage = useApiResource<JevUsageDto>(
@@ -649,26 +650,8 @@ export default function ModelSettingsPage() {
     }`,
   );
 
-  async function loadChannels() {
-    setChannelsLoading(true);
-    try {
-      const res = await fetch("/api/settings/channels");
-      if (!res.ok) throw new Error("获取渠道列表失败");
-      const json = (await res.json()) as { data: ModelChannelDto[] };
-      setChannels(json.data ?? []);
-    } catch (e) {
-      setActionError(errorMessage(e));
-    } finally {
-      setChannelsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadChannels();
-  }, []);
-
   async function reloadAll() {
-    await Promise.all([settings.reload(), usage.reload(), loadChannels()]);
+    await Promise.all([settings.reload(), usage.reload(), channelsResource.reload()]);
   }
 
   function reportResult(message: string, ok = true) {
@@ -677,13 +660,7 @@ export default function ModelSettingsPage() {
   }
 
   const activeChannel = channels.find((c) => c.isActive) ?? null;
-
-  // 默认 Key 筛选联动
-  useEffect(() => {
-    if (activeChannel && !selectedChannelIdForKeys) {
-      setSelectedChannelIdForKeys(activeChannel.id);
-    }
-  }, [activeChannel, selectedChannelIdForKeys]);
+  const channelKeySelection = selectedChannelIdForKeys || activeChannel?.id || "";
 
   async function testCurrentChannel() {
     setBusy(true);
@@ -711,8 +688,8 @@ export default function ModelSettingsPage() {
   }
 
   const filteredKeys = data?.keys.filter((k) => {
-    if (!selectedChannelIdForKeys) return true;
-    return k.channelId === selectedChannelIdForKeys;
+    if (!channelKeySelection) return true;
+    return k.channelId === channelKeySelection;
   }) ?? [];
 
   const enabledKeys = filteredKeys.filter((k) => k.enabled).length;
@@ -799,7 +776,7 @@ export default function ModelSettingsPage() {
                 reportResult("已切换启用渠道。");
                 await reloadAll();
               }}
-              onReload={loadChannels}
+              onReload={channelsResource.reload}
               onError={setActionError}
             />
           </Section>
@@ -855,7 +832,7 @@ export default function ModelSettingsPage() {
                   value: ch.id,
                   label: `${ch.name} (${ch.model})`,
                 }))}
-                value={selectedChannelIdForKeys}
+                value={channelKeySelection}
                 onChange={(val) => setSelectedChannelIdForKeys(val ?? "")}
               />
             </div>
@@ -871,8 +848,8 @@ export default function ModelSettingsPage() {
             )}
 
             <JevKeysPanel
-              channelId={selectedChannelIdForKeys}
-              baseUrl={channels.find((c) => c.id === selectedChannelIdForKeys)?.baseUrl}
+              channelId={channelKeySelection}
+              baseUrl={channels.find((c) => c.id === channelKeySelection)?.baseUrl}
               opened={keysOpened}
               onClose={() => setKeysOpened(false)}
               keys={filteredKeys}

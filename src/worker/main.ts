@@ -9,6 +9,7 @@ import { runEvaluatorOnce } from "@/lib/worker/evaluator";
 import { runDelivererOnce } from "@/lib/worker/deliverer";
 import { disposeSharedRegexRunner } from "@/lib/service/regex-runner";
 import { getRuntimeState, patchRuntimeState } from "@/lib/worker/runtime-state";
+import { getStorageSettings, cleanupExpiredBulletins } from "@/lib/service/storage";
 
 /**
  * 独立后台进程入口。
@@ -22,6 +23,7 @@ import { getRuntimeState, patchRuntimeState } from "@/lib/worker/runtime-state";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const COLLECT_INTERVAL_MS = 5_000;
 const WORK_INTERVAL_MS = 2_000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 每小时检查一次超期清理
 
 async function withGuard(
   label: string,
@@ -49,6 +51,7 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
   // 各循环的重入保护：单轮可能因外部超时耗时较长，避免定时器叠加。
   let collecting = false;
   let working = false;
+  let cleaning = false;
 
   const reportError = (message: string) => {
     console.error(message);
@@ -98,11 +101,32 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
       });
   }, WORK_INTERVAL_MS);
 
+  // 周期性检查超期历史线报自动清理
+  const cleanupTimer = setInterval(() => {
+    if (!running || cleaning) return;
+    const settings = getStorageSettings(db);
+    if (!settings.autoCleanupEnabled || settings.retentionDays <= 0) return;
+    cleaning = true;
+    void withGuard(
+      "cleanup",
+      async () => {
+        cleanupExpiredBulletins(db, {
+          retentionDays: settings.retentionDays,
+          cleanOnlyUnmatched: settings.cleanOnlyUnmatched,
+        });
+      },
+      reportError,
+    ).finally(() => {
+      cleaning = false;
+    });
+  }, CLEANUP_INTERVAL_MS);
+
   return () => {
     running = false;
     clearInterval(heartbeat);
     clearInterval(collectTimer);
     clearInterval(workTimer);
+    clearInterval(cleanupTimer);
     // 释放正则执行线程，避免进程退出时遗留 worker。
     disposeSharedRegexRunner();
   };
