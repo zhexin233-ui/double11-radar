@@ -10,6 +10,7 @@ import type { Bulletin, Need } from "@/lib/domain/types";
 
 const NEED_A: Need = {
   id: "aaa",
+  groupId: "default",
   name: "抽纸",
   note: "不要湿巾",
   enabled: true,
@@ -20,6 +21,7 @@ const NEED_A: Need = {
 
 const NEED_B: Need = {
   id: "bbb",
+  groupId: "default",
   name: "咖啡豆",
   note: "",
   enabled: true,

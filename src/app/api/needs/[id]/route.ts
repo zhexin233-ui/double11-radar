@@ -11,6 +11,7 @@ import { requireAuth } from "@/lib/http/server";
 
 const UpdateSchema = z
   .object({
+    groupId: z.string({ error: "groupId 必须是文本" }).optional(),
     name: z
       .string({ error: "需求名称必须是文本" })
       .trim()

@@ -6,8 +6,19 @@ export interface PagedItems<T> {
   total: number;
 }
 
+export interface NeedGroupDto {
+  id: string;
+  name: string;
+  enabled: boolean;
+  orderNum: number;
+  createdAt: string;
+  updatedAt: string;
+  needs?: NeedDto[];
+}
+
 export interface NeedDto {
   id: string;
+  groupId: string;
   name: string;
   note: string;
   enabled: boolean;

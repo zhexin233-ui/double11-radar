@@ -23,6 +23,7 @@ const EXPECTED_TABLES = [
   "schema_migrations",
   "settings",
   "secrets",
+  "need_groups",
   "needs",
   "sessions",
   "login_attempts",
@@ -64,7 +65,7 @@ describe("db/migrate", () => {
       const versions = ctx.db
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
+      expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5]);
     } finally {
       ctx.close();
     }
@@ -100,13 +101,23 @@ describe("db/migrate", () => {
       migrate(db, [migrations[0]]);
       setSecret(db, LEGACY_JEV_SECRET_NAMESPACE, "sk-legacy-secret", key);
 
-      // 升级到 V2/V3/V4：数据迁移在同一事务内执行。
-      expect(migrate(db).applied).toEqual([2, 3, 4]);
+      // 升级到 V2/V3/V4/V5：数据迁移在同一事务内执行。
+      expect(migrate(db).applied).toEqual([2, 3, 4, 5]);
       expect(listJevKeys(db)).toHaveLength(1);
       expect(getJevKey(db, LEGACY_JEV_KEY_ID)?.enabled).toBe(true);
       expect(getSecret(db, LEGACY_JEV_KEY_NAMESPACE, key)).toBe("sk-legacy-secret");
       // 旧 namespace 已被清除，且不解密、不重加密。
       expect(hasSecret(db, LEGACY_JEV_SECRET_NAMESPACE)).toBe(false);
+
+      // 验证 V5 自动创建了默认分组
+      const defaultGroup = db.prepare("SELECT * FROM need_groups WHERE id = 'default'").get() as {
+        id: string;
+        name: string;
+        enabled: number;
+      };
+      expect(defaultGroup).toBeDefined();
+      expect(defaultGroup.name).toBe("默认分组");
+      expect(defaultGroup.enabled).toBe(1);
 
       // 再次迁移（模拟另一个进程启动）不重复创建、不改变密文。
       expect(migrate(db).applied).toEqual([]);

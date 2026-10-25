@@ -89,9 +89,20 @@ export type ChannelOrigin = "feed" | "zdm";
 /** 频道选择模式。 */
 export type ChannelSelectionMode = "all" | "custom";
 
+/** 需求分组记录。 */
+export interface NeedGroup {
+  id: string;
+  name: string;
+  enabled: boolean;
+  orderNum: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 需求记录。 */
 export interface Need {
   id: string;
+  groupId: string;
   name: string;
   note: string;
   enabled: boolean;

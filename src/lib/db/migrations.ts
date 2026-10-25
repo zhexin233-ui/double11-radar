@@ -349,6 +349,41 @@ ALTER TABLE evaluations ADD COLUMN decision_policy_json TEXT;
 ALTER TABLE evaluations ADD COLUMN jev_request_id TEXT;
 `;
 
+/**
+ * V5：需求分组支持与存量需求迁移。
+ *
+ * 引入 need_groups 表，并在 needs 表追加 group_id 外键列；
+ * 为存量无 group_id 的需求自动创建并挂载到「默认分组」，确保向下兼容。
+ */
+const V5_NEED_GROUPS = `
+CREATE TABLE IF NOT EXISTS need_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  order_num INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+ALTER TABLE needs ADD COLUMN group_id TEXT REFERENCES need_groups(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_needs_group_id ON needs(group_id);
+`;
+
+export const DEFAULT_NEED_GROUP_ID = "default";
+export const DEFAULT_NEED_GROUP_NAME = "默认分组";
+
+function migrateDefaultNeedGroup(db: Database.Database): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT OR IGNORE INTO need_groups (id, name, enabled, order_num, created_at, updated_at)
+     VALUES (?, ?, 1, 0, ?, ?)`,
+  ).run(DEFAULT_NEED_GROUP_ID, DEFAULT_NEED_GROUP_NAME, now, now);
+
+  db.prepare(
+    `UPDATE needs SET group_id = ? WHERE group_id IS NULL OR group_id = ''`,
+  ).run(DEFAULT_NEED_GROUP_ID);
+}
+
 export const migrations: Migration[] = [
   {
     version: 1,
@@ -370,5 +405,11 @@ export const migrations: Migration[] = [
     version: 4,
     name: "evaluations_match_confirmation_trace",
     sql: V4_MATCH_CONFIRMATION_TRACE,
+  },
+  {
+    version: 5,
+    name: "need_groups_and_needs_association",
+    sql: V5_NEED_GROUPS,
+    run: migrateDefaultNeedGroup,
   },
 ];

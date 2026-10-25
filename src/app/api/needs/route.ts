@@ -9,6 +9,7 @@ import { parsePageQuery } from "@/lib/http/query";
 import { requireAuth } from "@/lib/http/server";
 
 const CreateSchema = z.object({
+  groupId: z.string({ error: "groupId 必须是文本" }).optional(),
   name: z
     .string({ error: "请填写需求名称" })
     .trim()
@@ -21,11 +22,12 @@ const CreateSchema = z.object({
 export const GET = handleRoute(async (req) => {
   const db = requireAuth(req);
   const url = new URL(req.url);
+  const groupId = url.searchParams.get("groupId") ?? undefined;
   const { limit, offset } = parsePageQuery(url.searchParams, {
     defaultLimit: NEEDS_LIST_DEFAULT_LIMIT,
     maxLimit: NEEDS_LIST_MAX_LIMIT,
   });
-  const page = listNeedsPage(db, { limit, offset });
+  const page = listNeedsPage(db, { limit, offset, groupId });
   return ok({ items: page.items, total: page.total });
 });
 
@@ -37,6 +39,7 @@ export const POST = handleRoute(async (req) => {
     throw invalidBodyError(body.error);
   }
   const need = createNeed(db, {
+    groupId: body.data.groupId,
     name: body.data.name,
     note: body.data.note ?? "",
     enabled: body.data.enabled ?? true,
