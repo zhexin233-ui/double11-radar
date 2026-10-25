@@ -1,0 +1,5 @@
+.env
+secrets/
+cache/
+results*.json
+installed-packages.txt

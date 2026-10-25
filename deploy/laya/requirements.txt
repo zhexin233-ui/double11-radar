@@ -1,0 +1,9 @@
+# 固定直接依赖；构建后的完整解析结果保存在镜像 installed-packages.txt。
+laya[serve]==0.4.15
+transformers==5.0.0
+huggingface-hub==1.3.5
+safetensors==0.7.0
+numpy==2.2.6
+fastapi==0.128.0
+uvicorn==0.40.0
+python-multipart==0.0.22
