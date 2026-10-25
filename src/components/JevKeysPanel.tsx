@@ -78,6 +78,8 @@ function PanelNotice(props: { notice: Notice | null; loadError?: string | null }
 
 /** 新增密钥表单：只把明文交给服务端加密保存，成功后清空输入。 */
 function JevKeyAddForm(props: {
+  channelId?: string | null;
+  baseUrl?: string;
   onDone: (notice: string) => void;
   onError: (message: string) => void;
   reload: () => Promise<void>;
@@ -94,10 +96,12 @@ function JevKeyAddForm(props: {
       await apiSend<JevKeyDto>("/api/settings/jev/keys", "POST", {
         label: label.trim(),
         apiKey: apiKey.trim(),
+        channelId: props.channelId ?? null,
+        baseUrl: props.baseUrl ?? "",
       });
       setLabel("");
       setApiKey("");
-      props.onDone("已添加 Jev 密钥。");
+      props.onDone("已添加密钥。");
       await props.reload();
     } catch (caught) {
       props.onError(errorMessage(caught));
@@ -191,6 +195,8 @@ function JevKeysTable(props: { rows: JevKeyDto[]; onEdit: (id: string) => void }
 
 /** 管理弹窗 body：持有页码；关闭弹窗即卸载，重开自动回到第 1 页。 */
 function KeysModalBody(props: {
+  channelId?: string | null;
+  baseUrl?: string;
   keys: JevKeyDto[];
   notice: Notice | null;
   loadError?: string | null;
@@ -226,6 +232,8 @@ function KeysModalBody(props: {
         </Button>
       </div>
       <JevKeyAddForm
+        channelId={props.channelId}
+        baseUrl={props.baseUrl}
         onDone={props.onDone}
         onError={props.onError}
         reload={props.reload}
@@ -470,6 +478,8 @@ function purgeKeyNames(keys: JevKeyDto[]): string {
  * 编辑对象每渲染从 `props.keys` 派生，`reload()` 后立即显示最新值。
  */
 export function JevKeysPanel(props: {
+  channelId?: string | null;
+  baseUrl?: string;
   opened: boolean;
   onClose: () => void;
   keys: JevKeyDto[];
@@ -580,6 +590,8 @@ export function JevKeysPanel(props: {
         centered
       >
         <KeysModalBody
+          channelId={props.channelId}
+          baseUrl={props.baseUrl}
           keys={props.keys}
           notice={notice}
           loadError={props.loadError}

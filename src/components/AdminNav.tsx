@@ -12,7 +12,7 @@ const LINKS = [
   { href: "/bulletins", label: "线报记录" },
   { href: "/needs", label: "需求清单" },
   { href: "/channels", label: "采集频道" },
-  { href: "/jev", label: "Jev 配置" },
+  { href: "/jev", label: "模型配置" },
   { href: "/push", label: "推送渠道" },
 ];
 

@@ -30,6 +30,8 @@ import { setJevCooldown } from "@/lib/db/repos/jev-cooldown";
 
 interface JevRequestRow {
   id: string;
+  channel_id: string | null;
+  base_url: string | null;
   upstream_request_id: string | null;
   key_id: string | null;
   key_label: string | null;
@@ -63,6 +65,8 @@ interface JevRequestRow {
 function toJevRequest(row: JevRequestRow): JevRequest {
   return {
     id: row.id,
+    channelId: row.channel_id,
+    baseUrl: row.base_url,
     upstreamRequestId: row.upstream_request_id,
     keyId: row.key_id,
     keyLabel: row.key_label,
@@ -106,6 +110,8 @@ export function getJevRequest(
 
 export interface InsertInFlightInput {
   id?: string;
+  channelId?: string | null;
+  baseUrl?: string | null;
   keyId: string;
   keyLabel: string;
   keyGeneration: number;
@@ -129,16 +135,18 @@ export function insertInFlightRequest(
   const id = input.id ?? randomUUID();
   db.prepare(
     `INSERT INTO jev_requests (
-       id, key_id, key_label, key_generation, purpose, bulletin_id, job_id,
+       id, channel_id, base_url, key_id, key_label, key_generation, purpose, bulletin_id, job_id,
        evaluation_run_id, batch_part_id, requested_model, provider_origin,
        config_version, status, started_at, lease_until, cost_status
      ) VALUES (
-       @id, @keyId, @keyLabel, @keyGeneration, @purpose, @bulletinId, @jobId,
+       @id, @channelId, @baseUrl, @keyId, @keyLabel, @keyGeneration, @purpose, @bulletinId, @jobId,
        @evaluationRunId, @batchPartId, @requestedModel, @providerOrigin,
        @configVersion, 'in_flight', @startedAt, @leaseUntil, 'unknown'
      )`,
   ).run({
     id,
+    channelId: input.channelId ?? null,
+    baseUrl: input.baseUrl ?? null,
     keyId: input.keyId,
     keyLabel: input.keyLabel,
     keyGeneration: input.keyGeneration,
@@ -371,7 +379,20 @@ export interface JevUsageSummary {
   outputTokensKnown: number;
 }
 
-export function getJevUsageSummary(db: Database.Database): JevUsageSummary {
+export function getJevUsageSummary(
+  db: Database.Database,
+  filter?: { channelId?: string; baseUrl?: string },
+): JevUsageSummary {
+  let whereClause = "";
+  const params: Record<string, unknown> = {};
+  if (filter?.channelId) {
+    whereClause = "WHERE channel_id = @channelId";
+    params.channelId = filter.channelId;
+  } else if (filter?.baseUrl) {
+    whereClause = "WHERE base_url = @baseUrl";
+    params.baseUrl = filter.baseUrl;
+  }
+
   const row = db
     .prepare(
       `SELECT
@@ -384,9 +405,9 @@ export function getJevUsageSummary(db: Database.Database): JevUsageSummary {
          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedCount,
          SUM(CASE WHEN input_tokens IS NOT NULL THEN input_tokens ELSE 0 END) AS inputTokensKnown,
          SUM(CASE WHEN output_tokens IS NOT NULL THEN output_tokens ELSE 0 END) AS outputTokensKnown
-       FROM jev_requests`,
+       FROM jev_requests ${whereClause}`,
     )
-    .get() as {
+    .get(params) as {
     statsStartedAt: string | null;
     totalRequests: number | null;
     pendingCount: number | null;
@@ -423,7 +444,20 @@ export interface JevUsageByKey {
   failedCount: number;
 }
 
-export function getJevUsageByKey(db: Database.Database): JevUsageByKey[] {
+export function getJevUsageByKey(
+  db: Database.Database,
+  filter?: { channelId?: string; baseUrl?: string },
+): JevUsageByKey[] {
+  let whereClause = "";
+  const params: Record<string, unknown> = {};
+  if (filter?.channelId) {
+    whereClause = "WHERE channel_id = @channelId";
+    params.channelId = filter.channelId;
+  } else if (filter?.baseUrl) {
+    whereClause = "WHERE base_url = @baseUrl";
+    params.baseUrl = filter.baseUrl;
+  }
+
   const rows = db
     .prepare(
       `SELECT
@@ -437,10 +471,11 @@ export function getJevUsageByKey(db: Database.Database): JevUsageByKey[] {
          SUM(CASE WHEN output_tokens IS NOT NULL THEN output_tokens ELSE 0 END) AS outputTokens,
          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedCount
        FROM jev_requests
+       ${whereClause}
        GROUP BY key_id
        ORDER BY knownCostNanos DESC, requestCount DESC`,
     )
-    .all() as Array<{
+    .all(params) as Array<{
     keyId: string | null;
     keyLabel: string | null;
     requestCount: number;
@@ -467,6 +502,8 @@ export function getJevUsageByKey(db: Database.Database): JevUsageByKey[] {
 export interface JevRequestQuery {
   limit?: number;
   offset?: number;
+  channelId?: string;
+  baseUrl?: string;
 }
 
 export function listRecentJevRequests(
@@ -480,15 +517,29 @@ export function listRecentJevRequests(
     ? Math.min(Math.max(rawLimit, 1), 200)
     : 20;
   const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
-  const total = db.prepare("SELECT COUNT(*) AS count FROM jev_requests").get() as {
+
+  let whereClause = "";
+  const params: Record<string, unknown> = { limit, offset };
+  if (query.channelId) {
+    whereClause = "WHERE channel_id = @channelId";
+    params.channelId = query.channelId;
+  } else if (query.baseUrl) {
+    whereClause = "WHERE base_url = @baseUrl";
+    params.baseUrl = query.baseUrl;
+  }
+
+  const total = db
+    .prepare(`SELECT COUNT(*) AS count FROM jev_requests ${whereClause}`)
+    .get(params) as {
     count: number;
   };
   const rows = db
     .prepare(
       `SELECT * FROM jev_requests
+       ${whereClause}
        ORDER BY started_at DESC, id DESC
        LIMIT @limit OFFSET @offset`,
     )
-    .all({ limit, offset }) as JevRequestRow[];
+    .all(params) as JevRequestRow[];
   return { items: rows.map(toJevRequest), total: total.count };
 }

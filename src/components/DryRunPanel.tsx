@@ -37,9 +37,27 @@ export function DryRunPanel() {
   const [brand, setBrand] = useState("");
   const [mall, setMall] = useState("");
   const [price, setPrice] = useState("");
+  const [useMockNeeds, setUseMockNeeds] = useState(false);
+  const [mockNeeds, setMockNeeds] = useState<Array<{ name: string; note: string }>>([
+    { name: "抽纸", note: "包含抽纸、面巾纸、软抽，排除湿巾、卷纸" },
+  ]);
   const [result, setResult] = useState<DryRunResultDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function addMockNeed() {
+    setMockNeeds((prev) => [...prev, { name: "", note: "" }]);
+  }
+
+  function updateMockNeed(index: number, field: "name" | "note", val: string) {
+    setMockNeeds((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [field]: val } : item)),
+    );
+  }
+
+  function removeMockNeed(index: number) {
+    setMockNeeds((prev) => prev.filter((_, i) => i !== index));
+  }
 
   async function run(event: React.FormEvent) {
     event.preventDefault();
@@ -48,6 +66,10 @@ export function DryRunPanel() {
     setResult(null);
     try {
       const priceValue = price.trim() === "" ? null : Number(price);
+      const filteredMock = useMockNeeds
+        ? mockNeeds.filter((m) => m.name.trim() || m.note.trim())
+        : undefined;
+
       setResult(
         await apiSend<DryRunResultDto>("/api/settings/jev/dry-run", "POST", {
           title,
@@ -56,6 +78,7 @@ export function DryRunPanel() {
           brand: brand || undefined,
           mall: mall || undefined,
           price: priceValue !== null && Number.isFinite(priceValue) ? priceValue : null,
+          mockNeeds: filteredMock && filteredMock.length > 0 ? filteredMock : undefined,
         }),
       );
     } catch (caught) {
@@ -145,6 +168,57 @@ export function DryRunPanel() {
               />
             </label>
           </div>
+
+          <div style={{ marginTop: "var(--sp-2)", padding: "var(--sp-3)", background: "var(--surface-muted, #f8f9fa)", borderRadius: "var(--radius-sm, 6px)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--sp-2)" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontWeight: 500, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={useMockNeeds}
+                  onChange={(e) => setUseMockNeeds(e.target.checked)}
+                />
+                启用模拟需求试判（未开启真实需求或测试独立规则时使用）
+              </label>
+              {useMockNeeds && (
+                <Button type="button" size="xs" variant="subtle" onClick={addMockNeed}>
+                  + 添加模拟需求
+                </Button>
+              )}
+            </div>
+
+            {useMockNeeds && (
+              <div className="stack" style={{ gap: "var(--sp-2)" }}>
+                {mockNeeds.map((m, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: "var(--sp-2)", alignItems: "flex-start" }}>
+                    <input
+                      style={{ width: "160px" }}
+                      placeholder="需求名称（如 抽纸）"
+                      value={m.name}
+                      onChange={(e) => updateMockNeed(idx, "name", e.target.value)}
+                    />
+                    <input
+                      style={{ flex: 1 }}
+                      placeholder="判定标准/说明（如 包含面巾纸，排除湿巾）"
+                      value={m.note}
+                      onChange={(e) => updateMockNeed(idx, "note", e.target.value)}
+                    />
+                    {mockNeeds.length > 1 && (
+                      <Button
+                        type="button"
+                        size="xs"
+                        color="red"
+                        variant="subtle"
+                        onClick={() => removeMockNeed(idx)}
+                      >
+                        删除
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="row">
             <Button type="submit" loading={busy} disabled={!title.trim()}>
               运行试判

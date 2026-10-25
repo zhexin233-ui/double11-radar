@@ -51,6 +51,8 @@ function bumpJevConfigVersion(db: Database.Database): void {
 /** Key 列表投影（含掩码状态），供配置页展示。 */
 export interface JevKeyView {
   id: string;
+  channelId: string | null;
+  baseUrl: string;
   label: string;
   generation: number;
   enabled: boolean;
@@ -70,6 +72,8 @@ function toJevKeyView(
 ): JevKeyView {
   return {
     id: row.id,
+    channelId: row.channelId,
+    baseUrl: row.baseUrl,
     label: row.label,
     generation: row.generation,
     enabled: row.enabled,
@@ -86,8 +90,9 @@ function toJevKeyView(
 export function listJevKeyViews(
   db: Database.Database,
   key?: Buffer,
+  filter?: { channelId?: string; baseUrl?: string },
 ): JevKeyView[] {
-  return listJevKeys(db).map((row) => toJevKeyView(db, row, key));
+  return listJevKeys(db, filter).map((row) => toJevKeyView(db, row, key));
 }
 
 export function getJevKeyView(
@@ -118,6 +123,8 @@ export { listJevRuntimeKeys as listRuntimeJevKeys };
 export interface AddJevKeyInput {
   label: string;
   apiKey: string;
+  channelId?: string | null;
+  baseUrl?: string;
 }
 
 /** 新增一个启用的 Key；元数据与密文在同一事务内写入。 */
@@ -134,7 +141,13 @@ export function addJevKey(
   const id = randomUUID();
   const namespace = jevKeySecretNamespace(id);
   const run = db.transaction(() => {
-    createJevKey(db, { id, label, secretNamespace: namespace });
+    createJevKey(db, {
+      id,
+      label,
+      channelId: input.channelId ?? null,
+      baseUrl: input.baseUrl ?? "",
+      secretNamespace: namespace,
+    });
     setSecret(db, namespace, secret, key);
     bumpJevConfigVersion(db);
   });

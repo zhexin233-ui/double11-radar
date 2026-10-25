@@ -384,6 +384,123 @@ function migrateDefaultNeedGroup(db: Database.Database): void {
   ).run(DEFAULT_NEED_GROUP_ID);
 }
 
+/**
+ * V6：模型渠道（model_channels）与 Key/Request 渠道关联。
+ */
+const V6_MODEL_CHANNELS = `
+CREATE TABLE IF NOT EXISTS model_channels (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  model TEXT NOT NULL,
+  timeout_ms INTEGER NOT NULL DEFAULT 30000,
+  is_active INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_model_channels_base_model ON model_channels(base_url, model);
+
+ALTER TABLE jev_api_keys ADD COLUMN channel_id TEXT;
+ALTER TABLE jev_api_keys ADD COLUMN base_url TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_jev_keys_channel ON jev_api_keys(channel_id);
+CREATE INDEX IF NOT EXISTS idx_jev_keys_base_url ON jev_api_keys(base_url);
+
+ALTER TABLE jev_requests ADD COLUMN channel_id TEXT;
+ALTER TABLE jev_requests ADD COLUMN base_url TEXT;
+CREATE INDEX IF NOT EXISTS idx_jev_requests_channel ON jev_requests(channel_id);
+CREATE INDEX IF NOT EXISTS idx_jev_requests_base_url ON jev_requests(base_url);
+`;
+
+const INITIAL_CHANNELS = [
+  {
+    id: "channel-commandcode",
+    name: "Command Code",
+    baseUrl: "https://api.commandcode.ai/provider",
+    model: "typesafe/jev",
+    timeoutMs: 30000,
+  },
+  {
+    id: "channel-typesafe",
+    name: "TypeSafe 官方",
+    baseUrl: "https://api.typesafe.ai",
+    model: "jev-latest",
+    timeoutMs: 30000,
+  },
+  {
+    id: "channel-laya",
+    name: "本地 Laya",
+    baseUrl: "http://127.0.0.1:8000",
+    model: "laya-9b",
+    timeoutMs: 30000,
+  },
+];
+
+function migrateModelChannels(db: Database.Database): void {
+  const now = new Date().toISOString();
+  // 查找当前 settings 中的 jev 配置
+  let currentBaseUrl = "https://api.typesafe.ai";
+  let currentModel = "jev-latest";
+  const row = db
+    .prepare("SELECT value FROM settings WHERE namespace = 'jev'")
+    .get() as { value: string } | undefined;
+  if (row) {
+    try {
+      const cfg = JSON.parse(row.value) as { baseUrl?: string; model?: string };
+      if (cfg.baseUrl) currentBaseUrl = cfg.baseUrl;
+      if (cfg.model) currentModel = cfg.model;
+    } catch {
+      // ignore
+    }
+  }
+
+  // 插入内置预设
+  for (const ch of INITIAL_CHANNELS) {
+    const isActive =
+      ch.baseUrl.replace(/\/+$/, "") === currentBaseUrl.replace(/\/+$/, "") ? 1 : 0;
+    db.prepare(
+      `INSERT OR IGNORE INTO model_channels (
+         id, name, base_url, model, timeout_ms, is_active, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(ch.id, ch.name, ch.baseUrl, ch.model, ch.timeoutMs, isActive, now, now);
+  }
+
+  // 确保至少有一个渠道被激活
+  const activeCount = db
+    .prepare("SELECT COUNT(*) AS count FROM model_channels WHERE is_active = 1")
+    .get() as { count: number };
+  if (activeCount.count === 0) {
+    // 若当前配置不是预设中的，则为当前配置创建一个自定义默认渠道
+    const defaultId = "channel-current";
+    db.prepare(
+      `INSERT OR REPLACE INTO model_channels (
+         id, name, base_url, model, timeout_ms, is_active, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+    ).run(defaultId, "默认渠道", currentBaseUrl, currentModel, 30000, now, now);
+  }
+
+  // 获取当前活动渠道
+  const activeChannel = db
+    .prepare("SELECT id, base_url FROM model_channels WHERE is_active = 1 LIMIT 1")
+    .get() as { id: string; base_url: string } | undefined;
+
+  const activeChannelId = activeChannel ? activeChannel.id : "channel-typesafe";
+  const activeChannelBaseUrl = activeChannel ? activeChannel.base_url : currentBaseUrl;
+
+  // 将所有存量密钥绑定至活动渠道
+  db.prepare(
+    `UPDATE jev_api_keys
+     SET channel_id = ?, base_url = ?
+     WHERE channel_id IS NULL OR base_url = ''`,
+  ).run(activeChannelId, activeChannelBaseUrl);
+
+  // 将存量账本记录填充 baseUrl
+  db.prepare(
+    `UPDATE jev_requests
+     SET channel_id = ?, base_url = ?
+     WHERE channel_id IS NULL`,
+  ).run(activeChannelId, activeChannelBaseUrl);
+}
+
 export const migrations: Migration[] = [
   {
     version: 1,
@@ -411,5 +528,11 @@ export const migrations: Migration[] = [
     name: "need_groups_and_needs_association",
     sql: V5_NEED_GROUPS,
     run: migrateDefaultNeedGroup,
+  },
+  {
+    version: 6,
+    name: "model_channels_and_key_provider_partition",
+    sql: V6_MODEL_CHANNELS,
+    run: migrateModelChannels,
   },
 ];

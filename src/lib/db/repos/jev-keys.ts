@@ -23,6 +23,8 @@ export const JE_KEY_AUTO_DISABLE_REASON =
 
 interface JevApiKeyRow {
   id: string;
+  channel_id: string | null;
+  base_url: string;
   label: string;
   secret_namespace: string;
   generation: number;
@@ -39,6 +41,8 @@ interface JevApiKeyRow {
 function toJevApiKey(row: JevApiKeyRow): JevApiKey {
   return {
     id: row.id,
+    channelId: row.channel_id,
+    baseUrl: row.base_url,
     label: row.label,
     secretNamespace: row.secret_namespace,
     generation: row.generation,
@@ -53,7 +57,26 @@ function toJevApiKey(row: JevApiKeyRow): JevApiKey {
   };
 }
 
-export function listJevKeys(db: Database.Database): JevApiKey[] {
+export function listJevKeys(
+  db: Database.Database,
+  filter?: { channelId?: string; baseUrl?: string },
+): JevApiKey[] {
+  if (filter?.channelId) {
+    const rows = db
+      .prepare(
+        "SELECT * FROM jev_api_keys WHERE channel_id = ? ORDER BY created_at ASC, id ASC",
+      )
+      .all(filter.channelId) as JevApiKeyRow[];
+    return rows.map(toJevApiKey);
+  }
+  if (filter?.baseUrl) {
+    const rows = db
+      .prepare(
+        "SELECT * FROM jev_api_keys WHERE base_url = ? ORDER BY created_at ASC, id ASC",
+      )
+      .all(filter.baseUrl) as JevApiKeyRow[];
+    return rows.map(toJevApiKey);
+  }
   const rows = db
     .prepare("SELECT * FROM jev_api_keys ORDER BY created_at ASC, id ASC")
     .all() as JevApiKeyRow[];
@@ -79,6 +102,8 @@ export function getJevKeyByNamespace(
 
 export interface CreateJevKeyInput {
   id?: string;
+  channelId?: string | null;
+  baseUrl?: string;
   label: string;
   secretNamespace: string;
   enabled?: boolean;
@@ -92,13 +117,15 @@ export function createJevKey(
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO jev_api_keys (
-       id, label, secret_namespace, generation, enabled, consecutive_failures,
+       id, channel_id, base_url, label, secret_namespace, generation, enabled, consecutive_failures,
        created_at, updated_at
      ) VALUES (
-       @id, @label, @secretNamespace, 1, @enabled, 0, @now, @now
+       @id, @channelId, @baseUrl, @label, @secretNamespace, 1, @enabled, 0, @now, @now
      )`,
   ).run({
     id,
+    channelId: input.channelId ?? null,
+    baseUrl: input.baseUrl ?? "",
     label: input.label,
     secretNamespace: input.secretNamespace,
     enabled: input.enabled === false ? 0 : 1,
@@ -110,6 +137,8 @@ export function createJevKey(
 }
 
 export interface UpdateJevKeyPatch {
+  channelId?: string | null;
+  baseUrl?: string;
   label?: string;
   enabled?: boolean;
   disabledReason?: string | null;
@@ -131,6 +160,8 @@ export function updateJevKey(
   const now = new Date().toISOString();
   const next = {
     id,
+    channelId: patch.channelId !== undefined ? patch.channelId : current.channelId,
+    baseUrl: patch.baseUrl !== undefined ? patch.baseUrl : current.baseUrl,
     label: patch.label ?? current.label,
     enabled: (patch.enabled ?? current.enabled) ? 1 : 0,
     disabledReason:
@@ -151,6 +182,8 @@ export function updateJevKey(
   };
   db.prepare(
     `UPDATE jev_api_keys SET
+       channel_id = @channelId,
+       base_url = @baseUrl,
        label = @label,
        generation = @generation,
        enabled = @enabled,

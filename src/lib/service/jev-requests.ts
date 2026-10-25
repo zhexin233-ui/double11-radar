@@ -9,6 +9,7 @@ import {
 import { listJevKeys, touchJevKeyUsed } from "@/lib/db/repos/jev-keys";
 import { extendJobLease, isJobOwnedBy } from "@/lib/db/repos/jobs";
 import { getJevCooldown, isJevCoolingDown } from "@/lib/db/repos/jev-cooldown";
+import { getActiveModelChannel } from "@/lib/db/repos/model-channels";
 import {
   getJevConfig,
   getJevConfigView,
@@ -149,11 +150,22 @@ export function reserveJevCall(
     reclaimExpiredRequestReservations(db, now);
 
     const config = getJevConfig(db);
-    const allKeys = listJevKeys(db);
+    // 优先根据当前活动渠道及 baseUrl 匹配可用密钥
+    const activeChannel = getActiveModelChannel(db);
+    const channelId = activeChannel ? activeChannel.id : null;
+    const currentNormBaseUrl = normalizeBaseUrl(config.baseUrl);
+
+    const allKeys = listJevKeys(db).filter((k) => {
+      if (channelId && k.channelId === channelId) return true;
+      if (k.baseUrl && normalizeBaseUrl(k.baseUrl) === currentNormBaseUrl) return true;
+      // 容错：如果既无 channelId 又无 baseUrl，作为遗留默认 Key 允许在未指定特殊渠道时匹配
+      return !k.channelId && !k.baseUrl;
+    });
+
     if (allKeys.length === 0) {
       return blocked(
         "not_configured",
-        "Jev 未配置 API 密钥，请在页面添加密钥后重试",
+        "Jev 未配置 API 密钥（当前服务渠道未配置 API 密钥，请在模型配置的「API 密钥」面板为该渠道添加密钥后重试）",
       );
     }
 
@@ -264,6 +276,8 @@ export function reserveJevCall(
       );
     }
     const reserved = insertInFlightRequest(db, {
+      channelId,
+      baseUrl: config.baseUrl,
       keyId: chosenRow.id,
       keyLabel: chosenRow.label,
       keyGeneration: chosenRow.generation,

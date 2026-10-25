@@ -1,4 +1,5 @@
 import { getJevUsageView } from "@/lib/service/jev-usage";
+import { getChannels } from "@/lib/service/model-channels";
 import { handleRoute, ok } from "@/lib/http/json";
 import { parsePageQuery } from "@/lib/http/query";
 import { requireAuth } from "@/lib/http/server";
@@ -12,10 +13,14 @@ import { requireAuth } from "@/lib/http/server";
 export const GET = handleRoute(async (req) => {
   const db = requireAuth(req);
   const url = new URL(req.url);
+  const pageQuery = parsePageQuery(url.searchParams, { defaultLimit: 20, maxLimit: 200 });
+  const channelId = url.searchParams.get("channelId") || undefined;
+  const baseUrl = url.searchParams.get("baseUrl") || undefined;
+
   const usage = getJevUsageView(
     db,
-    // LIMIT/OFFSET 只接受整数：非法输入回退而不是变成 500。
-    parsePageQuery(url.searchParams, { defaultLimit: 20, maxLimit: 200 }),
+    { ...pageQuery, channelId, baseUrl },
   );
-  return ok(usage);
+  const channels = getChannels(db);
+  return ok({ ...usage, channels });
 });

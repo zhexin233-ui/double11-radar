@@ -19,6 +19,8 @@ const PostSchema = z.object({
     .trim()
     .min(1, "API 密钥不能为空")
     .max(500, "API 密钥过长"),
+  channelId: z.string().trim().nullable().optional(),
+  baseUrl: z.string().trim().optional(),
 });
 
 export const POST = handleRoute(async (req) => {
@@ -28,5 +30,12 @@ export const POST = handleRoute(async (req) => {
   if (!body.success) throw invalidBodyError(body.error);
 
   // 返回单一视图，便于前端直接渲染；不含明文。
-  return ok(addJevKey(db, { label: body.data.label, apiKey: body.data.apiKey }));
+  return ok(
+    addJevKey(db, {
+      label: body.data.label,
+      apiKey: body.data.apiKey,
+      channelId: body.data.channelId,
+      baseUrl: body.data.baseUrl,
+    }),
+  );
 });

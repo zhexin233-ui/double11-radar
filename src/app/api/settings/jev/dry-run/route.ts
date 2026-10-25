@@ -25,6 +25,14 @@ const BodySchema = z.object({
     .nonnegative("价格不能为负数")
     .nullable()
     .optional(),
+  mockNeeds: z
+    .array(
+      z.object({
+        name: z.string().trim().max(100),
+        note: z.string().trim().max(2000),
+      }),
+    )
+    .optional(),
 });
 
 export const POST = handleRoute(async (req) => {
@@ -43,6 +51,7 @@ export const POST = handleRoute(async (req) => {
       brand: body.data.brand ?? null,
       mall: body.data.mall ?? null,
       price: body.data.price ?? null,
+      mockNeeds: body.data.mockNeeds,
     });
     return ok(result);
   } catch (error) {

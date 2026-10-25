@@ -36,6 +36,8 @@ export const JE_REQUEST_STATUS_LABELS: Record<JevRequestStatus, string> = {
 
 export interface JevUsageRequestView {
   id: string;
+  channelId: string | null;
+  baseUrl: string | null;
   startedAt: string;
   finishedAt: string | null;
   purpose: JevRequestPurpose;
@@ -100,6 +102,8 @@ function toRequestView(request: JevRequest): JevUsageRequestView {
   const known = request.costStatus === "known";
   return {
     id: request.id,
+    channelId: request.channelId,
+    baseUrl: request.baseUrl,
     startedAt: request.startedAt,
     finishedAt: request.finishedAt,
     purpose: request.purpose,
@@ -131,6 +135,8 @@ function toRequestView(request: JevRequest): JevUsageRequestView {
 export interface JevUsageQuery {
   limit?: number;
   offset?: number;
+  channelId?: string;
+  baseUrl?: string;
 }
 
 export function getJevUsageView(
@@ -140,14 +146,15 @@ export function getJevUsageView(
   // summary / byKey / recent 在同一同步只读事务内读取，避免另一进程中途完成调用时
   // 返回互相矛盾的汇总与明细（与记录页列表同一原则）。
   const read = db.transaction(() => {
-    const summary = getJevUsageSummary(db);
+    const filter = { channelId: query.channelId, baseUrl: query.baseUrl };
+    const summary = getJevUsageSummary(db, filter);
     const recent = listRecentJevRequests(db, query);
     return {
       summary: {
         ...summary,
         knownCostUsd: formatUsdFromNanos(summary.knownCostNanos),
       },
-      byKey: getJevUsageByKey(db).map((row) => ({
+      byKey: getJevUsageByKey(db, filter).map((row) => ({
         ...row,
         knownCostUsd: formatUsdFromNanos(row.knownCostNanos),
       })),

@@ -123,8 +123,21 @@ export const JE_CONCURRENCY_RANGE = { min: 1, max: 8 } as const;
 export const JE_JOBS_PER_ROUND_RANGE = { min: 1, max: 50 } as const;
 
 /** 单个 Jev API Key 的展示状态（绝不含明文密钥）。 */
+export interface ModelChannelDto {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface JevKeyDto {
   id: string;
+  channelId: string | null;
+  baseUrl: string;
   label: string;
   generation: number;
   enabled: boolean;
@@ -160,6 +173,8 @@ export type JevCostStatusDto = "known" | "unknown";
 
 export interface JevUsageRequestDto {
   id: string;
+  channelId: string | null;
+  baseUrl: string | null;
   startedAt: string;
   finishedAt: string | null;
   purpose: JevRequestPurposeDto;
@@ -216,6 +231,7 @@ export interface JevUsageDto {
   summary: JevUsageSummaryDto;
   byKey: JevUsageByKeyDto[];
   recent: { items: JevUsageRequestDto[]; total: number };
+  channels?: ModelChannelDto[];
 }
 
 export interface NotifyConfigDto {

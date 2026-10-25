@@ -290,6 +290,18 @@ export interface SessionRecord {
 
 // ── Jev 多密钥池与调用账本 ──────────────────────────────────────────────────
 
+/** 模型渠道配置实体 */
+export interface ModelChannel {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 一次 Jev 请求的来源。 */
 export type JevRequestPurpose =
   | "evaluate"
@@ -314,6 +326,8 @@ export type JevCostStatus = "known" | "unknown";
 /** Jev API Key 元数据（密文存 `secrets`，此处只保留非敏感字段）。 */
 export interface JevApiKey {
   id: string;
+  channelId: string | null;
+  baseUrl: string;
   label: string;
   secretNamespace: string;
   /** 每次替换/手动恢复都会自增；用于隔离旧请求的迟到结果。 */
@@ -333,6 +347,8 @@ export interface JevApiKey {
 /** 一次实际 Jev 上游调用的账本记录。 */
 export interface JevRequest {
   id: string;
+  channelId: string | null;
+  baseUrl: string | null;
   upstreamRequestId: string | null;
   keyId: string | null;
   keyLabel: string | null;

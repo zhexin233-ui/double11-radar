@@ -36,8 +36,14 @@ import type {
  * 必须进入费用统计，否则统计会低估真实用量。
  */
 
+export interface MockNeedInput {
+  name: string;
+  note: string;
+}
+
 export interface DryRunInput extends StateFields {
   title: string;
+  mockNeeds?: MockNeedInput[];
 }
 
 export interface DryRunNeedResult {
@@ -77,7 +83,20 @@ export async function runJevDryRun(
   input: DryRunInput,
   deps: DryRunDependencies = {},
 ): Promise<DryRunResult> {
-  const needs = listEnabledNeeds(db);
+  let needs = listEnabledNeeds(db);
+  if (input.mockNeeds && input.mockNeeds.length > 0) {
+    needs = input.mockNeeds.map((mock, index) => ({
+      id: `mock-${index + 1}`,
+      groupId: "mock-group",
+      name: mock.name.trim() || `模拟需求 ${index + 1}`,
+      note: mock.note.trim(),
+      enabled: true,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
   const configVersion = getJevConfigView(db).version;
 
   if (needs.length === 0) {
