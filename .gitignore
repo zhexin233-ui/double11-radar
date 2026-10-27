@@ -17,11 +17,22 @@ data/
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 
 # env
 .env
 .env.local
 .env.*.local
+.env.*
+.envrc
+!.env.example
+!.env.*.example
 
 # logs
 *.log
@@ -36,6 +47,36 @@ coverage/
 
 # 本地凭据（绝不提交）
 jevapikey
+secrets/
+runtime.conf
+runtime.conf.*
+!runtime.conf.example
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+credentials.json
+credentials.*.json
+!credentials.example.json
 
 # 私有开发上下文，仅保留在本地
 .trellis/
+.deployment/
+.claude/settings.local.json
+
+# 本地备份与发布包
+/backups/
+*.bak
+*.backup
+*.backup-*
+*.before-*
+/*.bundle
+/*.tar
+/*.tar.gz
+/*.tgz
+/*.zip
