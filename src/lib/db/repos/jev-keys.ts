@@ -15,11 +15,11 @@ import type { JevApiKey } from "@/lib/domain/types";
  * - 这些健康更新必须与调用账本写在同一事务内（见 `jev-requests.ts`）。
  */
 
-/** 连续三次实际请求失败即自动禁用（用户 2026-10-14 确认的方案）。 */
-export const JE_KEY_FAILURE_THRESHOLD = 3;
+/** 连续十次实际请求失败即自动禁用（用户 2026-10-27 调整）。 */
+export const JE_KEY_FAILURE_THRESHOLD = 10;
 
 export const JE_KEY_AUTO_DISABLE_REASON =
-  "连续 3 次实际请求失败，已自动禁用；请在页面排查后手动恢复或替换密钥";
+  `连续 ${JE_KEY_FAILURE_THRESHOLD} 次实际请求失败，已自动禁用；请在页面排查后手动恢复或替换密钥`;
 
 interface JevApiKeyRow {
   id: string;

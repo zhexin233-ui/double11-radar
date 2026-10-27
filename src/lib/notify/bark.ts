@@ -4,7 +4,7 @@ import {
   NOTIFY_TIMEOUT_MS,
   notificationBodyLines,
   notificationTitle,
-  type NotifyMessage,
+  type ChannelMessage,
   type SendDependencies,
   type SendResult,
 } from "@/lib/notify/types";
@@ -36,7 +36,7 @@ function failure(
 }
 
 export async function sendBark(
-  message: NotifyMessage,
+  message: ChannelMessage,
   config: BarkConfig,
   deps: SendDependencies = {},
 ): Promise<SendResult> {
@@ -47,8 +47,8 @@ export async function sendBark(
     device_key: config.deviceKey,
     title: notificationTitle(message),
     body: notificationBodyLines(message).join("\n"),
-    url: message.url || undefined,
-    group: BARK_GROUP,
+    url: "kind" in message ? undefined : message.url || undefined,
+    group: "kind" in message ? "系统故障告警" : BARK_GROUP,
   };
 
   let response: Response;
@@ -60,7 +60,7 @@ export async function sendBark(
       signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
     });
   } catch (error) {
-    console.error("[bark] 投递失败：", error);
+    console.error("[bark] 投递网络异常，请检查通知渠道配置与出网");
     return failure(
       describeNetworkFailure(error, {
         service: "Bark 服务",

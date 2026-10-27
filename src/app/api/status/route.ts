@@ -1,3 +1,5 @@
+import { listRecentSystemAlerts } from "@/lib/db/repos/system-alerts";
+import { alertReason } from "@/lib/system-alerts/format";
 import { channelStats, listChannels } from "@/lib/db/repos/channels";
 import { countBulletins } from "@/lib/db/repos/bulletins";
 import { countEvaluations } from "@/lib/db/repos/evaluations";
@@ -97,6 +99,15 @@ export const GET = handleRoute(async (req) => {
     jobs,
     counts,
     processingHealthy,
+    systemAlerts: listRecentSystemAlerts(db).map((alert) => ({
+      id: alert.id, channelName: alert.channelName, keyLabel: alert.keyLabel,
+      consecutiveFailures: alert.consecutiveFailures, occurredAt: alert.occurredAt,
+      reason: alertReason(alert.errorCategory), dispatchStatus: alert.dispatchStatus,
+      deliveries: alert.deliveries.map((delivery) => ({
+        channel: delivery.channel, status: delivery.status, attempts: delivery.attempts,
+        lastError: delivery.lastError,
+      })),
+    })),
     recentFailedJobs: listRecentFailedJobs(db, 10).map((job) => ({
       id: job.id,
       kind: job.kind,

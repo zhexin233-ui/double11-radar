@@ -24,6 +24,14 @@ export interface NotifyMessage {
   channelName?: string | null;
 }
 
+export interface SystemNotifyMessage {
+  kind: "system_alert";
+  title: string;
+  lines: string[];
+}
+
+export type ChannelMessage = NotifyMessage | SystemNotifyMessage;
+
 export interface SendResult {
   ok: boolean;
   httpStatus: number | null;
@@ -42,7 +50,8 @@ export const BARK_GROUP = "线报需求匹配";
 /** 推送渠道单次投递超时（毫秒）。 */
 export const NOTIFY_TIMEOUT_MS = 15000;
 
-export function notificationTitle(message: NotifyMessage): string {
+export function notificationTitle(message: ChannelMessage): string {
+  if ("kind" in message) return message.title;
   if (message.needs.length === 1) {
     return `命中需求：${message.needs[0]}`;
   }
@@ -50,7 +59,8 @@ export function notificationTitle(message: NotifyMessage): string {
 }
 
 /** 纯文本正文，各渠道按自己格式复用。 */
-export function notificationBodyLines(message: NotifyMessage): string[] {
+export function notificationBodyLines(message: ChannelMessage): string[] {
+  if ("kind" in message) return message.lines;
   const lines: string[] = [`需求：${message.needs.join("、")}`];
   lines.push(`线报：${message.bulletinTitle}`);
   if (message.price !== null) {

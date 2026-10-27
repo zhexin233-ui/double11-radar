@@ -161,7 +161,7 @@ export interface BatchDeleteJevKeysResultDto {
 }
 
 /** 连续失败达到该次数会自动禁用 Key（与服务端常量一致）。 */
-export const JE_KEY_FAILURE_THRESHOLD = 3;
+export const JE_KEY_FAILURE_THRESHOLD = 10;
 
 export type JevRequestPurposeDto = "evaluate" | "batch_gate" | "test" | "dry_run";
 export type JevRequestStatusDto =
@@ -460,7 +460,27 @@ export interface DryRunResultDto {
   results: DryRunNeedResultDto[];
 }
 
+export interface SystemAlertDto {
+  id: string;
+  channelName: string;
+  keyLabel: string;
+  consecutiveFailures: number;
+  occurredAt: string;
+  reason: string;
+  dispatchStatus: "pending" | "dispatched" | "no_channels";
+  deliveries: Array<{
+    channel: "bark" | "feishu";
+    status: "pending" | "sending" | "failed" | "succeeded" | "disabled" | "dead";
+    attempts: number;
+    lastError: string | null;
+  }>;
+}
+
+export const ALERT_DISPATCH_LABELS = { pending: "等待分派", dispatched: "已分派", no_channels: "无可用通知渠道（不补发历史）" };
+export const ALERT_DELIVERY_LABELS = { pending: "等待发送", sending: "发送中", failed: "等待重试", succeeded: "已送达", disabled: "已停止重试", dead: "重试已耗尽" };
+
 export interface StatusDto {
+  systemAlerts: SystemAlertDto[];
   worker: {
     workerStartedAt: string | null;
     lastHeartbeatAt: string | null;

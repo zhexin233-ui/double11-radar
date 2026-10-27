@@ -1,3 +1,5 @@
+import { insertSystemAlert } from "@/lib/db/repos/system-alerts";
+import { classifyAlertError } from "@/lib/system-alerts/format";
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type {
@@ -330,7 +332,22 @@ export function completeJevRequest(
           ...health,
           error: input.errorMessage ?? "Jev 请求失败",
         });
-        keyDisabled = failure.disabled;
+        keyDisabled = failure.applied && failure.disabled;
+        if (keyDisabled) {
+          const channel = existing.channelId
+            ? db.prepare("SELECT name FROM model_channels WHERE id = ?").get(existing.channelId) as { name: string } | undefined
+            : undefined;
+          insertSystemAlert(db, {
+            keyId: existing.keyId,
+            keyGeneration: existing.keyGeneration,
+            keyLabel: existing.keyLabel ?? "未命名密钥",
+            channelName: channel?.name ?? "未知渠道",
+            consecutiveFailures: failure.consecutiveFailures,
+            occurredAt: finishedAt,
+            httpStatus: input.httpStatus ?? null,
+            errorCategory: classifyAlertError(input.httpStatus ?? null, input.errorCode ?? null),
+          });
+        }
         if (failure.applied) failures = failure.consecutiveFailures;
       }
       if (input.status === "failed" && input.rateLimited) {

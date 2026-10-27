@@ -158,7 +158,7 @@ export async function callSystemOne(
     console.error("[jev] 调用失败：", error);
     throw new JevError(
       describeJevNetworkFailure(error, config.baseUrl, timeoutMs),
-      { retryable: true },
+      { retryable: true, code: "network" },
     );
   }
 
@@ -198,6 +198,7 @@ export async function callSystemOne(
     json = JSON.parse(text);
   } catch {
     throw new JevError("Jev 响应不是合法 JSON", {
+      code: "invalid_response",
       status: response.status,
       retryable: false,
       retryAfterMs,
@@ -208,6 +209,7 @@ export async function callSystemOne(
   const parsed = SystemOneResponseSchema.safeParse(json);
   if (!parsed.success) {
     throw new JevError("Jev 响应结构不符合预期", {
+      code: "invalid_response",
       status: response.status,
       retryable: false,
       retryAfterMs,

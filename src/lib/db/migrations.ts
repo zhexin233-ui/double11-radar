@@ -501,7 +501,43 @@ function migrateModelChannels(db: Database.Database): void {
   ).run(activeChannelId, activeChannelBaseUrl);
 }
 
+const V7_SYSTEM_ALERTS = `
+CREATE TABLE system_alerts (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL CHECK(event_type = 'key_auto_disabled'),
+  key_id TEXT NOT NULL,
+  key_generation INTEGER NOT NULL,
+  channel_name TEXT NOT NULL,
+  key_label TEXT NOT NULL,
+  consecutive_failures INTEGER NOT NULL,
+  occurred_at TEXT NOT NULL,
+  http_status INTEGER,
+  error_category TEXT NOT NULL CHECK(error_category IN ('auth','rate_limit','upstream','network','invalid_response','unknown')),
+  dispatch_status TEXT NOT NULL DEFAULT 'pending' CHECK(dispatch_status IN ('pending','dispatched','no_channels')),
+  dispatched_at TEXT,
+  UNIQUE(event_type, key_id, key_generation)
+);
+CREATE TABLE system_alert_deliveries (
+  id TEXT PRIMARY KEY,
+  alert_id TEXT NOT NULL REFERENCES system_alerts(id),
+  channel TEXT NOT NULL CHECK(channel IN ('bark','feishu')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sending','failed','succeeded','disabled','dead')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  run_at TEXT NOT NULL,
+  lease_until TEXT,
+  lease_token TEXT,
+  http_status INTEGER,
+  biz_code TEXT,
+  last_error TEXT,
+  updated_at TEXT NOT NULL,
+  UNIQUE(alert_id, channel)
+);
+CREATE INDEX system_alert_dispatch ON system_alerts(dispatch_status, occurred_at);
+CREATE INDEX system_alert_delivery_due ON system_alert_deliveries(status, run_at);
+`;
+
 export const migrations: Migration[] = [
+  // 历史迁移保持不变，新告警独立于线报清理与投递统计。
   {
     version: 1,
     name: "init",
@@ -535,4 +571,5 @@ export const migrations: Migration[] = [
     sql: V6_MODEL_CHANNELS,
     run: migrateModelChannels,
   },
+  { version: 7, name: "system_key_failure_alerts", sql: V7_SYSTEM_ALERTS },
 ];

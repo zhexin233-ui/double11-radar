@@ -197,12 +197,12 @@ describe("共享退避（AC2/AC3）", () => {
 });
 
 describe("连续失败计数与禁用（AC2）", () => {
-  it("连续两次失败仍启用，第三次失败自动禁用并不再分配", async () => {
+  it("连续九次失败仍启用，第十次失败自动禁用并不再分配", async () => {
     const ctx = createTestDb();
     try {
       const key = addJevKey(ctx.db, { label: "A", apiKey: "sk-a" }, KEY);
 
-      for (let i = 0; i < 2; i += 1) {
+      for (let i = 0; i < 9; i += 1) {
         const outcome = await callJevWithLedger(
           ctx.db,
           { purpose: "evaluate", state: "{}", questions: QUESTIONS },
@@ -211,18 +211,19 @@ describe("连续失败计数与禁用（AC2）", () => {
         expect(outcome.status).toBe("failed");
       }
       let row = getJevKey(ctx.db, key.id)!;
-      expect(row.consecutiveFailures).toBe(2);
+      expect(row.consecutiveFailures).toBe(9);
       expect(row.enabled).toBe(true);
 
-      const third = await callJevWithLedger(
+      const tenth = await callJevWithLedger(
         ctx.db,
         { purpose: "evaluate", state: "{}", questions: QUESTIONS },
         { callSystemOne: failing() as never },
       );
-      expect(third.status).toBe("failed");
+      expect(tenth.status).toBe("failed");
       row = getJevKey(ctx.db, key.id)!;
+      expect(row.consecutiveFailures).toBe(10);
       expect(row.enabled).toBe(false);
-      expect(row.disabledReason).toMatch(/[\u4e00-\u9fff]/);
+      expect(row.disabledReason).toContain("连续 10 次实际请求失败");
 
       const blocked = reserveJevCall(ctx.db, { purpose: "evaluate" }, KEY);
       expect(blocked.ok).toBe(false);
@@ -272,7 +273,7 @@ describe("连续失败计数与禁用（AC2）", () => {
       );
 
       const failingCall = failing();
-      for (let i = 0; i < 3; i += 1) {
+      for (let i = 0; i < 10; i += 1) {
         await callJevWithLedger(
           ctx.db,
           { purpose: "evaluate", state: "{}", questions: QUESTIONS },
@@ -294,7 +295,7 @@ describe("连续失败计数与禁用（AC2）", () => {
       const row = getJevKey(ctx.db, key.id)!;
       expect(row.enabled).toBe(false);
       expect(row.disabledReason).not.toBeNull();
-      expect(row.consecutiveFailures).toBe(3);
+      expect(row.consecutiveFailures).toBe(10);
     } finally {
       ctx.close();
     }
@@ -310,7 +311,7 @@ describe("连续失败计数与禁用（AC2）", () => {
       );
 
       const failingCall = failing();
-      for (let i = 0; i < 3; i += 1) {
+      for (let i = 0; i < 10; i += 1) {
         await callJevWithLedger(
           ctx.db,
           { purpose: "evaluate", state: "{}", questions: QUESTIONS },

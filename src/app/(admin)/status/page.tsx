@@ -2,7 +2,7 @@
 
 import { Button } from "@mantine/core";
 import { useApiResource } from "@/components/use-api";
-import { deliveryLabel, type StatusDto } from "@/components/api-types";
+import { ALERT_DISPATCH_LABELS, ALERT_DELIVERY_LABELS, deliveryLabel, type StatusDto } from "@/components/api-types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
@@ -176,6 +176,29 @@ export default function StatusPage() {
           </p>
         </Section>
       </div>
+
+      <Section title="系统故障告警" description="最多显示最近 10 条密钥自动停用告警（诊断快照，不分页）；独立于线报通知统计。">
+        {status.systemAlerts.length === 0 ? <p className="muted small">暂无系统告警。</p> : (
+          <TableScroll label="最近系统故障告警">
+            <table>
+              <thead><tr><th>模型渠道 / 密钥</th><th>故障原因</th><th>发生时间</th><th>通知渠道状态</th></tr></thead>
+              <tbody>{status.systemAlerts.map((alert) => (
+                <tr key={alert.id}>
+                  <td>{alert.channelName} / {alert.keyLabel}</td>
+                  <td className="small">连续 {alert.consecutiveFailures} 次失败，已自动停用<br />{alert.reason}</td>
+                  <td className="small">{formatTime(alert.occurredAt)}</td>
+                  <td className="small">{ALERT_DISPATCH_LABELS[alert.dispatchStatus]}
+                    {alert.deliveries.map((delivery) => <div key={delivery.channel}>
+                      {delivery.channel === "bark" ? "Bark" : "飞书"}：{ALERT_DELIVERY_LABELS[delivery.status]}（{delivery.attempts}/5 次）
+                      {delivery.lastError ? <div className="muted">{delivery.lastError}</div> : null}
+                    </div>)}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </TableScroll>
+        )}
+      </Section>
 
       {channels.failing.length > 0 ? (
         <Section

@@ -20,6 +20,8 @@ import { getJevKey, listJevKeys } from "@/lib/db/repos/jev-keys";
 import { createTestDb, testKey } from "../helpers/db";
 
 const EXPECTED_TABLES = [
+  "system_alerts",
+  "system_alert_deliveries",
   "schema_migrations",
   "settings",
   "secrets",
@@ -65,7 +67,7 @@ describe("db/migrate", () => {
       const versions = ctx.db
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     } finally {
       ctx.close();
     }
@@ -102,7 +104,7 @@ describe("db/migrate", () => {
       setSecret(db, LEGACY_JEV_SECRET_NAMESPACE, "sk-legacy-secret", key);
 
       // 升级到 V2/V3/V4/V5/V6：数据迁移在同一事务内执行。
-      expect(migrate(db).applied).toEqual([2, 3, 4, 5, 6]);
+      expect(migrate(db).applied).toEqual([2, 3, 4, 5, 6, 7]);
       expect(listJevKeys(db)).toHaveLength(1);
       expect(getJevKey(db, LEGACY_JEV_KEY_ID)?.enabled).toBe(true);
       expect(getSecret(db, LEGACY_JEV_KEY_NAMESPACE, key)).toBe("sk-legacy-secret");

@@ -1,3 +1,4 @@
+import { runSystemAlertDelivererOnce } from "@/lib/worker/system-alert-deliverer";
 import { getDb } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
 import { reclaimExpiredLeases } from "@/lib/db/repos/jobs";
@@ -15,7 +16,7 @@ import { getStorageSettings, cleanupExpiredBulletins } from "@/lib/service/stora
  * 独立后台进程入口。
  *
  * - 与 web 共用同一个持久化数据库与加密密钥；
- * - 三个循环各自 try/catch，单轮或单个外部依赖失败不会退出进程；
+ * - 各循环分别捕获异常，单轮或单个外部依赖失败不会退出进程；
  * - 关闭网页不影响本进程；
  * - 支持 SIGINT/SIGTERM 优雅退出。
  */
@@ -52,6 +53,7 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
   let collecting = false;
   let working = false;
   let cleaning = false;
+  let alerting = false;
 
   const reportError = (message: string) => {
     console.error(message);
@@ -101,6 +103,14 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
       });
   }, WORK_INTERVAL_MS);
 
+  const alertTimer = setInterval(() => {
+    if (!running || alerting) return;
+    alerting = true;
+    void runSystemAlertDelivererOnce(db)
+      .catch(() => reportError("[worker] 系统告警循环异常，请检查数据库与通知配置"))
+      .finally(() => { alerting = false; });
+  }, WORK_INTERVAL_MS);
+
   // 周期性检查超期历史线报自动清理
   const cleanupTimer = setInterval(() => {
     if (!running || cleaning) return;
@@ -127,6 +137,7 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
     clearInterval(collectTimer);
     clearInterval(workTimer);
     clearInterval(cleanupTimer);
+    clearInterval(alertTimer);
     // 释放正则执行线程，避免进程退出时遗留 worker。
     disposeSharedRegexRunner();
   };

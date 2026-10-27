@@ -4,7 +4,7 @@ import {
   NOTIFY_TIMEOUT_MS,
   notificationBodyLines,
   notificationTitle,
-  type NotifyMessage,
+  type ChannelMessage,
   type SendDependencies,
   type SendResult,
 } from "@/lib/notify/types";
@@ -47,7 +47,7 @@ interface FeishuPostContent {
 
 /** 构造 post 富文本内容。 */
 export function buildFeishuPost(
-  message: NotifyMessage,
+  message: ChannelMessage,
   keywordPrefix?: string | null,
 ): FeishuPostContent {
   const baseTitle = notificationTitle(message);
@@ -55,7 +55,7 @@ export function buildFeishuPost(
   const paragraphs: Array<Array<Record<string, string>>> = [
     [{ tag: "text", text: notificationBodyLines(message).join("\n") }],
   ];
-  if (message.url) {
+  if (!("kind" in message) && message.url) {
     paragraphs.push([
       { tag: "a", text: "查看原始线报", href: message.url },
     ]);
@@ -64,7 +64,7 @@ export function buildFeishuPost(
 }
 
 export async function sendFeishu(
-  message: NotifyMessage,
+  message: ChannelMessage,
   config: FeishuConfig,
   deps: SendDependencies = {},
 ): Promise<SendResult> {
@@ -88,7 +88,7 @@ export async function sendFeishu(
       signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
     });
   } catch (error) {
-    console.error("[feishu] 投递失败：", error);
+    console.error("[feishu] 投递网络异常，请检查通知渠道配置与出网");
     // 注意：不把 Webhook 地址写进消息——它本身是凭据。
     return failure(
       describeNetworkFailure(error, {

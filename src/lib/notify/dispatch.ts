@@ -3,7 +3,7 @@ import { getNotificationByBulletin, createNotificationIfAbsent } from "@/lib/db/
 import { insertDeliveries } from "@/lib/db/repos/deliveries";
 import { sendBark } from "@/lib/notify/bark";
 import { sendFeishu } from "@/lib/notify/feishu";
-import type { NotifyMessage, SendDependencies, SendResult } from "@/lib/notify/types";
+import type { ChannelMessage, NotifyMessage, SendDependencies, SendResult } from "@/lib/notify/types";
 import {
   getNotifyRuntimeConfig,
   type NotifyRuntimeConfig,
@@ -123,7 +123,7 @@ export function getNotificationPayload(
 /** 按渠道分派发送；未启用/未配置时返回不可重试的失败。 */
 export async function sendForChannel(
   channel: NotifyChannel,
-  message: NotifyMessage,
+  message: ChannelMessage,
   runtime: NotifyRuntimeConfig,
   deps: SendDependencies = {},
 ): Promise<SendResult> {

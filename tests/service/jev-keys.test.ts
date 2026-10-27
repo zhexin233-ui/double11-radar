@@ -226,7 +226,7 @@ describe("批量删除禁用的 Key（AC1/AC2）", () => {
 
       updateJevKey(ctx.db, auto.id, {
         enabled: false,
-        disabledReason: "连续 3 次实际请求失败，已自动禁用",
+        disabledReason: "连续 10 次实际请求失败，已自动禁用",
       });
       updateJevKeySettings(ctx.db, manual.id, { enabled: false }, KEY);
       updateJevKeySettings(ctx.db, cleared.id, { apiKey: { clear: true } }, KEY);
