@@ -36,3 +36,6 @@ coverage/
 
 # 本地凭据（绝不提交）
 jevapikey
+
+# 私有开发上下文，仅保留在本地
+.trellis/
