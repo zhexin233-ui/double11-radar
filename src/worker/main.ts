@@ -1,3 +1,4 @@
+import { reenableDueJevKeys } from "@/lib/db/repos/jev-keys";
 import { runSystemAlertDelivererOnce } from "@/lib/worker/system-alert-deliverer";
 import { getDb } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
@@ -63,6 +64,14 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
       lastErrorStage: "worker",
     });
   };
+
+  const reenable = () => {
+    if (!running) return;
+    try { reenableDueJevKeys(db); }
+    catch { reportError("[worker] 密钥自动重新启用检查失败，请检查数据库"); }
+  };
+  reenable();
+  const reenableTimer = setInterval(reenable, 5_000);
 
   const heartbeat = setInterval(() => {
     try {
@@ -134,6 +143,7 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
   return () => {
     running = false;
     clearInterval(heartbeat);
+    clearInterval(reenableTimer);
     clearInterval(collectTimer);
     clearInterval(workTimer);
     clearInterval(cleanupTimer);

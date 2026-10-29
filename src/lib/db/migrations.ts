@@ -536,6 +536,56 @@ CREATE INDEX system_alert_dispatch ON system_alerts(dispatch_status, occurred_at
 CREATE INDEX system_alert_delivery_due ON system_alert_deliveries(status, run_at);
 `;
 
+const V8_KEY_AUTO_REENABLE = `
+ALTER TABLE jev_api_keys ADD COLUMN auto_reenable_enabled INTEGER NOT NULL DEFAULT 0 CHECK(auto_reenable_enabled IN (0,1));
+ALTER TABLE jev_api_keys ADD COLUMN auto_reenable_minutes INTEGER NOT NULL DEFAULT 5 CHECK(typeof(auto_reenable_minutes) = 'integer' AND auto_reenable_minutes BETWEEN 1 AND 1440);
+ALTER TABLE jev_api_keys ADD COLUMN auto_disabled_at TEXT;
+ALTER TABLE jev_api_keys ADD COLUMN auto_reenable_at TEXT;
+
+CREATE TABLE system_alerts_v8 (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL CHECK(event_type IN ('key_auto_disabled','key_auto_reenabled')),
+  key_id TEXT NOT NULL,
+  key_generation INTEGER NOT NULL,
+  channel_name TEXT NOT NULL,
+  key_label TEXT NOT NULL,
+  consecutive_failures INTEGER NOT NULL,
+  occurred_at TEXT NOT NULL,
+  http_status INTEGER,
+  error_category TEXT CHECK(
+    (event_type = 'key_auto_disabled' AND error_category IS NOT NULL AND error_category IN ('auth','rate_limit','upstream','network','invalid_response','unknown'))
+    OR (event_type = 'key_auto_reenabled' AND error_category IS NULL)
+  ),
+  dispatch_status TEXT NOT NULL DEFAULT 'pending' CHECK(dispatch_status IN ('pending','dispatched','no_channels')),
+  dispatched_at TEXT,
+  UNIQUE(event_type, key_id, key_generation)
+);
+CREATE TABLE system_alert_deliveries_v8 (
+  id TEXT PRIMARY KEY,
+  alert_id TEXT NOT NULL REFERENCES system_alerts_v8(id),
+  channel TEXT NOT NULL CHECK(channel IN ('bark','feishu')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sending','failed','succeeded','disabled','dead')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  run_at TEXT NOT NULL,
+  lease_until TEXT,
+  lease_token TEXT,
+  http_status INTEGER,
+  biz_code TEXT,
+  last_error TEXT,
+  updated_at TEXT NOT NULL,
+  UNIQUE(alert_id, channel)
+);
+INSERT INTO system_alerts_v8 SELECT * FROM system_alerts;
+INSERT INTO system_alert_deliveries_v8 SELECT * FROM system_alert_deliveries;
+-- 先移除旧子表，保证外键开启时也能安全重建父表。
+DROP TABLE system_alert_deliveries;
+DROP TABLE system_alerts;
+ALTER TABLE system_alerts_v8 RENAME TO system_alerts;
+ALTER TABLE system_alert_deliveries_v8 RENAME TO system_alert_deliveries;
+CREATE INDEX system_alert_dispatch ON system_alerts(dispatch_status, occurred_at);
+CREATE INDEX system_alert_delivery_due ON system_alert_deliveries(status, run_at);
+`;
+
 export const migrations: Migration[] = [
   // 历史迁移保持不变，新告警独立于线报清理与投递统计。
   {
@@ -572,4 +622,5 @@ export const migrations: Migration[] = [
     run: migrateModelChannels,
   },
   { version: 7, name: "system_key_failure_alerts", sql: V7_SYSTEM_ALERTS },
+  { version: 8, name: "key_auto_reenable_and_recovery_events", sql: V8_KEY_AUTO_REENABLE },
 ];

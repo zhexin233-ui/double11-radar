@@ -358,6 +358,8 @@ function applyLegacyJevKeyInput(
       updateJevKey(db, existing.id, {
         enabled: false,
         disabledReason: "密钥已清除，请替换后再启用",
+        autoDisabledAt: null,
+        autoReenableAt: null,
         consecutiveFailures: 0,
         bumpGeneration: true,
       });
@@ -381,6 +383,8 @@ function applyLegacyJevKeyInput(
     disabledReason: null,
     lastError: null,
     cooldownUntil: null,
+    autoDisabledAt: null,
+    autoReenableAt: null,
     bumpGeneration: true,
   });
   return true;

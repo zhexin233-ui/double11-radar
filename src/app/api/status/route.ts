@@ -100,7 +100,7 @@ export const GET = handleRoute(async (req) => {
     counts,
     processingHealthy,
     systemAlerts: listRecentSystemAlerts(db).map((alert) => ({
-      id: alert.id, channelName: alert.channelName, keyLabel: alert.keyLabel,
+      id: alert.id, eventType: alert.eventType, channelName: alert.channelName, keyLabel: alert.keyLabel,
       consecutiveFailures: alert.consecutiveFailures, occurredAt: alert.occurredAt,
       reason: alertReason(alert.errorCategory), dispatchStatus: alert.dispatchStatus,
       deliveries: alert.deliveries.map((delivery) => ({

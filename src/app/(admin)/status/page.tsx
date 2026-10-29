@@ -177,15 +177,15 @@ export default function StatusPage() {
         </Section>
       </div>
 
-      <Section title="系统故障告警" description="最多显示最近 10 条密钥自动停用告警（诊断快照，不分页）；独立于线报通知统计。">
+      <Section title="系统密钥通知" description="最多显示最近 10 条密钥自动停用与重新启用事件（诊断快照，不分页）；独立于线报通知统计。">
         {status.systemAlerts.length === 0 ? <p className="muted small">暂无系统告警。</p> : (
-          <TableScroll label="最近系统故障告警">
+          <TableScroll label="最近系统密钥通知">
             <table>
-              <thead><tr><th>模型渠道 / 密钥</th><th>故障原因</th><th>发生时间</th><th>通知渠道状态</th></tr></thead>
+              <thead><tr><th>模型渠道 / 密钥</th><th>事件 / 说明</th><th>发生时间</th><th>通知渠道状态</th></tr></thead>
               <tbody>{status.systemAlerts.map((alert) => (
                 <tr key={alert.id}>
                   <td>{alert.channelName} / {alert.keyLabel}</td>
-                  <td className="small">连续 {alert.consecutiveFailures} 次失败，已自动停用<br />{alert.reason}</td>
+                  <td className="small">{alert.eventType === "key_auto_reenabled" ? `已自动重新启用（此前连续 ${alert.consecutiveFailures} 次失败）` : `连续 ${alert.consecutiveFailures} 次失败，已自动停用`}<br />{alert.reason}</td>
                   <td className="small">{formatTime(alert.occurredAt)}</td>
                   <td className="small">{ALERT_DISPATCH_LABELS[alert.dispatchStatus]}
                     {alert.deliveries.map((delivery) => <div key={delivery.channel}>

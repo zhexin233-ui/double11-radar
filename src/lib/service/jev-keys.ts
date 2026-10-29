@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { JevApiKey } from "@/lib/domain/types";
@@ -56,6 +57,10 @@ export interface JevKeyView {
   label: string;
   generation: number;
   enabled: boolean;
+  autoReenableEnabled: boolean;
+  autoReenableMinutes: number;
+  autoDisabledAt: string | null;
+  autoReenableAt: string | null;
   disabledReason: string | null;
   consecutiveFailures: number;
   lastError: string | null;
@@ -77,6 +82,10 @@ function toJevKeyView(
     label: row.label,
     generation: row.generation,
     enabled: row.enabled,
+    autoReenableEnabled: row.autoReenableEnabled,
+    autoReenableMinutes: row.autoReenableMinutes,
+    autoDisabledAt: row.autoDisabledAt,
+    autoReenableAt: row.autoReenableAt,
     disabledReason: row.disabledReason,
     consecutiveFailures: row.consecutiveFailures,
     lastError: row.lastError,
@@ -123,6 +132,8 @@ export { listJevRuntimeKeys as listRuntimeJevKeys };
 export interface AddJevKeyInput {
   label: string;
   apiKey: string;
+  autoReenableEnabled?: boolean;
+  autoReenableMinutes?: number;
   channelId?: string | null;
   baseUrl?: string;
 }
@@ -133,6 +144,7 @@ export function addJevKey(
   input: AddJevKeyInput,
   key?: Buffer,
 ): JevKeyView {
+  validateAutoReenable(input);
   const label = input.label.trim();
   if (!label) throw new Error("Key 名称不能为空");
   const secret = input.apiKey.trim();
@@ -147,6 +159,8 @@ export function addJevKey(
       channelId: input.channelId ?? null,
       baseUrl: input.baseUrl ?? "",
       secretNamespace: namespace,
+      autoReenableEnabled: input.autoReenableEnabled,
+      autoReenableMinutes: input.autoReenableMinutes,
     });
     setSecret(db, namespace, secret, key);
     bumpJevConfigVersion(db);
@@ -161,6 +175,8 @@ export function addJevKey(
 export interface UpdateJevKeyInput {
   label?: string;
   enabled?: boolean;
+  autoReenableEnabled?: boolean;
+  autoReenableMinutes?: number;
   /** 三态语义：字符串=替换；`{clear:true}`=清除该 Key 的密文；空/undefined=保留。 */
   apiKey?: SecretInput;
 }
@@ -168,7 +184,7 @@ export interface UpdateJevKeyInput {
 /**
  * 修改 label / 启停 / 替换或清除密钥。
  *
- * - 显式 `enabled: true`（手动恢复）：失败计数清零、清除禁用原因、generation +1；
+ * - 禁用状态下显式 `enabled: true`（手动恢复）：失败计数清零、清除禁用原因、generation +1；
  * - 替换密钥：generation +1、计数清零、清除禁用原因，但**不隐式改变启停状态**；
  * - 清除密钥：同时停用该 Key 并记录原因，不影响池内其它 Key 与历史账本；
  * - 迟到的旧 generation 结果只能写自己的账本，不能改写新状态。
@@ -179,13 +195,14 @@ export function updateJevKeySettings(
   input: UpdateJevKeyInput,
   key?: Buffer,
 ): JevKeyView | null {
-  const existing = getJevKey(db, id);
-  if (!existing) return null;
-
+  validateAutoReenable(input);
   const run = db.transaction((): void => {
+    const existing = getJevKey(db, id);
+    if (!existing) return;
     const patch: Parameters<typeof updateJevKey>[2] = {};
     let secretChanged = false;
     let cleared = false;
+    const clearing = typeof input.apiKey === "object" && input.apiKey?.clear === true;
 
     if (typeof input.label === "string") {
       const label = input.label.trim();
@@ -214,7 +231,7 @@ export function updateJevKeySettings(
       }
     }
 
-    if (typeof input.enabled === "boolean") {
+    if (!clearing && typeof input.enabled === "boolean") {
       if (input.enabled && !existing.enabled) {
         // 手动恢复：清零并进入新 generation，旧请求的迟到结果不改写新状态。
         patch.enabled = true;
@@ -222,12 +239,23 @@ export function updateJevKeySettings(
         patch.disabledReason = null;
         patch.lastError = null;
         patch.bumpGeneration = true;
-      } else if (!input.enabled && existing.enabled) {
+      } else if (!input.enabled) {
         patch.enabled = false;
         patch.disabledReason = "管理员已手动停用";
       }
     }
 
+    if (input.autoReenableEnabled !== undefined) patch.autoReenableEnabled = input.autoReenableEnabled;
+    if (input.autoReenableMinutes !== undefined) patch.autoReenableMinutes = input.autoReenableMinutes;
+    const cancelCycle = clearing || secretChanged || typeof input.enabled === "boolean";
+    if (cancelCycle) {
+      patch.autoDisabledAt = null;
+      patch.autoReenableAt = null;
+    } else if (input.autoReenableEnabled !== undefined || input.autoReenableMinutes !== undefined) {
+      patch.autoReenableAt = (input.autoReenableEnabled ?? existing.autoReenableEnabled) && existing.autoDisabledAt
+        ? new Date(Date.parse(existing.autoDisabledAt) + (input.autoReenableMinutes ?? existing.autoReenableMinutes) * 60_000).toISOString()
+        : null;
+    }
     if (Object.keys(patch).length === 0) return;
     updateJevKey(db, id, patch);
     if (secretChanged || cleared) bumpJevConfigVersion(db);
@@ -281,4 +309,14 @@ export function removeDisabledJevKeys(db: Database.Database): string[] {
     return disabled.map((key) => key.id);
   });
   return run.immediate();
+}
+
+/** API 和服务边界共用，禁止隐式转换空值、字符串或小数。 */
+export const autoReenableFields = {
+  autoReenableEnabled: z.boolean({ error: "自动重新启用开关必须是布尔值" }).optional(),
+  autoReenableMinutes: z.number({ error: "等待分钟数必须是整数" }).int("等待分钟数必须是整数").min(1, "等待分钟数不能小于 1").max(1440, "等待分钟数不能超过 1440").optional(),
+};
+const AutoReenableSchema = z.object(autoReenableFields);
+function validateAutoReenable(input: { autoReenableEnabled?: boolean; autoReenableMinutes?: number }): void {
+  AutoReenableSchema.parse(input);
 }

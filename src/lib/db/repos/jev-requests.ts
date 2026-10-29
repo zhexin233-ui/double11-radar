@@ -369,7 +369,7 @@ export function completeJevRequest(
             : "上游限流/过载，按有限指数退避",
           input.now,
         );
-        setJevKeyCooldown(db, existing.keyId, until.toISOString(), input.now);
+        setJevKeyCooldown(db, existing.keyId, until.toISOString(), input.now, existing.keyGeneration);
       }
     }
 

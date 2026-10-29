@@ -6,6 +6,7 @@ import { safeAlertName, type AlertContent } from "@/lib/system-alerts/format";
 export const SYSTEM_ALERT_MAX_ATTEMPTS = 5;
 export const SYSTEM_ALERT_LEASE_MS = 60_000;
 export interface SystemAlert extends AlertContent {
+  eventType: "key_auto_disabled" | "key_auto_reenabled";
   id: string;
   keyId: string;
   keyGeneration: number;
@@ -23,7 +24,7 @@ export interface SystemAlertDelivery {
   bizCode: string | null;
   lastError: string | null;
 }
-const ALERT_COLUMNS = `id, key_id AS keyId, key_generation AS keyGeneration,
+const ALERT_COLUMNS = `id, event_type AS eventType, key_id AS keyId, key_generation AS keyGeneration,
  channel_name AS channelName, key_label AS keyLabel, consecutive_failures AS consecutiveFailures,
  occurred_at AS occurredAt, error_category AS errorCategory, http_status AS httpStatus,
  dispatch_status AS dispatchStatus, dispatched_at AS dispatchedAt`;
@@ -34,8 +35,8 @@ const DELIVERY_COLUMNS = `id, alert_id AS alertId, channel, status, attempts, le
 export function insertSystemAlert(db: Database.Database, input: AlertContent & { keyId: string; keyGeneration: number }): void {
   db.prepare(`INSERT OR IGNORE INTO system_alerts
     (id,event_type,key_id,key_generation,channel_name,key_label,consecutive_failures,occurred_at,http_status,error_category)
-    VALUES (@id,'key_auto_disabled',@keyId,@keyGeneration,@channelName,@keyLabel,@consecutiveFailures,@occurredAt,@httpStatus,@errorCategory)`)
-    .run({ ...input, id: randomUUID(), channelName: safeAlertName(input.channelName, "未知渠道"), keyLabel: safeAlertName(input.keyLabel, "未命名密钥") });
+    VALUES (@id,@eventType,@keyId,@keyGeneration,@channelName,@keyLabel,@consecutiveFailures,@occurredAt,@httpStatus,@errorCategory)`)
+    .run({ ...input, eventType: input.eventType ?? "key_auto_disabled", id: randomUUID(), channelName: safeAlertName(input.channelName, "未知渠道"), keyLabel: safeAlertName(input.keyLabel, "未命名密钥") });
 }
 export function getSystemAlert(db: Database.Database, id: string): SystemAlert | null {
   return db.prepare(`SELECT ${ALERT_COLUMNS} FROM system_alerts WHERE id = ?`).get(id) as SystemAlert | undefined ?? null;

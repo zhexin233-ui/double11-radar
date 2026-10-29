@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addJevKey } from "@/lib/service/jev-keys";
+import { addJevKey, autoReenableFields } from "@/lib/service/jev-keys";
 import { handleRoute, invalidBodyError, ok, requireSameOrigin } from "@/lib/http/json";
 import { requireAuth } from "@/lib/http/server";
 
@@ -9,6 +9,7 @@ import { requireAuth } from "@/lib/http/server";
  * 只接受明文密钥用于服务端加密保存；响应只返回掩码状态，绝不回传明文。
  */
 const PostSchema = z.object({
+  ...autoReenableFields,
   label: z
     .string({ error: "请填写 Key 名称" })
     .trim()
@@ -21,7 +22,7 @@ const PostSchema = z.object({
     .max(500, "API 密钥过长"),
   channelId: z.string().trim().nullable().optional(),
   baseUrl: z.string().trim().optional(),
-});
+}).strict();
 
 export const POST = handleRoute(async (req) => {
   requireSameOrigin(req);
@@ -32,6 +33,8 @@ export const POST = handleRoute(async (req) => {
   // 返回单一视图，便于前端直接渲染；不含明文。
   return ok(
     addJevKey(db, {
+      autoReenableEnabled: body.data.autoReenableEnabled,
+      autoReenableMinutes: body.data.autoReenableMinutes,
       label: body.data.label,
       apiKey: body.data.apiKey,
       channelId: body.data.channelId,

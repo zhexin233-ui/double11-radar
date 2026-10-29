@@ -172,7 +172,7 @@ it("安全分类及文案区分认证与网络，渠道消息不伪装线报且�
     const calls = fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>;
     const payload = JSON.parse(String(calls[0][1].body));
     expect(payload.title).toBe("模型密钥已自动停用");
-    expect(payload.group).toBe("系统故障告警");
+    expect(payload.group).toBe("系统密钥通知");
     expect(payload.url).toBeUndefined();
   } finally { log.mockRestore(); }
 });

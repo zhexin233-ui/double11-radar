@@ -5,6 +5,8 @@ import {
   Button,
   Fieldset,
   Modal,
+  Switch,
+  NumberInput,
   PasswordInput,
   Radio,
   TextInput,
@@ -76,6 +78,28 @@ function PanelNotice(props: { notice: Notice | null; loadError?: string | null }
   );
 }
 
+
+function validMinutes(value: number | string): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 1440;
+}
+
+function AutoReenableControls(props: {
+  enabled: boolean; minutes: number | string; busy: boolean;
+  onEnabled: (value: boolean) => void; onMinutes: (value: number | string) => void;
+}) {
+  return <Fieldset legend="自动重新启用" style={{ flex: "1 1 100%", minWidth: 0 }}>
+    <div className="stack">
+      <Switch label="连续失败自动停用后，等待指定时间重新启用" checked={props.enabled}
+        onChange={(event) => props.onEnabled(event.currentTarget.checked)} disabled={props.busy} />
+      <NumberInput label="等待分钟数" value={props.minutes} onChange={props.onMinutes}
+        min={1} max={1440} allowDecimal={false} clampBehavior="none"
+        disabled={props.busy || !props.enabled}
+        error={!validMinutes(props.minutes) ? "请输入 1～1440 的整数" : undefined} />
+      <p className="small muted" style={{ margin: 0 }}>从自动停用时刻计时；修改间隔按原停用时刻重算。重新启用不会验证密钥可用性，仍遵守限流冷却。手动停用、替换或清除密钥会取消当前计划。</p>
+    </div>
+  </Fieldset>;
+}
+
 /** 新增密钥表单：只把明文交给服务端加密保存，成功后清空输入。 */
 function JevKeyAddForm(props: {
   channelId?: string | null;
@@ -86,21 +110,27 @@ function JevKeyAddForm(props: {
 }) {
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [minutes, setMinutes] = useState<number | string>(5);
   const [busy, setBusy] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!label.trim() || !apiKey.trim()) return;
+    if (!label.trim() || !apiKey.trim() || !validMinutes(minutes)) return;
     setBusy(true);
     try {
       await apiSend<JevKeyDto>("/api/settings/jev/keys", "POST", {
         label: label.trim(),
         apiKey: apiKey.trim(),
+        autoReenableEnabled: autoEnabled,
+        autoReenableMinutes: minutes,
         channelId: props.channelId ?? null,
         baseUrl: props.baseUrl ?? "",
       });
       setLabel("");
       setApiKey("");
+      setAutoEnabled(false);
+      setMinutes(5);
       props.onDone("已添加密钥。");
       await props.reload();
     } catch (caught) {
@@ -131,10 +161,12 @@ function JevKeyAddForm(props: {
         disabled={busy}
         style={{ flex: "2 1 260px" }}
       />
+      <AutoReenableControls enabled={autoEnabled} minutes={minutes} busy={busy}
+        onEnabled={setAutoEnabled} onMinutes={setMinutes} />
       <Button
         type="submit"
         loading={busy}
-        disabled={!label.trim() || !apiKey.trim()}
+        disabled={!label.trim() || !apiKey.trim() || !validMinutes(minutes)}
         style={{ alignSelf: "flex-start" }}
       >
         添加密钥
@@ -153,6 +185,7 @@ function JevKeysTable(props: { rows: JevKeyDto[]; onEdit: (id: string) => void }
             <th>名称</th>
             <th>密钥</th>
             <th>状态</th>
+            <th>自动重新启用</th>
             <th>连续失败</th>
             <th>禁用原因 / 最近错误</th>
             <th>最近使用</th>
@@ -165,6 +198,10 @@ function JevKeysTable(props: { rows: JevKeyDto[]; onEdit: (id: string) => void }
               <td>{item.label}</td>
               <td className="small">{secretStateLabel(item.secretState)}</td>
               <td>{enabledBadge(item.enabled)}</td>
+              <td className="small">
+                {item.autoReenableEnabled ? `等待 ${item.autoReenableMinutes} 分钟` : "关闭"}
+                {item.autoReenableAt ? <div>待重新启用：{formatTime(item.autoReenableAt)}</div> : null}
+              </td>
               <td className="small">
                 {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
               </td>
@@ -277,6 +314,8 @@ function KeyEditForm(props: {
   const { item } = props;
   const [secretAction, setSecretAction] = useState<SecretAction>("keep");
   const [secret, setSecret] = useState("");
+  const [autoEnabled, setAutoEnabled] = useState(item.autoReenableEnabled);
+  const [minutes, setMinutes] = useState<number | string>(item.autoReenableMinutes);
   const [busy, setBusy] = useState(false);
 
   const base = `/api/settings/jev/keys/${item.id}`;
@@ -362,6 +401,9 @@ function KeyEditForm(props: {
           {item.lastError ? <div className="muted">{item.lastError}</div> : null}
           {!item.disabledReason && !item.lastError ? "—" : null}
         </dd>
+        <dt>自动重新启用</dt>
+        <dd>{item.autoReenableEnabled ? `等待 ${item.autoReenableMinutes} 分钟` : "关闭"}
+          {item.autoReenableAt ? <div>待重新启用：{formatTime(item.autoReenableAt)}（与限流冷却独立）</div> : null}</dd>
         <dt>最近使用</dt>
         <dd>{formatTime(item.lastUsedAt)}</dd>
         <dt>创建时间</dt>
@@ -382,6 +424,14 @@ function KeyEditForm(props: {
           else if (!next) event.currentTarget.value = item.label;
         }}
       />
+
+      <AutoReenableControls enabled={autoEnabled} minutes={minutes} busy={busy}
+        onEnabled={setAutoEnabled} onMinutes={setMinutes} />
+      <Button type="button" variant="default" size="sm" disabled={busy || !validMinutes(minutes)}
+        onClick={() => { void guard(async () => {
+          await apiSend(base, "PATCH", { autoReenableEnabled: autoEnabled, autoReenableMinutes: minutes });
+          return "自动重新启用设置已保存。";
+        }); }} style={{ alignSelf: "flex-start" }}>保存自动重新启用设置</Button>
 
       <Fieldset legend="密钥">
         <div className="stack">
@@ -430,6 +480,10 @@ function KeyEditForm(props: {
         >
           {item.enabled ? "停用" : "恢复"}
         </Button>
+        {!item.enabled && item.autoDisabledAt ? <Button type="button" variant="default" size="sm"
+          disabled={busy} onClick={() => props.onRequestConfirm("disable", item)}>
+          手动停用并取消当前计划
+        </Button> : null}
         <Button type="button" variant="default" size="sm" disabled={busy} onClick={testKey}>
           测试
         </Button>
@@ -454,7 +508,7 @@ function confirmText(pending: PendingConfirm): string {
     case "clear":
       return `清除「${pending.key.label}」的密钥？清除后会停用该 Key，需要替换密钥后才能再次启用。`;
     case "disable":
-      return `停用「${pending.key.label}」？停用后不再分配新请求，可在需要时手动恢复。`;
+      return `停用「${pending.key.label}」？停用后不再分配新请求，并取消当前自动重新启用计划，可在需要时手动恢复。`;
     case "delete":
       return `删除 Key「${pending.key.label}」？密钥密文会被清除，历史调用账本保留非敏感快照。`;
     case "purge-disabled":

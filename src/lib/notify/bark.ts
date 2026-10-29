@@ -48,7 +48,7 @@ export async function sendBark(
     title: notificationTitle(message),
     body: notificationBodyLines(message).join("\n"),
     url: "kind" in message ? undefined : message.url || undefined,
-    group: "kind" in message ? "系统故障告警" : BARK_GROUP,
+    group: "kind" in message ? "系统密钥通知" : BARK_GROUP,
   };
 
   let response: Response;

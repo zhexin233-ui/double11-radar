@@ -141,6 +141,10 @@ export interface JevKeyDto {
   label: string;
   generation: number;
   enabled: boolean;
+  autoReenableEnabled: boolean;
+  autoReenableMinutes: number;
+  autoDisabledAt: string | null;
+  autoReenableAt: string | null;
   disabledReason: string | null;
   consecutiveFailures: number;
   lastError: string | null;
@@ -461,6 +465,7 @@ export interface DryRunResultDto {
 }
 
 export interface SystemAlertDto {
+  eventType: "key_auto_disabled" | "key_auto_reenabled";
   id: string;
   channelName: string;
   keyLabel: string;

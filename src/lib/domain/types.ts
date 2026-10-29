@@ -333,6 +333,10 @@ export interface JevApiKey {
   /** 每次替换/手动恢复都会自增；用于隔离旧请求的迟到结果。 */
   generation: number;
   enabled: boolean;
+  autoReenableEnabled: boolean;
+  autoReenableMinutes: number;
+  autoDisabledAt: string | null;
+  autoReenableAt: string | null;
   /** 自动/手动禁用原因（中文，展示给管理员）。 */
   disabledReason: string | null;
   /** 同一 generation 内连续的实际请求失败次数；成功一次清零。 */

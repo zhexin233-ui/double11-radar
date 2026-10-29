@@ -24,29 +24,44 @@ export function safeAlertName(value: string | null | undefined, fallback: string
 }
 
 const REASONS: Record<AlertErrorCategory, [string, string]> = {
-  auth: ["认证失败", "请检查密钥凭据、权限和模型渠道配置，排查后手动恢复或替换密钥。"],
-  rate_limit: ["限流或过载", "请检查服务额度、调用频率和上游负载，排查后手动恢复密钥。"],
-  upstream: ["上游服务异常", "请检查模型服务状态与接口可用性，排查后手动恢复密钥。"],
-  network: ["网络或连接异常", "请检查接口地址、出网、DNS、代理节点及证书，排查后手动恢复密钥。"],
-  invalid_response: ["响应格式异常", "请检查接口兼容性、模型配置与上游响应格式，排查后手动恢复密钥。"],
-  unknown: ["未知请求异常", "请检查模型渠道、网络与服务状态，排查后手动恢复密钥。"],
+  auth: ["认证失败", "请检查密钥凭据、权限和模型渠道配置。"],
+  rate_limit: ["限流或过载", "请检查服务额度、调用频率和上游负载。"],
+  upstream: ["上游服务异常", "请检查模型服务状态与接口可用性。"],
+  network: ["网络或连接异常", "请检查接口地址、出网、DNS、代理节点及证书。"],
+  invalid_response: ["响应格式异常", "请检查接口兼容性、模型配置与上游响应格式。"],
+  unknown: ["未知请求异常", "请检查模型渠道、网络与服务状态。"],
 };
 
 export interface AlertContent {
+  eventType?: "key_auto_disabled" | "key_auto_reenabled";
   channelName: string;
   keyLabel: string;
   consecutiveFailures: number;
   occurredAt: string;
-  errorCategory: AlertErrorCategory;
+  errorCategory: AlertErrorCategory | null;
   httpStatus: number | null;
 }
 
-export function alertReason(category: AlertErrorCategory): string {
-  return REASONS[category][0];
+export function alertReason(category: AlertErrorCategory | null): string {
+  return category === null ? "等待期已结束，已自动重新启用；未验证实际可用" : REASONS[category][0];
 }
 
 export function formatSystemAlert(alert: AlertContent): SystemNotifyMessage {
-  const [reason, advice] = REASONS[alert.errorCategory];
+  if (alert.eventType === "key_auto_reenabled") {
+    return {
+      kind: "system_alert",
+      title: "模型密钥已自动重新启用",
+      lines: [
+        `模型渠道：${safeAlertName(alert.channelName, "未知渠道")}`,
+        `密钥：${safeAlertName(alert.keyLabel, "未命名密钥")}`,
+        `重新启用时间：${alert.occurredAt}`,
+        `此前连续实际请求失败：${alert.consecutiveFailures} 次`,
+        "等待期已结束，密钥已自动重新启用，可重新参与调度；未验证实际可用。",
+        "未发起探测请求；现有限流冷却继续生效。",
+      ],
+    };
+  }
+  const [reason, advice] = REASONS[alert.errorCategory ?? "unknown"];
   return {
     kind: "system_alert",
     title: "模型密钥已自动停用",
@@ -57,6 +72,7 @@ export function formatSystemAlert(alert: AlertContent): SystemNotifyMessage {
       `发生时间：${alert.occurredAt}`,
       `错误类别：${reason}${alert.httpStatus === null ? "" : `（HTTP ${alert.httpStatus}）`}`,
       advice,
+      "如已设置自动重新启用，将在等待期结束后重新参与调度；也可排查后手动恢复或替换密钥。",
     ],
   };
 }
