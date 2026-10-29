@@ -47,7 +47,7 @@ describe("线报酷客户端", () => {
     );
     await expect(
       fetchFeed(
-        { id: "haodan", alias: "haodan", origin: "feed" },
+        { id: "haodan", alias: "haodan", origin: "feed", categoryId: 30 },
         { baseUrl: "https://example.test", fetchImpl },
       ),
     ).rejects.toMatchObject({ status: 429, retryAfterMs: 30000 });
@@ -59,7 +59,7 @@ describe("线报酷客户端", () => {
     });
     await expect(
       fetchFeed(
-        { id: "haodan", alias: "haodan", origin: "feed" },
+        { id: "haodan", alias: "haodan", origin: "feed", categoryId: 30 },
         { baseUrl: "https://example.test", fetchImpl, timeoutMs: 5 },
       ),
     ).rejects.toMatchObject({ status: 0 });
@@ -72,14 +72,14 @@ describe("线报酷客户端", () => {
       return jsonResponse(FEED_HAODAN_RESPONSE);
     });
     await fetchFeed(
-      { id: "haodan", alias: "haodan", origin: "feed" },
+      { id: "haodan", alias: "haodan", origin: "feed", categoryId: 30 },
       { baseUrl: "https://example.test", fetchImpl },
     );
     await fetchFeed(
       { id: "zdm", alias: "zdm", origin: "zdm" },
       { baseUrl: "https://example.test", fetchImpl },
     );
-    expect(calls[0]).toContain("cate=haodan");
+    expect(calls[0]).toContain("cate=30");
     expect(calls[1]).toContain("type=zdm");
   });
 });
@@ -92,7 +92,7 @@ describe("线报酷网络失败信息同样中文化", () => {
     let message = "（未抛出错误）";
     try {
       await fetchFeed(
-        { id: "haodan", alias: "haodan", origin: "feed" },
+        { id: "haodan", alias: "haodan", origin: "feed", categoryId: 30 },
         { baseUrl: "https://example.test", fetchImpl },
       );
     } catch (caught) {
@@ -100,5 +100,40 @@ describe("线报酷网络失败信息同样中文化", () => {
     }
     expect(message).toContain("线报酷接口无法连接");
     expect(message).not.toContain("fetch failed");
+  });
+});
+
+describe("分类数字 ID 与响应校验（R1/R2）", () => {
+  it("能力清单保留数字 ID，字符串数字统一解析，缺失或非法 ID 拒绝同步", async () => {
+    const meta = await fetchMeta({ fetchImpl: vi.fn(async () => jsonResponse(META_RESPONSE)) });
+    expect(meta.channels.find(c => c.id === "haodan")?.categoryId).toBe(30);
+    for (const id of [undefined, 0, -1, "weibo", "", 1.5]) {
+      const body = structuredClone(META_RESPONSE);
+      Object.assign(body.data.abilities.feed.categories[0], { id });
+      await expect(fetchMeta({ fetchImpl: vi.fn(async () => jsonResponse(body)) }))
+        .rejects.toThrow("有效数字分类 ID");
+    }
+    const body = structuredClone(META_RESPONSE);
+    Object.assign(body.data.abilities.feed.categories[0], { id: "30" });
+    expect((await fetchMeta({ fetchImpl: vi.fn(async () => jsonResponse(body)) })).channels[0].categoryId).toBe(30);
+    await expect(fetchMeta({ fetchImpl: vi.fn(async () => jsonResponse({ code: 0, data: {} })) }))
+      .rejects.toThrow("频道清单结构");
+  });
+
+  it.each([0, 10, undefined, "all"])("返回分类 %s 不得静默入库", async (id) => {
+    const body = { ...FEED_HAODAN_RESPONSE, data: { ...FEED_HAODAN_RESPONSE.data, category: { id } } };
+    await expect(fetchFeed({ id: "haodan", alias: "haodan", origin: "feed", categoryId: 30 }, {
+      fetchImpl: vi.fn(async () => jsonResponse(body)),
+    })).rejects.toThrow("返回分类与请求不一致");
+  });
+
+  it("缺少分类 ID 时不发出请求；正确分类空列表仍成功", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ...FEED_HAODAN_RESPONSE,
+      data: { category: { id: "30" }, items: [] },
+    }));
+    await expect(fetchFeed({ id: "haodan", alias: "haodan", origin: "feed" }, { fetchImpl }))
+      .rejects.toThrow("请刷新频道清单");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect((await fetchFeed({ id: "haodan", alias: "haodan", origin: "feed", categoryId: 30 }, { fetchImpl })).items).toEqual([]);
   });
 });

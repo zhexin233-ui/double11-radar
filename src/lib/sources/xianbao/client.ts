@@ -1,5 +1,5 @@
 import { describeNetworkFailure } from "@/lib/http/network-error";
-import { EnvelopeSchema, MetaDataSchema } from "@/lib/sources/xianbao/types";
+import { CategoryIdSchema, EnvelopeSchema, FeedDataSchema, MetaDataSchema } from "@/lib/sources/xianbao/types";
 import type { ChannelCatalogEntry } from "@/lib/sources/xianbao/types";
 import {
   normalizeFeedItems,
@@ -23,7 +23,7 @@ export const DEFAULT_XIANBAO_BASE = "https://new.xianbao.fun";
  * - `zhidemai` 分类流与 `type=zdm` 独立流覆盖同一内容；
  * - `zdm` 本身就是独立数据源，统一由附加的 zdm 频道（origin=zdm）处理。
  */
-export const EXCLUDED_FEED_ALIASES = ["zhidemai", "zdm"] as const;
+export const EXCLUDED_FEED_ALIASES = ["zhidemai", "zdm", "all"] as const;
 
 /** 值得买独立流作为附加频道。 */
 export const ZDM_CHANNEL: ChannelCatalogEntry = {
@@ -31,6 +31,7 @@ export const ZDM_CHANNEL: ChannelCatalogEntry = {
   name: "值得买（独立流）",
   alias: "zdm",
   origin: "zdm",
+  categoryId: null,
 };
 
 export class XianbaoError extends Error {
@@ -199,28 +200,32 @@ export async function fetchMeta(
     meta?: { cache_ttl?: number };
   };
   const parsed = MetaDataSchema.safeParse(raw.data);
+  if (!parsed.success || !parsed.data.abilities?.feed?.categories) {
+    throw new XianbaoError("频道清单结构不符合预期，请检查线报酷接口");
+  }
   const channels: ChannelCatalogEntry[] = [];
-  if (parsed.success) {
-    for (const category of parsed.data.abilities?.feed?.categories ?? []) {
-      if ((EXCLUDED_FEED_ALIASES as readonly string[]).includes(category.alias)) {
-        continue;
-      }
-      channels.push({
-        id: category.alias,
-        name: category.name ?? category.alias,
-        alias: category.alias,
-        origin: "feed",
-      });
+  for (const category of parsed.data.abilities?.feed?.categories ?? []) {
+    if ((EXCLUDED_FEED_ALIASES as readonly string[]).includes(category.alias)) {
+      continue;
     }
+    const categoryId = CategoryIdSchema.safeParse(category.id);
+    if (!categoryId.success) {
+      throw new XianbaoError("频道清单缺少有效数字分类 ID，请检查线报酷接口");
+    }
+    channels.push({
+      categoryId: categoryId.data,
+      id: category.alias,
+      name: category.name ?? category.alias,
+      alias: category.alias,
+      origin: "feed",
+    });
   }
   channels.push(ZDM_CHANNEL);
 
-  const rateLimit = parsed.success
-    ? {
-        limit: parsed.data.rate_limit?.limit ?? null,
-        windowSeconds: parsed.data.rate_limit?.window_seconds ?? null,
-      }
-    : null;
+  const rateLimit = {
+    limit: parsed.data.rate_limit?.limit ?? null,
+    windowSeconds: parsed.data.rate_limit?.window_seconds ?? null,
+  };
 
   return {
     channels,
@@ -246,7 +251,11 @@ export async function fetchFeed(
   if (channel.origin === "zdm") {
     params.set("type", "zdm");
   } else {
-    params.set("cate", channel.alias ?? channel.id);
+    const categoryId = CategoryIdSchema.safeParse(channel.categoryId);
+    if (!categoryId.success) {
+      throw new XianbaoError("频道缺少有效数字分类 ID，请刷新频道清单");
+    }
+    params.set("cate", String(categoryId.data));
   }
   params.set("limit", String(limit));
 
@@ -258,6 +267,14 @@ export async function fetchFeed(
     meta?: { cache_ttl?: number };
     rateLimit: RateLimitInfo | null;
   };
+
+  if (channel.origin === "feed") {
+    const data = FeedDataSchema.safeParse(raw.data);
+    const categoryId = CategoryIdSchema.safeParse(data.success ? data.data.category?.id : null);
+    if (!data.success || !categoryId.success || categoryId.data !== channel.categoryId) {
+      throw new XianbaoError("线报酷返回分类与请求不一致，已停止本轮采集，请检查接口");
+    }
+  }
 
   const items =
     channel.origin === "zdm"

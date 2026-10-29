@@ -49,11 +49,11 @@ function makeDeps(extras: unknown[] = []): CollectorDeps {
     const url = String(input);
     if (url.includes("/api/v1/meta")) return jsonResponse(META_RESPONSE);
     if (url.includes("type=zdm")) return jsonResponse(ZDM_RESPONSE);
-    if (url.includes("cate=haodan")) return jsonResponse(feedWith(extras));
+    if (url.includes("cate=30")) return jsonResponse(feedWith(extras));
     return jsonResponse({
       code: 0,
       msg: "",
-      data: { type: "post", count: 0, items: [] },
+      data: { type: "post", category: { id: Number(new URL(url).searchParams.get("cate")) }, count: 0, items: [] },
       meta: { api_version: "v1", cache_ttl: 10 },
     });
   });

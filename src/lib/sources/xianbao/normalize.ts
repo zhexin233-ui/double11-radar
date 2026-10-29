@@ -16,6 +16,7 @@ import type { ChannelOrigin, NormalizedBulletin } from "@/lib/domain/types";
  */
 
 export interface NormalizeChannel {
+  categoryId?: number | null;
   /** 频道稳定标识（feed 用别名，zdm 用 `zdm`）。 */
   id: string;
   alias: string | null;

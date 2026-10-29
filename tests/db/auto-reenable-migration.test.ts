@@ -28,7 +28,7 @@ describe("V8 自动恢复增量迁移", () => {
       }
       const events = db.prepare("SELECT * FROM system_alerts ORDER BY id").all();
       const deliveries = db.prepare("SELECT * FROM system_alert_deliveries ORDER BY id").all();
-      expect(migrate(db).applied).toEqual([8]);
+      expect(migrate(db, migrations.filter(m => m.version <= 8)).applied).toEqual([8]);
       expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
       expect(db.pragma("foreign_key_check")).toEqual([]);
       expect(db.prepare("SELECT * FROM system_alerts ORDER BY id").all()).toEqual(events);
@@ -43,7 +43,7 @@ describe("V8 自动恢复增量迁移", () => {
       expect(() => db.prepare("UPDATE system_alerts SET error_category = NULL WHERE id = 'event-0'").run()).toThrow();
       expect(() => db.prepare("UPDATE system_alerts SET event_type = 'key_auto_reenabled' WHERE id = 'event-0'").run()).toThrow();
       db.prepare("UPDATE system_alerts SET event_type = 'key_auto_reenabled', error_category = NULL, http_status = NULL WHERE id = 'event-0'").run();
-      expect(migrate(db).applied).toEqual([]);
+      expect(migrate(db, migrations.filter(m => m.version <= 8)).applied).toEqual([]);
       // 升级前已持有的有效租约仍可完成，失败渠道仍可领取。
       expect(finishSystemAlertDelivery(db, { id: "delivery-1", alertId: "event-1", channel: "bark", status: "sending", attempts: 2,
         leaseToken: "original-token", httpStatus: 503, bizCode: "11232", lastError: "固定错误" }, "succeeded", new Date(NOW))).toBe(true);

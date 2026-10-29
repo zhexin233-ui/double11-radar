@@ -28,6 +28,8 @@ export interface NeedDto {
 }
 
 export interface ChannelDto {
+  /** 上游普通分类数字 ID；旧记录和独立流为 null。 */
+  categoryId: number | null;
   id: string;
   name: string;
   origin: "feed" | "zdm";

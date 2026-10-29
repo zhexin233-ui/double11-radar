@@ -24,6 +24,12 @@ export const EnvelopeSchema = z.object({
 
 export type Envelope = z.infer<typeof EnvelopeSchema>;
 
+/** 分类 ID 只接受正安全整数或纯数字字符串，禁止空值降级成全站 0。 */
+export const CategoryIdSchema = z.union([
+  z.number().int().positive().safe(),
+  z.string().regex(/^[0-9]+$/).transform(Number).pipe(z.number().int().positive().safe()),
+]);
+
 const CategorySchema = z.object({
   alias: z.string(),
   id: z.union([z.number(), z.string()]).optional(),
@@ -120,6 +126,7 @@ export const ZdmDataSchema = z.object({
  * 注意：`zhidemai` 分类流与 `zdm` 独立流覆盖同一内容，必须在采集侧排除前者。
  */
 export interface ChannelCatalogEntry {
+  categoryId?: number | null;
   id: string;
   name: string;
   alias: string | null;

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
+import { DELIVERY_MAX_ATTEMPTS } from "@/lib/db/repos/deliveries";
 import { getSetting, setSetting } from "@/lib/db/repos/settings";
 import { currentDbPath, resolveDbPath } from "@/lib/db/client";
 
@@ -276,22 +277,23 @@ export function cleanupExpiredBulletins(
         WHERE j.payload_key = ('evaluate:' || b.id)
           AND j.status IN ('pending', 'leased')
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM deliveries d
+        WHERE d.bulletin_id = b.id AND (
+          d.status IN ('pending', 'sending')
+          OR (d.status = 'failed' AND d.attempts < ${DELIVERY_MAX_ATTEMPTS})
+        )
+      )
       LIMIT ?
     `;
 
-    const candidateRows = db.prepare(selectSql).all(cutoff, batchSize) as Array<{
-      id: string;
-    }>;
-
-    if (candidateRows.length === 0) {
-      break;
-    }
-
-    const ids = candidateRows.map((r) => r.id);
-    const placeholders = ids.map(() => "?").join(",");
-
-    // 单批事务删除
+    // 从候选筛选起就持有写锁，防止网页重试在筛选后、删除前恢复任务。
     const executeBatch = db.transaction(() => {
+      const candidateRows = db.prepare(selectSql).all(cutoff, batchSize) as Array<{ id: string }>;
+      if (candidateRows.length === 0) return null;
+      const ids = candidateRows.map((r) => r.id);
+      const placeholders = ids.map(() => "?").join(",");
+
       // 1. 删除关联的 evaluations
       const rEvals = db
         .prepare(`DELETE FROM evaluations WHERE bulletin_id IN (${placeholders})`)
@@ -329,7 +331,8 @@ export function cleanupExpiredBulletins(
       };
     });
 
-    const result = executeBatch();
+    const result = executeBatch.immediate();
+    if (!result) break;
     totalCleanedBulletins += result.bulletins;
     totalCleanedEvaluations += result.evaluations;
     totalCleanedDeliveries += result.deliveries;
@@ -337,7 +340,7 @@ export function cleanupExpiredBulletins(
     totalCleanedProcessing += result.processing;
     totalCleanedJobs += result.jobs;
 
-    if (candidateRows.length < batchSize) {
+    if (result.bulletins < batchSize) {
       break;
     }
   }

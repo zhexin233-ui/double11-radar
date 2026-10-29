@@ -15,6 +15,7 @@ export interface RuntimeState {
   lastEvaluateAt: string | null;
   lastDeliverAt: string | null;
   lastMetaSyncAt: string | null;
+  lastMetaAttemptAt: string | null;
   lastError: string | null;
   lastErrorAt: string | null;
   lastErrorStage: string | null;
@@ -32,6 +33,7 @@ export const EMPTY_RUNTIME_STATE: RuntimeState = {
   lastEvaluateAt: null,
   lastDeliverAt: null,
   lastMetaSyncAt: null,
+  lastMetaAttemptAt: null,
   lastError: null,
   lastErrorAt: null,
   lastErrorStage: null,

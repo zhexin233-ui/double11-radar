@@ -64,11 +64,11 @@ function makeCollectorDeps(extra?: typeof FEED_HAODAN_NEW_ITEM): {
     const url = String(input);
     if (url.includes("/api/v1/meta")) return jsonResponse(META_RESPONSE);
     if (url.includes("type=zdm")) return jsonResponse(ZDM_RESPONSE);
-    if (url.includes("cate=haodan")) return jsonResponse(feedResponse(extra));
+    if (url.includes("cate=30")) return jsonResponse(feedResponse(extra));
     return jsonResponse({
       code: 0,
       msg: "",
-      data: { type: "post", count: 0, items: [] },
+      data: { type: "post", category: { id: Number(new URL(url).searchParams.get("cate")) }, count: 0, items: [] },
       meta: { api_version: "v1", cache_ttl: 10 },
     });
   });
@@ -141,10 +141,10 @@ describe("worker 采集基线与恢复（AC4/AC12）", () => {
       const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes("/api/v1/meta")) return jsonResponse(META_RESPONSE);
-        if (url.includes("cate=haodan")) {
+        if (url.includes("cate=30")) {
           return new Response("", { status: 500 });
         }
-        return jsonResponse(feedResponse());
+        return jsonResponse({ ...feedResponse(), data: { ...feedResponse().data, category: { id: Number(new URL(url).searchParams.get("cate")) } } });
       });
       const deps: CollectorDeps = {
         fetchMeta: (options = {}) =>
@@ -607,5 +607,40 @@ describe("匹配确认通知成员（R1/R2）", () => {
     } finally {
       ctx.close();
     }
+  });
+});
+
+describe("九频道重复原文的评估与发送流水线（R6，全部 mock 外部传输）", () => {
+  it("九条记录各自保留判断，但每通知渠道实际只发送一次", async () => {
+    const ctx = createTestDb();
+    try {
+      createNeed(ctx.db, { name: "抽纸" });
+      saveJevConfig(ctx.db, { apiKey: "sk-test" }, KEY);
+      saveNotifyConfig(ctx.db, {
+        bark: { enabled: true, deviceKey: "device" },
+        feishu: { enabled: true, webhook: "https://example.test/hook/test" },
+      }, KEY);
+      for (let i = 0; i < 9; i++) {
+        const b = insertBulletinIfAbsent(ctx.db, makeNormalized({ sourceNs: `feed:c${i}`, sourceId: "same-article" }), { baseline: false });
+        enqueueJob(ctx.db, { kind: "evaluate", payloadKey: `evaluate:${b.id}`, payload: { bulletinId: b.id } });
+      }
+      const call: NonNullable<Parameters<typeof runEvaluatorOnce>[2]>["callSystemOne"] = async (_config, request) => ({
+        model: null, usage: { inputTokens: null, outputTokens: null }, upstreamRequestId: null, httpStatus: 200,
+        answers: Object.fromEntries(Object.keys(request.questions).map(id => [id, {
+          type: "choice", choice: "matched", probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+        }])),
+      });
+      for (let i = 0; i < 9; i++) await runEvaluatorOnce(ctx.db, ENV, { callSystemOne: call });
+      expect(ctx.db.prepare("SELECT COUNT(*) AS c FROM evaluations WHERE result = 'matched'").get()).toEqual({ c: 9 });
+      expect(ctx.db.prepare("SELECT COUNT(*) AS c FROM deliveries").get()).toEqual({ c: 2 });
+      const transport = vi.fn(async (url: RequestInfo | URL) => jsonResponse(
+        String(url).includes("api.day.app") ? { code: 200 } : { code: 0 },
+      ));
+      const sent = await runDelivererOnce(ctx.db, ENV, { fetchImpl: transport });
+      expect(sent.succeeded).toBe(2);
+      expect(transport).toHaveBeenCalledTimes(2);
+      await runDelivererOnce(ctx.db, ENV, { fetchImpl: transport });
+      expect(transport).toHaveBeenCalledTimes(2);
+    } finally { ctx.close(); }
   });
 });

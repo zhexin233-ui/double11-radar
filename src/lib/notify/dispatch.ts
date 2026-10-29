@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { getNotificationByBulletin, createNotificationIfAbsent } from "@/lib/db/repos/notifications";
+import { reserveNotificationChannel } from "@/lib/db/repos/notification-dedup";
 import { insertDeliveries } from "@/lib/db/repos/deliveries";
 import { sendBark } from "@/lib/notify/bark";
 import { sendFeishu } from "@/lib/notify/feishu";
@@ -91,7 +92,10 @@ export function createNotificationAndDeliveries(
     if (!created) {
       return { notification, created, channels: [] as NotifyChannel[] };
     }
-    const channels = runtime.enabledChannels;
+    // 跨频道同原文只允许首次占位的渠道创建投递，失败仍走原任务重试。
+    const channels = runtime.enabledChannels.filter((channel) =>
+      reserveNotificationChannel(db, bulletin, channel),
+    );
     if (channels.length) {
       insertDeliveries(
         db,

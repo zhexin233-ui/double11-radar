@@ -113,6 +113,8 @@ export interface Need {
 
 /** 采集频道运行时状态。 */
 export interface ChannelState {
+  /** 上游普通分类数字 ID；旧记录和独立流为 null。 */
+  categoryId: number | null;
   id: string;
   name: string;
   kind: string;

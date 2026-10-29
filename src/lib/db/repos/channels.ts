@@ -20,6 +20,7 @@ interface ChannelRow {
   name: string;
   kind: string;
   alias: string | null;
+  category_id: number | null;
   origin: string;
   available: number;
   selected: number;
@@ -39,6 +40,7 @@ function toChannel(row: ChannelRow): ChannelState {
     name: row.name,
     kind: row.kind,
     alias: row.alias,
+    categoryId: row.category_id,
     origin: row.origin as ChannelOrigin,
     available: row.available === 1,
     selected: row.selected === 1,
@@ -54,6 +56,7 @@ function toChannel(row: ChannelRow): ChannelState {
 }
 
 export interface ChannelCatalogEntry {
+  categoryId?: number | null;
   id: string;
   name: string;
   alias: string | null;
@@ -103,16 +106,17 @@ export function syncChannelsFromCatalog(
   const now = new Date().toISOString();
   const upsert = db.prepare(
     `INSERT INTO channels (
-       id, name, kind, alias, origin, available, selected, initialized,
+       id, name, kind, alias, category_id, origin, available, selected, initialized,
        cache_ttl_seconds, next_poll_at, created_at, updated_at
      ) VALUES (
-       @id, @name, @kind, @alias, @origin, 1, @selected, 0,
+       @id, @name, @kind, @alias, @categoryId, @origin, 1, @selected, 0,
        10, NULL, @now, @now
      )
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        kind = excluded.kind,
        alias = excluded.alias,
+       category_id = excluded.category_id,
        origin = excluded.origin,
        available = 1,
        selected = @selected,
@@ -131,6 +135,7 @@ export function syncChannelsFromCatalog(
         name: entry.name,
         kind: entry.origin,
         alias: entry.alias,
+        categoryId: entry.categoryId ?? null,
         origin: entry.origin,
         selected: selection.mode === "all" || selection.customIds.includes(entry.id) ? 1 : 0,
         now,

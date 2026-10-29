@@ -141,12 +141,21 @@ async function syncMetaIfDue(
     ? Date.parse(runtime.lastMetaSyncAt)
     : Number.NaN;
   const existingChannels = listChannels(db);
+  const missingCategoryId = existingChannels.some(
+    (channel) => channel.origin === "feed" && channel.available && channel.selected && channel.categoryId === null,
+  );
+  const lastAttempt = runtime.lastMetaAttemptAt ? Date.parse(runtime.lastMetaAttemptAt) : Number.NaN;
+  if (Number.isFinite(lastAttempt) && now.getTime() - lastAttempt < DEFAULT_POLL_INTERVAL_SECONDS * 1000) {
+    return false;
+  }
   const due =
+    missingCategoryId ||
     Number.isNaN(lastSync) ||
     now.getTime() - lastSync > META_CACHE_SECONDS * 1000 ||
     existingChannels.length === 0;
   if (!due) return false;
 
+  patchRuntimeState(db, { lastMetaAttemptAt: nowIso });
   const fetchMeta = deps.fetchMeta ?? defaultFetchMeta;
   try {
     const meta = await fetchMeta({ baseUrl: env.xianbaoApiBase });
@@ -184,6 +193,7 @@ async function pollChannel(
     id: channel.id,
     alias: channel.alias ?? channel.id,
     origin: channel.origin,
+    categoryId: channel.categoryId,
   };
 
   try {

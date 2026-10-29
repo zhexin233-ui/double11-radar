@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { notificationIdentityNamespace } from "@/lib/domain/notification-identity";
 
 /**
  * 数据库迁移定义。
@@ -586,6 +587,42 @@ CREATE INDEX system_alert_dispatch ON system_alerts(dispatch_status, occurred_at
 CREATE INDEX system_alert_delivery_due ON system_alert_deliveries(status, run_at);
 `;
 
+const V9_FEED_ID_AND_NOTIFICATION_DEDUP = `
+ALTER TABLE channels ADD COLUMN category_id INTEGER
+  CHECK(category_id IS NULL OR (typeof(category_id) = 'integer' AND category_id > 0));
+CREATE TABLE notification_dedup (
+  source TEXT NOT NULL,
+  identity_ns TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(source, identity_ns, source_id, channel)
+);
+`;
+
+/** 只从真实投递回填；基线和无渠道通知不能推定为已经安排发送。 */
+function migrateNotificationDedup(db: Database.Database): void {
+  const insert = db.prepare(`INSERT OR IGNORE INTO notification_dedup
+    (source, identity_ns, source_id, channel, created_at) VALUES (?, ?, ?, ?, ?)`);
+  const select = db.prepare(`SELECT b.source, b.source_ns, b.source_id, d.channel,
+    MIN(d.created_at) AS created_at
+    FROM deliveries d JOIN bulletins b ON b.id = d.bulletin_id
+    GROUP BY b.source, b.source_ns, b.source_id, d.channel
+    ORDER BY created_at ASC, b.source, b.source_ns, b.source_id, d.channel
+    LIMIT 500 OFFSET ?`);
+  // 先物化一批再写入，避免 better-sqlite3 在活动迭代游标期间拒绝写库。
+  for (let offset = 0; ; offset += 500) {
+    const rows = select.all(offset) as Array<{
+      source: string; source_ns: string; source_id: string; channel: string; created_at: string;
+    }>;
+    for (const row of rows) {
+      insert.run(row.source, notificationIdentityNamespace(row.source, row.source_ns),
+        row.source_id, row.channel, row.created_at);
+    }
+    if (rows.length < 500) break;
+  }
+}
+
 export const migrations: Migration[] = [
   // 历史迁移保持不变，新告警独立于线报清理与投递统计。
   {
@@ -623,4 +660,6 @@ export const migrations: Migration[] = [
   },
   { version: 7, name: "system_key_failure_alerts", sql: V7_SYSTEM_ALERTS },
   { version: 8, name: "key_auto_reenable_and_recovery_events", sql: V8_KEY_AUTO_REENABLE },
+  { version: 9, name: "feed_category_id_and_notification_dedup", sql: V9_FEED_ID_AND_NOTIFICATION_DEDUP,
+    run: migrateNotificationDedup },
 ];
