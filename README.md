@@ -239,3 +239,7 @@ docker compose start web worker
 请附上部署方式、复现步骤与脱敏日志，不要上传凭据文件、API Key、Webhook 或数据库。
 
 本项目为个人工具，与线报酷、TypeSafe Jev、Bark、飞书无隶属关系。
+
+## 9 LINUX DO 社区
+
+感谢 [Linux.do](https://linux.do/) 社区的支持。
