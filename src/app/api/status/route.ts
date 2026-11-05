@@ -1,8 +1,7 @@
 import { listRecentSystemAlerts } from "@/lib/db/repos/system-alerts";
 import { alertReason } from "@/lib/system-alerts/format";
 import { channelStats, listChannels } from "@/lib/db/repos/channels";
-import { countBulletins } from "@/lib/db/repos/bulletins";
-import { countEvaluations } from "@/lib/db/repos/evaluations";
+import { countBulletinsByDisplayStatus } from "@/lib/db/repos/bulletins";
 import { jobStats, listRecentFailedJobs } from "@/lib/db/repos/jobs";
 import { getRuntimeState } from "@/lib/worker/runtime-state";
 import { handleRoute, ok } from "@/lib/http/json";
@@ -19,25 +18,7 @@ interface StatusCounts {
 }
 
 function collectCounts(db: Database.Database): StatusCounts {
-  const matched = db
-    .prepare(
-      "SELECT COUNT(DISTINCT bulletin_id) AS c FROM evaluations WHERE result = 'matched'",
-    )
-    .get() as { c: number };
-  const uncertain = db
-    .prepare(
-      `SELECT COUNT(DISTINCT bulletin_id) AS c FROM evaluations
-       WHERE result = 'uncertain'
-         AND bulletin_id NOT IN (SELECT bulletin_id FROM evaluations WHERE result = 'matched')`,
-    )
-    .get() as { c: number };
-  const failed = db
-    .prepare(
-      `SELECT COUNT(DISTINCT bulletin_id) AS c FROM evaluations
-       WHERE result = 'failed'
-         AND bulletin_id NOT IN (SELECT bulletin_id FROM evaluations WHERE result IN ('matched','uncertain'))`,
-    )
-    .get() as { c: number };
+  const statuses = countBulletinsByDisplayStatus(db);
   const notifications = db
     .prepare("SELECT COUNT(*) AS c FROM notifications")
     .get() as { c: number };
@@ -49,9 +30,9 @@ function collectCounts(db: Database.Database): StatusCounts {
     .all() as Array<{ status: string; c: number }>;
 
   return {
-    matchedBulletins: matched.c,
-    uncertainBulletins: uncertain.c,
-    failedEvaluations: failed.c,
+    matchedBulletins: statuses.matched,
+    uncertainBulletins: statuses.uncertain,
+    failedEvaluations: statuses.failed,
     notificationCount: notifications.c,
     delivery: Object.fromEntries(deliveryRows.map((row) => [row.status, row.c])),
     lastMatchedAt: lastMatched.t,

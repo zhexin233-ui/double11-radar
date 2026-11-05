@@ -232,6 +232,7 @@ describe("通知创建（AC8/AC10）", () => {
     decisionPolicyVersion: "match-confirmation-v1",
     decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
     jevRequestId: null,
+    offerAssessment: null,
   });
 
   it("两渠道关闭时不创建投递但保留判断/通知", () => {

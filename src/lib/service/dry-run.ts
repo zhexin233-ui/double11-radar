@@ -5,6 +5,7 @@ import {
   buildQuestions,
   buildStateFromFields,
   parseAnswers,
+  toOfferAssessment,
   type StateFields,
 } from "@/lib/jev/prompt";
 import { getJevConfigView } from "@/lib/service/config";
@@ -13,15 +14,16 @@ import {
   callJevWithLedger,
 } from "@/lib/service/jev-requests";
 import {
-  MATCH_CONFIRMATION_POLICY,
-  MATCH_CONFIRMATION_POLICY_VERSION,
-  decideMatchConfirmation,
+  NEED_OFFER_CONFIRMATION_POLICY,
+  NEED_OFFER_CONFIRMATION_POLICY_VERSION,
+  decideNeedOfferConfirmation,
 } from "@/lib/jev/match-policy";
 import { RULE_VERSION } from "@/lib/domain/constants";
 import type {
   ChoiceOutcome,
   DecisionReason,
-  MatchConfirmationPolicy,
+  NeedOfferConfirmationPolicy,
+  OfferAssessment,
 } from "@/lib/domain/types";
 
 /**
@@ -57,9 +59,11 @@ export interface DryRunNeedResult {
   modelResult: ChoiceOutcome | null;
   probabilities: Record<string, number> | null;
   confidence: number | null;
+  rawAnswer: string | null;
   decisionReason: DecisionReason;
   decisionPolicyVersion: string;
-  decisionPolicy: MatchConfirmationPolicy;
+  decisionPolicy: NeedOfferConfirmationPolicy;
+  offerAssessment: OfferAssessment;
   jevRequestId: string;
   error: string | null;
 }
@@ -109,7 +113,8 @@ export async function runJevDryRun(
     };
   }
 
-  const { questions, needByQuestionId } = buildQuestions(needs);
+  const { questions, pairs } = buildQuestions(needs);
+  const policySnapshot = NEED_OFFER_CONFIRMATION_POLICY;
   const state = buildStateFromFields({
     title: input.title,
     content: input.content ?? null,
@@ -138,12 +143,11 @@ export async function runJevDryRun(
   const answers = parseAnswers(outcome.response, questionIds);
 
   const results: DryRunNeedResult[] = [];
-  for (const questionId of questionIds) {
-    const need = needByQuestionId.get(questionId);
-    if (!need) continue;
-    const answer = answers[questionId];
+  for (const { need, relevanceQuestionId, offerQuestionId } of pairs) {
+    const answer = answers[relevanceQuestionId];
+    const offer = answers[offerQuestionId];
     // 与自动判断共用同一纯决策函数与策略快照，保证同输入结论一致。
-    const decision = decideMatchConfirmation(answer, MATCH_CONFIRMATION_POLICY);
+    const decision = decideNeedOfferConfirmation(answer, offer, policySnapshot);
     results.push({
       needId: need.id,
       needName: need.name,
@@ -153,11 +157,13 @@ export async function runJevDryRun(
       modelResult: decision.modelResult,
       probabilities: answer.probabilities,
       confidence: answer.confidence,
+      rawAnswer: answer.raw,
       decisionReason: decision.reason,
-      decisionPolicyVersion: MATCH_CONFIRMATION_POLICY_VERSION,
-      decisionPolicy: MATCH_CONFIRMATION_POLICY,
+      decisionPolicyVersion: NEED_OFFER_CONFIRMATION_POLICY_VERSION,
+      decisionPolicy: policySnapshot,
       jevRequestId: outcome.requestId,
-      error: answer.error,
+      error: decision.error,
+      offerAssessment: toOfferAssessment(offerQuestionId, offer),
     });
   }
 

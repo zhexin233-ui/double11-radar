@@ -28,7 +28,20 @@ export type DecisionReason =
   | "probabilities_invalid"
   | "choice_probability_conflict"
   | "matched_probability_below_threshold"
-  | "matched_confirmed";
+  | "matched_confirmed"
+  | "relevance_parse_failed"
+  | "offer_parse_failed"
+  | "relevance_not_matched"
+  | "offer_not_matched"
+  | "relevance_uncertain"
+  | "offer_uncertain"
+  | "relevance_probabilities_missing"
+  | "relevance_probabilities_invalid"
+  | "relevance_choice_probability_conflict"
+  | "offer_probabilities_missing"
+  | "offer_probabilities_invalid"
+  | "offer_choice_probability_conflict"
+  | "need_and_offer_confirmed";
 
 /** 匹配确认策略参数（随策略版本冻结，改变算法/参数必须提升版本）。 */
 export interface MatchConfirmationPolicy {
@@ -36,6 +49,31 @@ export interface MatchConfirmationPolicy {
   minMatchedProbability: number;
   /** 概率分布总和与 1 的最大可接受误差。 */
   probabilitySumTolerance: number;
+}
+
+/** 双项确认不设置额外数值门槛；null 明确保留此语义。 */
+export interface NeedOfferDimensionPolicy {
+  minMatchedProbability: null;
+  probabilitySumTolerance: number;
+}
+
+export interface NeedOfferConfirmationPolicy {
+  kind: "need_and_offer";
+  relevance: NeedOfferDimensionPolicy;
+  offer: NeedOfferDimensionPolicy;
+}
+
+/** 旧单题快照没有 kind；新增策略通过 kind 判别，不能回退成当前策略。 */
+export type DecisionPolicy = MatchConfirmationPolicy | NeedOfferConfirmationPolicy;
+
+/** 需求商品的促销题原始证据，缺答也保存非空 failed 结构。 */
+export interface OfferAssessment {
+  questionId: string;
+  result: EvaluationResult;
+  probabilities: Record<string, number> | null;
+  confidence: number | null;
+  rawAnswer: string | null;
+  error: string | null;
 }
 
 /** 任务状态。`leased` 为租约持有中，`dead` 为超过最大尝试次数。 */
@@ -197,7 +235,8 @@ export interface Evaluation {
   /** 匹配确认策略版本；旧记录为 null。 */
   decisionPolicyVersion: string | null;
   /** 匹配确认策略快照；旧记录或快照异常为 null。 */
-  decisionPolicy: MatchConfirmationPolicy | null;
+  decisionPolicy: DecisionPolicy | null;
+  offerAssessment: OfferAssessment | null;
   /** 产生该判断的实际调用账本 ID；旧记录为 null。 */
   jevRequestId: string | null;
 }

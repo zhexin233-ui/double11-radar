@@ -268,3 +268,14 @@ export function countBulletins(db: Database.Database): number {
   };
   return row.count;
 }
+
+/** 首页状态计数与列表、详情、筛选使用同一 SQL 投影，包含任务／处理阶段失败。 */
+export function countBulletinsByDisplayStatus(db: Database.Database): Record<BulletinDisplayStatus, number> {
+  const counts: Record<BulletinDisplayStatus, number> = {
+    baseline: 0, pending: 0, matched: 0, failed: 0, uncertain: 0, not_matched: 0,
+  };
+  const rows = db.prepare(`SELECT ${BULLETIN_DISPLAY_STATUS_SQL} AS status, COUNT(*) AS count
+    FROM bulletins b GROUP BY status`).all() as Array<{ status: BulletinDisplayStatus; count: number }>;
+  for (const row of rows) counts[row.status] = row.count;
+  return counts;
+}

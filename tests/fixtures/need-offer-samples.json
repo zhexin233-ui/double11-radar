@@ -1,0 +1,268 @@
+[
+  {
+    "id": "anta-shoes",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "安踏儿童棉鞋磐石男大童25秋冬新品旋钮扣复古潮流加绒防滑户外大棉鞋 39.05元",
+    "content": "京东plus 800-80兑换券微博正文 安踏儿童棉鞋 磐石拍2双，每双39.05（需不同尺码或者颜色）安踏儿童棉鞋磐石男大童25秋冬新品旋钮扣复古潮流加绒防滑户外大棉鞋 墨玉绿/... 安踏儿童棉鞋女大童磐石2025秋冬新品加绒旋钮扣防滑运动��� 刚柔粉/象牙白/... 凑单",
+    "need": {
+      "name": "安踏",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "matched"
+    },
+    "expected": "matched",
+    "legacyMatchedProbability": 0.76
+  },
+  {
+    "id": "anta-shell",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "安踏水壳3.0pro 270我不知道有没有返利你们要的可以看看",
+    "content": "安踏水壳3.0pro 270我不知道有没有返利你们要的可以看看，我前几天唯品会花了290块钱买了已经[捂脸]",
+    "need": {
+      "name": "安踏",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "matched"
+    },
+    "expected": "matched",
+    "legacyMatchedProbability": 0.69
+  },
+  {
+    "id": "ryo-trial",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "试用1元 吕 紫吕洗发水10ml强韧防断健爽控油蓬松 海飞丝头皮肌底控油蓬松旅行",
+    "content": "试用1元 吕 紫吕洗发水10ml强韧防断健爽控油蓬松 海飞丝头皮肌底控油蓬松旅行装洗发水45g控油去屑洗头膏 力士 （LUX）香氛蓬松洗发水100ml雪松栀子 青少年专用洗发水 偶爱你电影香氛洗衣液玉兰与雪松 60g*1袋 尝鲜装 吕首尔落日洗发水10ml 首尔落日洗发水10ml 多芬 （Dove）多芬丝感柔顺洗发乳100G 青少年专用洗发水",
+    "need": {
+      "name": "吕洗发水",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "matched"
+    },
+    "expected": "matched",
+    "legacyMatchedProbability": 0.94
+  },
+  {
+    "id": "anta-received",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留收货与体验描述，省略与判断无关的个人信息"
+    },
+    "title": "100块的安踏羽绒服收到了 感觉没有很差劲",
+    "content": "100块的安踏羽绒服收到了，感觉没有很差劲，我个人是没有闻到臭味的，版型也还可以",
+    "need": {
+      "name": "安踏",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "not_matched"
+    },
+    "expected": "not_matched",
+    "legacyMatchedProbability": 0.79
+  },
+  {
+    "id": "blue-moon-complaint",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "碰到神人了 四块钱的洗衣液说我售假还拿一张不知道哪里来的 也有可能他自己卖的",
+    "content": "🐟碰到神人了，四块钱的洗衣液说我售假还拿一张不知道哪里来的（也有可能他自己卖的）袋装蓝月亮来讹我。。且收到货到确认一句话没说，反手来一个投诉，让他发面单证据直接已读不回。。。蓝月亮也提供了发货的视频和包裹。。明明就是个瓶子。好嘛点开对方主页纠纷8起。。已有前科。而且好评率61…怎么老被这种顶着网红女头的臭蝻差评啊，真是活不起了啊",
+    "need": {
+      "name": "蓝月亮洗衣液",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "not_matched"
+    },
+    "expected": "not_matched",
+    "legacyMatchedProbability": null
+  },
+  {
+    "id": "anta-add-on",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "用plus 修丽可AGE精华30ml*2+15ml*2+AGE面霜15ml*2",
+    "content": "京东领京红（到手更低）用plus3000-400券修丽可AGE精华30ml*2+15ml*2+AGE面霜15ml*2（1分钱换购小银伞防晒）修丽可AGE精华30ml*2抗糖抗老紧致30%玻色因护肤品生日礼物【限时福利】 商品标题下方可领2560-580商品券，凑后1638.5凑单安踏【KAI 欧文系列-澳门赛】Hélà TRIBE板鞋休闲篮球青少年文化鞋",
+    "need": {
+      "name": "安踏",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "not_matched"
+    },
+    "expected": "not_matched",
+    "legacyMatchedProbability": null
+  },
+  {
+    "id": "deyou-add-on",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "维达抽纸超韧3层126抽*20包S码 湿水不易破卫生纸纸巾餐巾纸整箱",
+    "content": "维达 抽纸 超韧3层126抽*20包S码 ，买2维达（Vinda）抽纸 超韧3层126抽*20包S码 湿水不易破 卫生纸 纸巾 餐巾纸 整箱 凑德佑洗脸巾一次性绵柔巾婴儿洗脸巾干湿两用加大加厚家庭装悬挂式洁面 【家居日用】160抽*4 件",
+    "need": {
+      "name": "德佑洗脸巾",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "uncertain"
+    },
+    "expected": "uncertain",
+    "legacyMatchedProbability": null
+  },
+  {
+    "id": "ryo-vague",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "有人蹲吕洗发水吗 便宜成这样了",
+    "content": "有人蹲吕洗发水吗，便宜成这样了 ……..",
+    "need": {
+      "name": "吕洗发水",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "uncertain"
+    },
+    "expected": "uncertain",
+    "legacyMatchedProbability": 0.77
+  },
+  {
+    "id": "tv-budget",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "小米 Mini LED电视85英寸 3170.3元",
+    "content": "领取红包 可抵扣微博正文 会员兑换800-80券页面领取 满6000享9.5折，限电视影音部分商品使用小米 Mini LED电视85英寸，买1件，国补后3170.3小米（MI）REDMI电视X85 2026款 85英寸 Mini LED288Hz 1200nits 4GB+64GB平板电视L85RC-RX 凑单3件",
+    "need": {
+      "name": "电视",
+      "note": "两千元以内"
+    },
+    "labels": {
+      "relevance": "not_matched",
+      "offer": "not_matched"
+    },
+    "expected": "not_matched",
+    "legacyMatchedProbability": null
+  },
+  {
+    "id": "anta-shoes-no-multiple",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "安踏儿童棉鞋磐石男大童25秋冬新品旋钮扣复古潮流加绒防滑户外大棉鞋 39.05元",
+    "content": "京东plus 800-80兑换券微博正文 安踏儿童棉鞋 磐石拍2双，每双39.05（需不同尺码或者颜色）安踏儿童棉鞋磐石男大童25秋冬新品旋钮扣复古潮流加绒防滑户外大棉鞋 墨玉绿/... 安踏儿童棉鞋女大童磐石2025秋冬新品加绒旋钮扣防滑运动��� 刚柔粉/象牙白/... 凑单",
+    "need": {
+      "name": "安踏",
+      "note": "只买一双，不接受多件凑单"
+    },
+    "labels": {
+      "relevance": "not_matched",
+      "offer": "not_matched"
+    },
+    "expected": "not_matched",
+    "legacyMatchedProbability": null
+  },
+  {
+    "id": "anta-shell-budget",
+    "source": {
+      "kind": "incident_snapshot",
+      "textScope": "保留快照中完整可得标题和正文；快照正文提取上限1800字，不冒充历史完整请求"
+    },
+    "title": "安踏水壳3.0pro 270我不知道有没有返利你们要的可以看看",
+    "content": "安踏水壳3.0pro 270我不知道有没有返利你们要的可以看看，我前几天唯品会花了290块钱买了已经[捂脸]",
+    "need": {
+      "name": "安踏",
+      "note": "两百元以内"
+    },
+    "labels": {
+      "relevance": "not_matched",
+      "offer": "not_matched"
+    },
+    "expected": "not_matched",
+    "legacyMatchedProbability": null
+  },
+  {
+    "id": "wrong-brand",
+    "source": {
+      "kind": "archived_incident_fragment",
+      "textScope": "归档仅有该可得正文片段，未伪造完整原文"
+    },
+    "title": "ON/安乃安短款外套",
+    "content": "ON/安乃安短款外套",
+    "need": {
+      "name": "安踏",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "not_matched",
+      "offer": "not_matched"
+    },
+    "expected": "not_matched",
+    "legacyMatchedProbability": 0.52
+  },
+  {
+    "id": "coupon-without-price",
+    "source": {
+      "kind": "synthetic",
+      "textScope": "人工补充边界样本"
+    },
+    "title": "安踏会员领券活动",
+    "content": "安踏会员今日可领取鞋服专享券，领券后到活动专区使用。",
+    "need": {
+      "name": "安踏",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "matched"
+    },
+    "expected": "matched",
+    "legacyMatchedProbability": null
+  },
+  {
+    "id": "trial-without-price",
+    "source": {
+      "kind": "synthetic",
+      "textScope": "人工补充边界样本"
+    },
+    "title": "吕洗发水免费试用报名",
+    "content": "吕洗发水开放试用申领，填写报名后按活动规则领取试用装。",
+    "need": {
+      "name": "吕洗发水",
+      "note": ""
+    },
+    "labels": {
+      "relevance": "matched",
+      "offer": "matched"
+    },
+    "expected": "matched",
+    "legacyMatchedProbability": null
+  }
+]

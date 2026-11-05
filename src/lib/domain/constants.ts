@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
  * Jev 问题模板与判定规则版本。
  * 判断记录按该版本复用；模板语义变化时必须提升版本号。
  */
-export const RULE_VERSION = "systemone-choice-v1";
+export const RULE_VERSION = "systemone-need-offer-v3";
 
 /** 线报来源标识（当前仅线报酷）。 */
 export const XIANBAO_SOURCE = "xianbao";

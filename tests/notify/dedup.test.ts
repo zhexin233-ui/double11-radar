@@ -175,8 +175,8 @@ describe("跨频道通知去重（R3/R4/R5/R6）", () => {
       }
       const { id: noDeliveryId } = insertBulletinIfAbsent(old, makeNormalized({ sourceId: "never-sent" }), { baseline: false });
       old.prepare("INSERT INTO notifications VALUES ('no-delivery', ?, '{}', '2020')").run(noDeliveryId);
-      expect(migrate(old).applied).toEqual([9]);
-      expect(migrate(old).applied).toEqual([]);
+      expect(migrate(old, migrations.filter(m => m.version <= 9)).applied).toEqual([9]);
+      expect(migrate(old, migrations.filter(m => m.version <= 9)).applied).toEqual([]);
       expect(old.prepare("SELECT source, identity_ns, source_id, channel FROM notification_dedup").all())
         .toEqual(expect.arrayContaining(["history", ...statuses.map(status => `history-${status}`)].map(sourceId => ({
           source: "xianbao", identity_ns: "feed", source_id: sourceId, channel: "bark",

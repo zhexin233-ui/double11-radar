@@ -5,7 +5,7 @@ import { listEvaluationsByBulletin } from "@/lib/db/repos/evaluations";
 import { runJevDryRun } from "@/lib/service/dry-run";
 import { saveJevConfig } from "@/lib/service/config";
 import { JevError } from "@/lib/jev/client";
-import { questionIdForNeed } from "@/lib/jev/prompt";
+import { questionIdForNeed, offerQuestionIdForNeed } from "@/lib/jev/prompt";
 
 const KEY = testKey();
 
@@ -28,7 +28,7 @@ describe("需求试判 dry-run（验收工具，不写库）", () => {
       saveJevConfig(ctx.db, { apiKey: "sk-dry-run" }, KEY);
 
       const callSystemOne = answering((id) =>
-        id === questionIdForNeed(paper.id)
+        [questionIdForNeed(paper.id), offerQuestionIdForNeed(paper.id)].includes(id)
           ? {
               type: "choice",
               choice: "matched",
@@ -51,12 +51,12 @@ describe("需求试判 dry-run（验收工具，不写库）", () => {
       expect(byName["抽纸"].confidence).toBe(0.91);
       expect(byName["抽纸"].needNote).toBe("不要湿巾");
       expect(byName["抽纸"].modelResult).toBe("matched");
-      expect(byName["抽纸"].decisionReason).toBe("matched_confirmed");
-      expect(byName["抽纸"].decisionPolicyVersion).toBe("match-confirmation-v1");
-      expect(byName["抽纸"].decisionPolicy.minMatchedProbability).toBe(0.8);
+      expect(byName["抽纸"].decisionReason).toBe("need_and_offer_confirmed");
+      expect(byName["抽纸"].decisionPolicyVersion).toBe("need-offer-confirmation-v1");
+      expect(byName["抽纸"].decisionPolicy.relevance.minMatchedProbability).toBeNull();
       expect(byName["抽纸"].jevRequestId).toBeTruthy();
       expect(byName["咖啡豆"].result).toBe("not_matched");
-      expect(byName["咖啡豆"].decisionReason).toBe("model_not_matched");
+      expect(byName["咖啡豆"].decisionReason).toBe("relevance_not_matched");
 
       // 不写任何判断/通知/投递记录
       expect(
@@ -117,7 +117,7 @@ describe("需求试判 dry-run（验收工具，不写库）", () => {
     }
   });
 
-  it("用户案例：模型 matched 但 p_matched 低于门槛时降为待确认并给原因", async () => {
+  it("错品牌案例：相关性明确否定不能借促销或旧低分通过", async () => {
     const ctx = createTestDb();
     try {
       createNeed(ctx.db, { name: "安踏" });
@@ -126,18 +126,18 @@ describe("需求试判 dry-run（验收工具，不写库）", () => {
         ctx.db,
         { title: "ON/安乃安短款外套" },
         {
-          callSystemOne: answering(() => ({
+          callSystemOne: answering((id) => ({
             type: "choice",
-            choice: "matched",
+            choice: id.startsWith("need_") ? "not_matched" : "matched",
             confidence: 0.28,
             probabilities: { matched: 0.52, not_matched: 0.15, uncertain: 0.33 },
           })) as never,
         },
       );
       const [row] = result.results;
-      expect(row.result).toBe("uncertain");
-      expect(row.modelResult).toBe("matched");
-      expect(row.decisionReason).toBe("matched_probability_below_threshold");
+      expect(row.result).toBe("not_matched");
+      expect(row.modelResult).toBe("not_matched");
+      expect(row.decisionReason).toBe("relevance_not_matched");
       expect(row.probabilities).toEqual({
         matched: 0.52,
         not_matched: 0.15,

@@ -18,7 +18,7 @@ import {
   insertProcessing,
 } from "@/lib/db/repos/evaluation-runs";
 import { getJevConfigView, saveJevConfig } from "@/lib/service/config";
-import { questionIdForNeed } from "@/lib/jev/prompt";
+import { questionIdForNeed, offerQuestionIdForNeed } from "@/lib/jev/prompt";
 import { BATCH_GATE_QUESTION_ID } from "@/lib/jev/batch-prompt";
 import { runEvaluatorOnce } from "@/lib/worker/evaluator";
 import type { RegexRunner } from "@/lib/service/regex-runner";
@@ -149,7 +149,7 @@ describe("逐条模式（AC1）", () => {
       });
 
       expect(calls).toHaveBeenCalledTimes(2);
-      const expectedQuestions = [questionIdForNeed(paper.id), questionIdForNeed(makeup.id)].sort();
+      const expectedQuestions = [questionIdForNeed(paper.id), offerQuestionIdForNeed(paper.id), questionIdForNeed(makeup.id), offerQuestionIdForNeed(makeup.id)].sort();
       for (const call of calls.mock.calls) {
         const request = call[1] as { questions: Record<string, unknown> };
         expect(Object.keys(request.questions).sort()).toEqual(expectedQuestions);
@@ -162,7 +162,7 @@ describe("逐条模式（AC1）", () => {
     }
   });
 
-  it("低概率 matched 降为待确认，不通知且调用次数不变（同策略）", async () => {
+  it("双 matched 但促销选择与分布冲突时待确认，调用次数不变", async () => {
     const ctx = createTestDb();
     try {
       createNeed(ctx.db, { name: "抽纸" });
@@ -178,7 +178,9 @@ describe("逐条模式（AC1）", () => {
               {
                 type: "choice",
                 choice: "matched",
-                probabilities: { matched: 0.52, not_matched: 0.15, uncertain: 0.33 },
+                probabilities: q.startsWith("offer_")
+                  ? { matched: 0.2, not_matched: 0.6, uncertain: 0.2 }
+                  : { matched: 0.52, not_matched: 0.15, uncertain: 0.33 },
               },
             ]),
           ),
@@ -191,7 +193,7 @@ describe("逐条模式（AC1）", () => {
       const [evaluation] = listEvaluationsByBulletin(ctx.db, id);
       expect(evaluation.result).toBe("uncertain");
       expect(evaluation.modelResult).toBe("matched");
-      expect(evaluation.decisionReason).toBe("matched_probability_below_threshold");
+      expect(evaluation.decisionReason).toBe("offer_choice_probability_conflict");
       expect(countRows(ctx.db, "notifications")).toBe(0);
       expect(getBulletinDisplayStatus(ctx.db, id)).toBe("uncertain");
     } finally {
@@ -277,13 +279,17 @@ describe("批次预筛模式（AC3/AC4/AC5）", () => {
               },
             };
           }
-          // 展开后的逐条判断：全部命中。
+          // 展开后的逐条判断：相关性及该需求促销均明确通过。
           return {
             answers: {
               [questionIdForNeed(paper.id)]: {
                 type: "choice",
                 choice: "matched",
                 probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
+              },
+              [offerQuestionIdForNeed(paper.id)]: {
+                type: "choice", choice: "matched",
+                probabilities: { matched: 0.76, not_matched: 0.14, uncertain: 0.1 },
               },
             },
           };
@@ -331,6 +337,7 @@ describe("批次预筛模式（AC3/AC4/AC5）", () => {
           return {
             answers: {
               [questionIdForNeed(paper.id)]: { type: "choice", choice: "not_matched" },
+              [offerQuestionIdForNeed(paper.id)]: { type: "choice", choice: "not_matched" },
             },
           };
         },
@@ -411,6 +418,7 @@ describe("批次预筛模式（AC3/AC4/AC5）", () => {
           return {
             answers: {
               [questionIdForNeed(paper.id)]: { type: "choice", choice: "not_matched" },
+              [offerQuestionIdForNeed(paper.id)]: { type: "choice", choice: "not_matched" },
             },
           };
         },

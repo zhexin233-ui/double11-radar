@@ -262,6 +262,7 @@ export interface EvaluationDto {
   configVersion: number;
   result: EvaluationResultDto;
   probabilities: string | null;
+  rawAnswer: string | null;
   confidence: number | null;
   error: string | null;
   updatedAt: string;
@@ -271,7 +272,8 @@ export interface EvaluationDto {
   decisionReason: DecisionReasonDto | null;
   /** 匹配确认策略版本；旧记录为 null（不伪称已应用新策略）。 */
   decisionPolicyVersion: string | null;
-  decisionPolicy: MatchConfirmationPolicyDto | null;
+  decisionPolicy: DecisionPolicyDto | null;
+  offerAssessment: OfferAssessmentDto | null;
   /** 触发该判断的实际调用账本 ID；旧记录为 null。 */
   jevRequestId: string | null;
 }
@@ -288,12 +290,47 @@ export type DecisionReasonDto =
   | "probabilities_invalid"
   | "choice_probability_conflict"
   | "matched_probability_below_threshold"
-  | "matched_confirmed";
+  | "matched_confirmed"
+  | "relevance_parse_failed"
+  | "offer_parse_failed"
+  | "relevance_not_matched"
+  | "offer_not_matched"
+  | "relevance_uncertain"
+  | "offer_uncertain"
+  | "relevance_probabilities_missing"
+  | "relevance_probabilities_invalid"
+  | "relevance_choice_probability_conflict"
+  | "offer_probabilities_missing"
+  | "offer_probabilities_invalid"
+  | "offer_choice_probability_conflict"
+  | "need_and_offer_confirmed";
 
 /** 匹配确认策略快照（与 lib/domain/types 的 MatchConfirmationPolicy 镜像）。 */
 export interface MatchConfirmationPolicyDto {
   minMatchedProbability: number;
   probabilitySumTolerance: number;
+}
+
+export interface NeedOfferConfirmationPolicyDto {
+  kind: "need_and_offer";
+  relevance: { minMatchedProbability: null; probabilitySumTolerance: number };
+  offer: { minMatchedProbability: null; probabilitySumTolerance: number };
+}
+export type DecisionPolicyDto = MatchConfirmationPolicyDto | NeedOfferConfirmationPolicyDto;
+export interface OfferAssessmentDto {
+  questionId: string;
+  result: EvaluationResultDto;
+  probabilities: Record<string, number> | null;
+  confidence: number | null;
+  rawAnswer: string | null;
+  error: string | null;
+}
+
+/** 策略仅按保存的快照展示；旧记录不能套用当前策略。 */
+export function formatDecisionPolicy(policy: DecisionPolicyDto | null): string {
+  if (!policy) return "策略快照未记录";
+  if ("kind" in policy) return "需求相关与该需求促销双项确认，未设置额外概率门槛";
+  return `匹配概率门槛 ${policy.minMatchedProbability}（历史单题策略）`;
 }
 
 /** 触发降级的固定文案（需带分数/门槛时用 `formatDecisionReason`）。 */
@@ -306,6 +343,19 @@ export const DECISION_REASON_LABELS: Record<DecisionReasonDto, string> = {
   choice_probability_conflict: "匹配概率低于其它选项，已降为待确认",
   matched_probability_below_threshold: "匹配概率低于自动确认门槛，已降为待确认",
   matched_confirmed: "通过匹配确认门槛",
+  relevance_parse_failed: "需求相关性答案解析失败",
+  offer_parse_failed: "该需求促销答案解析失败",
+  relevance_not_matched: "需求不相关或不符合备注",
+  offer_not_matched: "文案未提供该商品的促销信息",
+  relevance_uncertain: "需求相关性信息不足",
+  offer_uncertain: "该需求促销信息不足",
+  relevance_probabilities_missing: "需求相关性缺少概率分布，待确认",
+  relevance_probabilities_invalid: "需求相关性概率分布不完整或不合法，待确认",
+  relevance_choice_probability_conflict: "需求相关性选择与概率冲突，待确认",
+  offer_probabilities_missing: "该需求促销缺少概率分布，待确认",
+  offer_probabilities_invalid: "该需求促销概率分布不完整或不合法，待确认",
+  offer_choice_probability_conflict: "该需求促销选择与概率冲突，待确认",
+  need_and_offer_confirmed: "需求相关与该需求促销两项确认通过",
 };
 
 /** 模型原始选择的中文标签（与业务结果分开显示）。 */
@@ -451,9 +501,11 @@ export interface DryRunNeedResultDto {
   modelResult: ChoiceOutcomeDto | null;
   probabilities: Record<string, number> | null;
   confidence: number | null;
+  rawAnswer: string | null;
   decisionReason: DecisionReasonDto;
   decisionPolicyVersion: string;
-  decisionPolicy: MatchConfirmationPolicyDto;
+  decisionPolicy: NeedOfferConfirmationPolicyDto;
+  offerAssessment: OfferAssessmentDto;
   jevRequestId: string;
   error: string | null;
 }

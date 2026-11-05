@@ -3,11 +3,13 @@ import type {
   DecisionReason,
   EvaluationResult,
   MatchConfirmationPolicy,
+  NeedOfferConfirmationPolicy,
 } from "@/lib/domain/types";
 import type { ParsedAnswer } from "@/lib/jev/prompt";
 
 /**
- * 可信度门控：把模型的原始三态选择转换为受确认门槛约束的业务结果。
+ * 旧单题门控（历史回放兼容）：把模型原始三态转换为受0.80门槛约束的业务结果。
+ * 当前生产与试判使用本文件下方的双项 decideNeedOfferConfirmation。
  *
  * 设计要点（`design.md` 第 2 节）：
  * - 纯函数：不读环境变量、数据库或当前时间，自动判断与需求试判显式调用同一函数；
@@ -132,4 +134,50 @@ export function decideMatchConfirmation(
     };
   }
   return { result: "matched", modelResult, reason: "matched_confirmed" };
+}
+
+
+/** 新策略独立冻结，旧 match-confirmation-v1 仍可按旧算法回放。 */
+export const NEED_OFFER_CONFIRMATION_POLICY_VERSION = "need-offer-confirmation-v1";
+export const NEED_OFFER_CONFIRMATION_POLICY: NeedOfferConfirmationPolicy = Object.freeze({
+  kind: "need_and_offer",
+  relevance: Object.freeze({ minMatchedProbability: null, probabilitySumTolerance: 0.01 }),
+  offer: Object.freeze({ minMatchedProbability: null, probabilitySumTolerance: 0.01 }),
+});
+
+export interface NeedOfferDecision extends MatchDecision {
+  error: string | null;
+}
+
+/** 双维合并仅此一个入口；优先级按任务设计表，不相乘概率、不提升原始否定或不确定。 */
+export function decideNeedOfferConfirmation(
+  relevance: ParsedAnswer,
+  offer: ParsedAnswer,
+  policy: NeedOfferConfirmationPolicy = NEED_OFFER_CONFIRMATION_POLICY,
+): NeedOfferDecision {
+  const modelResult = relevance.result === "failed" ? null : relevance.result;
+  const finish = (result: EvaluationResult, reason: DecisionReason, error: string | null = null): NeedOfferDecision =>
+    ({ result, reason, modelResult, error });
+  if (relevance.result === "failed") {
+    return finish("failed", "relevance_parse_failed", `需求相关性：${relevance.error ?? "答案解析失败"}`);
+  }
+  if (offer.result === "failed") {
+    return finish("failed", "offer_parse_failed", `该需求促销：${offer.error ?? "答案解析失败"}`);
+  }
+  if (relevance.result === "not_matched") return finish("not_matched", "relevance_not_matched");
+  if (offer.result === "not_matched") return finish("not_matched", "offer_not_matched");
+  if (relevance.result === "uncertain") return finish("uncertain", "relevance_uncertain");
+  if (offer.result === "uncertain") return finish("uncertain", "offer_uncertain");
+
+  for (const [dimension, answer] of [["relevance", relevance], ["offer", offer]] as const) {
+    const probabilities = answer.probabilities;
+    if (!probabilities) return finish("uncertain", `${dimension}_probabilities_missing`);
+    if (!isCompleteProbabilityDistribution(probabilities, policy[dimension].probabilitySumTolerance)) {
+      return finish("uncertain", `${dimension}_probabilities_invalid`);
+    }
+    if (probabilities.matched < Math.max(probabilities.not_matched, probabilities.uncertain)) {
+      return finish("uncertain", `${dimension}_choice_probability_conflict`);
+    }
+  }
+  return finish("matched", "need_and_offer_confirmed");
 }

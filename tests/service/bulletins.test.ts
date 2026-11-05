@@ -7,7 +7,7 @@ import {
 } from "@/lib/db/repos/bulletins";
 import { enqueueJob } from "@/lib/db/repos/jobs";
 import { upsertEvaluation } from "@/lib/db/repos/evaluations";
-import { MATCH_CONFIRMATION_POLICY_VERSION } from "@/lib/jev/match-policy";
+import { NEED_OFFER_CONFIRMATION_POLICY_VERSION, NEED_OFFER_CONFIRMATION_POLICY } from "@/lib/jev/match-policy";
 import { RULE_VERSION } from "@/lib/domain/constants";
 import {
   describeBulletin,
@@ -182,10 +182,11 @@ describe("线报状态投影（AC12：故障与「没有匹配」必须可区分
         rawAnswer: "{}",
         error: null,
         modelResult: "matched",
-        decisionReason: "matched_confirmed",
-        decisionPolicyVersion: MATCH_CONFIRMATION_POLICY_VERSION,
-        decisionPolicy: { minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 },
+        decisionReason: "need_and_offer_confirmed",
+        decisionPolicyVersion: NEED_OFFER_CONFIRMATION_POLICY_VERSION,
+        decisionPolicy: NEED_OFFER_CONFIRMATION_POLICY,
         jevRequestId: "req-now",
+        offerAssessment: { questionId: "offer_need-now", result: "matched", probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 }, confidence: null, rawAnswer: "{}", error: null },
       });
       const page = listBulletinDetails(ctx.db, { baseline: false });
       expect(page.items[0].hasHistoricalMatched).toBe(false);

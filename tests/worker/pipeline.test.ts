@@ -25,7 +25,7 @@ import {
   getJevConfigView,
 } from "@/lib/service/config";
 import { RULE_VERSION } from "@/lib/domain/constants";
-import { questionIdForNeed } from "@/lib/jev/prompt";
+import { questionIdForNeed, offerQuestionIdForNeed } from "@/lib/jev/prompt";
 import {
   fetchFeed as xbFetchFeed,
   fetchMeta as xbFetchMeta,
@@ -357,7 +357,7 @@ describe("worker 判断与投递（mock 传输层，未做真实接口验证）"
       // 原始失败：真实错误保留，且不伪称模型选择或降级为待确认。
       expect(invalidRow.error).toBeTruthy();
       expect(invalidRow.modelResult).toBeNull();
-      expect(invalidRow.decisionReason).toBe("parse_failed");
+      expect(invalidRow.decisionReason).toBe("relevance_parse_failed");
       expect(listDeliveriesByBulletin(ctx.db, invalidBulletin.id)).toHaveLength(0);
       const notificationsAfter = ctx.db
         .prepare("SELECT COUNT(*) AS c FROM notifications")
@@ -577,6 +577,12 @@ describe("匹配确认通知成员（R1/R2）", () => {
               choice: "matched",
               probabilities: { matched: 0.5, not_matched: 0.25, uncertain: 0.25 },
             },
+            [offerQuestionIdForNeed(paper.id)]: {
+              type: "choice", choice: "matched",
+              probabilities: { matched: 0.69, not_matched: 0.21, uncertain: 0.1 },
+            },
+            // 相关但促销信息不足，不能借抽纸的促销通过。
+            [offerQuestionIdForNeed(makeup.id)]: { type: "choice", choice: "uncertain" },
           },
         }),
       );
@@ -592,7 +598,7 @@ describe("匹配确认通知成员（R1/R2）", () => {
       expect(byNeed[makeup.id].result).toBe("uncertain");
       expect(byNeed[makeup.id].modelResult).toBe("matched");
       expect(byNeed[makeup.id].decisionReason).toBe(
-        "matched_probability_below_threshold",
+        "offer_uncertain",
       );
 
       // 新通知只含本次确认项，不含降级项，也不重扫历史 matched。

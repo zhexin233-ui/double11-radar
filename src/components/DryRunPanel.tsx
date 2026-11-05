@@ -5,15 +5,12 @@ import { Button } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import {
   EVALUATION_LABELS,
-  MODEL_CHOICE_LABELS,
-  formatConfidence,
-  formatDecisionReason,
-  formatProbabilities,
   type DryRunResultDto,
 } from "@/components/api-types";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
+import { MatchAssessment, MatchDecisionTrace } from "@/components/MatchAssessment";
 import { StatusBadge } from "@/components/status-badge";
 
 /**
@@ -96,8 +93,8 @@ export function DryRunPanel() {
       description={
         <>
           粘贴一段线报样例，用与生产相同的问题与解析逻辑调用真实 Jev，
-          逐需求显示模型原始选择与匹配确认后的业务结果。
-          <strong>不会写入判断记录，也不会发送任何通知</strong>；
+          每需求同次回答相关性与该需求促销两题，显示两项原始判断及最终业务结果。
+          <strong>不会写入判断记录，也不会发送任何通知</strong>；实际调用会记账并影响容量与密钥状态，
           真实线报只能被动等待，这个入口用于立即验证语义正反例。
         </>
       }
@@ -169,7 +166,7 @@ export function DryRunPanel() {
             </label>
           </div>
 
-          <div style={{ marginTop: "var(--sp-2)", padding: "var(--sp-3)", background: "var(--surface-muted, #f8f9fa)", borderRadius: "var(--radius-sm, 6px)" }}>
+          <div style={{ marginTop: "var(--sp-2)", padding: "var(--sp-3)", background: "var(--surface-alt)", borderRadius: "var(--r-control)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--sp-2)" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontWeight: 500, cursor: "pointer" }}>
                 <input
@@ -247,16 +244,14 @@ export function DryRunPanel() {
                   <thead>
                     <tr>
                       <th>需求</th>
-                      <th>模型原始选择</th>
-                      <th>业务结果</th>
-                      <th>概率 / 置信度</th>
+                      <th>两项原始判断 / 概率</th>
+                      <th style={{ minWidth: 104 }}>业务结果</th>
                       <th>程序判定</th>
                       <th>错误</th>
                     </tr>
                   </thead>
                   <tbody>
                     {result.results.map((item) => {
-                      const minMatched = item.decisionPolicy.minMatchedProbability;
                       return (
                         <tr key={item.needId}>
                           <td>
@@ -265,30 +260,29 @@ export function DryRunPanel() {
                               <div className="muted small">备注：{item.needNote}</div>
                             ) : null}
                           </td>
-                          <td className="small">
-                            {item.modelResult
-                              ? MODEL_CHOICE_LABELS[item.modelResult]
-                              : "未记录"}
+                          <td>
+                            <MatchAssessment
+                              modelResult={item.modelResult}
+                              recorded={true}
+                              probabilities={item.probabilities}
+                              confidence={item.confidence}
+                              rawAnswer={item.rawAnswer}
+                              offerAssessment={item.offerAssessment}
+                            />
                           </td>
                           <td>
                             <StatusBadge status={item.result}>
                               {EVALUATION_LABELS[item.result]}
                             </StatusBadge>
                           </td>
-                          <td className="small">
-                            {formatProbabilities(item.probabilities)}
-                            <div className="muted small">
-                              置信度：{formatConfidence(item.confidence)}
-                            </div>
-                          </td>
-                          <td className="small">
-                            {formatDecisionReason(item.decisionReason, {
-                              matchedProbability: item.probabilities?.matched ?? null,
-                              minMatchedProbability: minMatched,
-                            })}
-                            <div className="muted small">
-                              策略 {item.decisionPolicyVersion}（门槛 {minMatched}）
-                            </div>
+                          <td>
+                            <MatchDecisionTrace
+                              reason={item.decisionReason}
+                              policyVersion={item.decisionPolicyVersion}
+                              policy={item.decisionPolicy}
+                              matchedProbability={item.probabilities?.matched ?? null}
+                              requestId={item.jevRequestId}
+                            />
                           </td>
                           <td className="small error">{item.error ?? ""}</td>
                         </tr>
@@ -298,7 +292,7 @@ export function DryRunPanel() {
                 </table>
               </TableScroll>
               <p className="muted small" style={{ margin: 0 }}>
-                结果已应用匹配确认策略（缺概率或低于门槛降为待确认）；置信度不代表业务正确率。
+                需求相关与该需求促销均明确通过才确认，不设额外概率门槛；置信度来自上游分布集中程度，不代表业务正确率。
               </p>
             </div>
           )

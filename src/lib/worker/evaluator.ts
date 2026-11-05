@@ -33,11 +33,11 @@ import {
   parseBatchGateResponse,
 } from "@/lib/jev/batch-prompt";
 import { measureBatchGateBytes } from "@/lib/jev/batch-packing";
-import { buildQuestions, buildState, parseAnswers } from "@/lib/jev/prompt";
+import { buildQuestions, buildState, parseAnswers, toOfferAssessment } from "@/lib/jev/prompt";
 import {
-  MATCH_CONFIRMATION_POLICY,
-  MATCH_CONFIRMATION_POLICY_VERSION,
-  decideMatchConfirmation,
+  NEED_OFFER_CONFIRMATION_POLICY,
+  NEED_OFFER_CONFIRMATION_POLICY_VERSION,
+  decideNeedOfferConfirmation,
 } from "@/lib/jev/match-policy";
 import { createNotificationAndDeliveries } from "@/lib/notify/dispatch";
 import { buildRegexMatchText } from "@/lib/regex/rules";
@@ -297,11 +297,11 @@ async function evaluateJob(
   }
 
   const configVersionFallback = getJevConfigView(db).version;
-  const { questions, needByQuestionId } = buildQuestions(needs);
+  const { questions, pairs } = buildQuestions(needs);
   const state = buildState(bulletin);
 
   // 策略在逐条请求开始前捕获一次，响应后使用同一快照（改变参数必须提升版本）。
-  const policySnapshot = MATCH_CONFIRMATION_POLICY;
+  const policySnapshot = NEED_OFFER_CONFIRMATION_POLICY;
 
   // 统一服务负责容量、Key 选择、失败计数与用量账本；一次调用最多计一次失败。
   const outcome = await callJevWithLedger(
@@ -343,12 +343,11 @@ async function evaluateJob(
   const persist = db.transaction((): boolean => {
     // 失去本次 job 租约（例如另一连接已回收并重新领取）时不得落判断/通知。
     if (!isJobOwnedBy(db, jobId, owner)) return false;
-    for (const questionId of questionIds) {
-      const need = needByQuestionId.get(questionId);
-      if (!need) continue;
-      const answer = answers[questionId];
+    for (const { need, relevanceQuestionId, offerQuestionId } of pairs) {
+      const answer = answers[relevanceQuestionId];
+      const offer = answers[offerQuestionId];
       // 共享纯决策函数：保留原始选择，必要时将 matched 降为待确认。
-      const decision = decideMatchConfirmation(answer, policySnapshot);
+      const decision = decideNeedOfferConfirmation(answer, offer, policySnapshot);
       upsertEvaluation(db, {
         bulletinId: bulletin.id,
         needId: need.id,
@@ -361,10 +360,11 @@ async function evaluateJob(
         probabilities: answer.probabilities,
         confidence: answer.confidence,
         rawAnswer: answer.raw,
-        error: answer.error,
+        error: decision.error,
+        offerAssessment: toOfferAssessment(offerQuestionId, offer),
         modelResult: decision.modelResult,
         decisionReason: decision.reason,
-        decisionPolicyVersion: MATCH_CONFIRMATION_POLICY_VERSION,
+        decisionPolicyVersion: NEED_OFFER_CONFIRMATION_POLICY_VERSION,
         decisionPolicy: policySnapshot,
         jevRequestId: outcome.requestId,
       });
@@ -394,7 +394,7 @@ async function evaluateJob(
         bulletin.id,
         {
           stage:
-            failedCount > 0 && matched === 0 && uncertain === 0
+            failedCount > 0 && matched === 0
               ? "failed"
               : "evaluated",
         },
@@ -414,10 +414,10 @@ async function evaluateJob(
     result:
       matched > 0
         ? "matched"
-        : uncertain > 0
-          ? "uncertain"
-          : failedCount > 0
-            ? "failed"
+        : failedCount > 0
+          ? "failed"
+          : uncertain > 0
+            ? "uncertain"
             : "not_matched",
     matched,
   };

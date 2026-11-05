@@ -662,4 +662,9 @@ export const migrations: Migration[] = [
   { version: 8, name: "key_auto_reenable_and_recovery_events", sql: V8_KEY_AUTO_REENABLE },
   { version: 9, name: "feed_category_id_and_notification_dedup", sql: V9_FEED_ID_AND_NOTIFICATION_DEDUP,
     run: migrateNotificationDedup },
+  {
+    version: 10,
+    name: "evaluations_need_offer_assessment",
+    sql: "ALTER TABLE evaluations ADD COLUMN offer_assessment_json TEXT;",
+  },
 ];

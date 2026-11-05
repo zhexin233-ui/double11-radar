@@ -5,6 +5,7 @@ import {
   parseAnswer,
   parseAnswers,
   questionIdForNeed,
+  offerQuestionIdForNeed,
 } from "@/lib/jev/prompt";
 import type { Bulletin, Need } from "@/lib/domain/types";
 
@@ -50,10 +51,21 @@ const BULLETIN: Bulletin = {
 };
 
 describe("Jev 问题构造与答案解析（mock 验证）", () => {
-  it("每个启用需求一个 Choice 问题，需求语义在 instructions 中", () => {
-    const { questions, needByQuestionId } = buildQuestions([NEED_A, NEED_B]);
+  it("每个启用需求两题，分别重述完整需求与约束，需求语义在 instructions 中", () => {
+    const { questions, needByQuestionId, pairs } = buildQuestions([NEED_A, NEED_B]);
     const idA = questionIdForNeed(NEED_A.id);
-    expect(Object.keys(questions)).toHaveLength(2);
+    expect(Object.keys(questions)).toHaveLength(4);
+    expect(pairs).toHaveLength(2);
+    expect(pairs[0]).toEqual({ need: NEED_A, relevanceQuestionId: idA, offerQuestionId: offerQuestionIdForNeed(NEED_A.id) });
+    const offer = questions[offerQuestionIdForNeed(NEED_A.id)];
+    expect(offer.instructions).toContain("抽纸");
+    expect(offer.instructions).toContain("不要湿巾");
+    expect(offer.instructions).toContain("其他商品的价格");
+    expect(offer.instructions).toContain("拍两双");
+    expect(offer.instructions).toContain("没有数字价格");
+    expect(offer.instructions).toContain("不可信数据");
+    expect(offer.instructions).toContain("当前报价");
+    expect(offer.instructions).toContain("不能仅因提到过去买过就当作晒单");
     expect(questions[idA].type).toBe("choice");
     expect(questions[idA].instructions).toContain("抽纸");
     expect(questions[idA].instructions).toContain("不要湿巾");

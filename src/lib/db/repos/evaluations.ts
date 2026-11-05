@@ -1,10 +1,12 @@
+import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type {
   ChoiceOutcome,
   DecisionReason,
   Evaluation,
-  MatchConfirmationPolicy,
+  DecisionPolicy,
+  OfferAssessment,
 } from "@/lib/domain/types";
 
 /**
@@ -39,31 +41,41 @@ interface EvaluationRow {
   decision_policy_version: string | null;
   decision_policy_json: string | null;
   jev_request_id: string | null;
+  offer_assessment_json: string | null;
 }
 
-/**
- * 解码策略快照 JSON。只做基础结构校验（两个字段都是有限数字）；
- * 非法/缺失一律返回 null，绝不回退成当前默认策略。
- */
-function decodeDecisionPolicy(
-  raw: string | null,
-): MatchConfirmationPolicy | null {
+const LegacyPolicySchema = z.object({
+  minMatchedProbability: z.number(),
+  probabilitySumTolerance: z.number(),
+}).strict();
+const DimensionPolicySchema = z.object({
+  minMatchedProbability: z.null(),
+  probabilitySumTolerance: z.number().nonnegative(),
+});
+const DecisionPolicySchema = z.union([
+  LegacyPolicySchema,
+  z.object({
+    kind: z.literal("need_and_offer"),
+    relevance: DimensionPolicySchema,
+    offer: DimensionPolicySchema,
+  }),
+]);
+const OfferAssessmentSchema = z.object({
+  questionId: z.string().min(1),
+  result: z.enum(["matched", "not_matched", "uncertain", "failed"]),
+  // 留存原始不完整／越界概率，业务合法性由纯决策校验，解码不归一化。
+  probabilities: z.record(z.string(), z.number()).nullable(),
+  confidence: z.number().nullable(),
+  rawAnswer: z.string().nullable(),
+  error: z.string().nullable(),
+});
+
+/** 仓库独占持久化 JSON 解码；坏数据为 null，绝不补当前策略或促销通过。 */
+function decodeJson<T>(raw: string | null, schema: z.ZodType<T>): T | null {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    const record = parsed as Record<string, unknown>;
-    const minMatchedProbability = record.minMatchedProbability;
-    const probabilitySumTolerance = record.probabilitySumTolerance;
-    if (
-      typeof minMatchedProbability !== "number" ||
-      !Number.isFinite(minMatchedProbability) ||
-      typeof probabilitySumTolerance !== "number" ||
-      !Number.isFinite(probabilitySumTolerance)
-    ) {
-      return null;
-    }
-    return { minMatchedProbability, probabilitySumTolerance };
+    const parsed = schema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
@@ -90,8 +102,9 @@ function toEvaluation(row: EvaluationRow): Evaluation {
     modelResult: row.model_result as ChoiceOutcome | null,
     decisionReason: row.decision_reason as DecisionReason | null,
     decisionPolicyVersion: row.decision_policy_version,
-    decisionPolicy: decodeDecisionPolicy(row.decision_policy_json),
+    decisionPolicy: decodeJson(row.decision_policy_json, DecisionPolicySchema),
     jevRequestId: row.jev_request_id,
+    offerAssessment: decodeJson(row.offer_assessment_json, OfferAssessmentSchema),
   };
 }
 
@@ -112,7 +125,8 @@ export interface UpsertEvaluationInput {
   modelResult?: ChoiceOutcome | null;
   decisionReason?: DecisionReason | null;
   decisionPolicyVersion?: string | null;
-  decisionPolicy?: MatchConfirmationPolicy | null;
+  decisionPolicy?: DecisionPolicy | null;
+  offerAssessment?: OfferAssessment | null;
   jevRequestId?: string | null;
 }
 
@@ -126,12 +140,12 @@ export function upsertEvaluation(
        id, bulletin_id, need_id, need_name, need_note, need_version, config_version,
        rule_version, result, probabilities, confidence, raw_answer, error,
        model_result, decision_reason, decision_policy_version, decision_policy_json,
-       jev_request_id, attempts, created_at, updated_at
+       jev_request_id, offer_assessment_json, attempts, created_at, updated_at
      ) VALUES (
        @id, @bulletinId, @needId, @needName, @needNote, @needVersion, @configVersion,
        @ruleVersion, @result, @probabilities, @confidence, @rawAnswer, @error,
        @modelResult, @decisionReason, @decisionPolicyVersion, @decisionPolicyJson,
-       @jevRequestId, 1, @now, @now
+       @jevRequestId, @offerAssessmentJson, 1, @now, @now
      )
      ON CONFLICT(bulletin_id, need_id, rule_version) DO UPDATE SET
        need_name = excluded.need_name,
@@ -148,6 +162,7 @@ export function upsertEvaluation(
        decision_policy_version = excluded.decision_policy_version,
        decision_policy_json = excluded.decision_policy_json,
        jev_request_id = excluded.jev_request_id,
+       offer_assessment_json = excluded.offer_assessment_json,
        attempts = evaluations.attempts + 1,
        updated_at = excluded.updated_at`,
   ).run({
@@ -171,6 +186,7 @@ export function upsertEvaluation(
       ? JSON.stringify(input.decisionPolicy)
       : null,
     jevRequestId: input.jevRequestId ?? null,
+    offerAssessmentJson: input.offerAssessment ? JSON.stringify(input.offerAssessment) : null,
     now,
   });
 }

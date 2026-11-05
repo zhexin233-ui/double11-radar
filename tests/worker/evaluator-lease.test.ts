@@ -14,7 +14,7 @@ import { LEGACY_JEV_KEY_ID } from "@/lib/db/migrations";
 import { getJevKey } from "@/lib/db/repos/jev-keys";
 import { addJevKey, updateJevKeySettings } from "@/lib/service/jev-keys";
 import { saveJevConfig } from "@/lib/service/config";
-import { questionIdForNeed } from "@/lib/jev/prompt";
+import { questionIdForNeed, offerQuestionIdForNeed } from "@/lib/jev/prompt";
 import { runEvaluatorOnce } from "@/lib/worker/evaluator";
 
 /**
@@ -69,7 +69,10 @@ describe("失去 job ownership 的结果不落库（AC3）", () => {
           .run(jobId);
         return {
           model: "jev-1.13.0",
-          answers: { [questionId]: { type: "choice", choice: "matched" } },
+          answers: {
+            [questionId]: { type: "choice", choice: "matched", probabilities: { matched: 0.76, not_matched: 0.14, uncertain: 0.1 } },
+            [offerQuestionIdForNeed(need.id)]: { type: "choice", choice: "matched", probabilities: { matched: 0.69, not_matched: 0.21, uncertain: 0.1 } },
+          },
           usage: { inputTokens: 100, outputTokens: null },
           httpStatus: 200,
           upstreamRequestId: "req-lost-lease",
@@ -185,6 +188,8 @@ describe("阻塞与容量问题不耗尽普通尝试（AC3）", () => {
               probabilities: { matched: 0.9, not_matched: 0.05, uncertain: 0.05 },
             },
             [questionIdForNeed(makeup.id)]: { type: "choice", choice: "not_matched" },
+            [offerQuestionIdForNeed(paper.id)]: { type: "choice", choice: "matched", probabilities: { matched: 0.76, not_matched: 0.14, uncertain: 0.1 } },
+            [offerQuestionIdForNeed(makeup.id)]: { type: "choice", choice: "not_matched" },
           },
         }),
       );
@@ -193,14 +198,14 @@ describe("阻塞与容量问题不耗尽普通尝试（AC3）", () => {
         callSystemOne: callSystemOne as never,
       });
 
-      // 只发一次请求，且同一个请求携带两个独立问题（不是互斥选项）。
+      // 只发一次请求，且同一个请求携带四个成对问题（不是互斥选项）。
       expect(callSystemOne).toHaveBeenCalledTimes(1);
       const [, request] = callSystemOne.mock.calls[0] as unknown as [
         unknown,
         { questions: Record<string, unknown> },
       ];
       expect(Object.keys(request.questions).sort()).toEqual(
-        [questionIdForNeed(paper.id), questionIdForNeed(makeup.id)].sort(),
+        [questionIdForNeed(paper.id), offerQuestionIdForNeed(paper.id), questionIdForNeed(makeup.id), offerQuestionIdForNeed(makeup.id)].sort(),
       );
 
       // 每个需求各自保存结果：命中一个即产生一条通知。
@@ -218,8 +223,8 @@ describe("阻塞与容量问题不耗尽普通尝试（AC3）", () => {
       // 追溯字段与实际调用账本关联。
       const paperRow = evaluations.find((e) => e.needName === "抽纸")!;
       expect(paperRow.modelResult).toBe("matched");
-      expect(paperRow.decisionReason).toBe("matched_confirmed");
-      expect(paperRow.decisionPolicyVersion).toBe("match-confirmation-v1");
+      expect(paperRow.decisionReason).toBe("need_and_offer_confirmed");
+      expect(paperRow.decisionPolicyVersion).toBe("need-offer-confirmation-v1");
       expect(paperRow.jevRequestId).toBeTruthy();
     } finally {
       ctx.close();

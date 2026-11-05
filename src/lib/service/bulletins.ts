@@ -13,7 +13,7 @@ import { getEvaluationRun, getProcessing } from "@/lib/db/repos/evaluation-runs"
 import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
 import { getNotificationByBulletin } from "@/lib/db/repos/notifications";
 import { buildClassificationExplanation } from "@/lib/notify/dispatch";
-import { MATCH_CONFIRMATION_POLICY_VERSION } from "@/lib/jev/match-policy";
+import { NEED_OFFER_CONFIRMATION_POLICY_VERSION } from "@/lib/jev/match-policy";
 import { RULE_VERSION } from "@/lib/domain/constants";
 import { HttpError } from "@/lib/http/json";
 import { parseIntegerParam } from "@/lib/http/query";
@@ -85,7 +85,9 @@ export function describeBulletin(
     (evaluation) =>
       evaluation.result === "matched" &&
       (evaluation.ruleVersion !== RULE_VERSION ||
-        evaluation.decisionPolicyVersion !== MATCH_CONFIRMATION_POLICY_VERSION),
+        evaluation.decisionPolicyVersion !== NEED_OFFER_CONFIRMATION_POLICY_VERSION ||
+        !evaluation.offerAssessment ||
+        !evaluation.decisionPolicy || !("kind" in evaluation.decisionPolicy)),
   );
 
   // 状态以数据库判定为准；`??` 仅兜底理论上的缺失行，不重新实现优先级。
