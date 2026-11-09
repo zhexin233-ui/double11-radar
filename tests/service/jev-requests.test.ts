@@ -346,6 +346,48 @@ describe("连续失败计数与禁用（AC2）", () => {
 });
 
 describe("调用账本与真实结果一次落账（AC6）", () => {
+  it("Liquid d1.1 的费率快照持久化一次，统计沿用已存金额", () => {
+    const ctx = createTestDb();
+    try {
+      const startedAt = new Date("2026-11-07T00:00:00.000Z");
+      const key = addJevKey(ctx.db, { label: "Liquid 试跑", apiKey: "test-liquid" }, KEY);
+      const request = insertInFlightRequest(ctx.db, {
+        keyId: key.id,
+        keyLabel: key.label,
+        keyGeneration: key.generation,
+        purpose: "evaluate",
+        requestedModel: "d1.1",
+        providerOrigin: "https://api.liquid.ai",
+        configVersion: 1,
+        startedAt,
+        leaseUntil: new Date(startedAt.getTime() + 60_000),
+      });
+      const completion = {
+        id: request.id,
+        status: "succeeded" as const,
+        now: startedAt,
+        responseModel: "d1.1",
+        inputTokens: 1_000_000,
+        outputTokens: null,
+      };
+      expect(completeJevRequest(ctx.db, completion).recorded).toBe(true);
+      expect(getJevRequest(ctx.db, request.id)).toMatchObject({
+        costStatus: "known",
+        priceVersion: "liquid-d1.1-2026-11-07",
+        inputRateNanosPerToken: 20,
+        estimatedUsdNanos: 20_000_000,
+      });
+      expect(completeJevRequest(ctx.db, {
+        ...completion,
+        inputTokens: 2_000_000,
+      }).recorded).toBe(false);
+      expect(getJevUsageSummary(ctx.db).knownCostNanos).toBe(20_000_000);
+      expect(getJevRequest(ctx.db, request.id)!.inputTokens).toBe(1_000_000);
+    } finally {
+      ctx.close();
+    }
+  });
+
   it("同一请求重复完成只记一次，金额不翻倍", () => {
     const ctx = createTestDb();
     try {

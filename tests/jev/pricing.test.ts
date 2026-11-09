@@ -4,6 +4,7 @@ import {
   formatUsdFromNanos,
   parseTokenCount,
   OFFICIAL_JE_PROVIDER_HOST,
+  LIQUID_PROVIDER_HOST,
   PRICE_VERSIONS,
 } from "@/lib/jev/pricing";
 import { parseRetryAfterMs } from "@/lib/jev/client";
@@ -112,6 +113,57 @@ describe("estimateCost：公布费率下的美元估算（AC5/AC6）", () => {
     const estimate = estimateCost(officialInput({ inputTokens: 0 }));
     expect(estimate.costStatus).toBe("known");
     expect(estimate.estimatedUsdNanos).toBe(0);
+  });
+});
+
+describe("Liquid d1.1：按官方供应商与响应模型估算费用", () => {
+  const liquidInput = (overrides: Partial<Parameters<typeof estimateCost>[0]> = {}) => officialInput({
+    providerOrigin: `https://${LIQUID_PROVIDER_HOST}`,
+    responseModel: "d1.1",
+    ...overrides,
+  });
+
+  it.each([null, 0, 5_000_000])("百万输入 $0.02，输出 %s 不收费", outputTokens => {
+    expect(estimateCost(liquidInput({ outputTokens }))).toEqual({
+      costStatus: "known",
+      unknownReason: null,
+      priceVersion: "liquid-d1.1-2026-11-07",
+      inputRateNanosPerToken: 20,
+      estimatedUsdNanos: 20_000_000,
+    });
+  });
+
+  it("已知零输入可估算为零，单 Token 金额不舍入成零", () => {
+    expect(estimateCost(liquidInput({ inputTokens: 0 })).estimatedUsdNanos).toBe(0);
+    const one = estimateCost(liquidInput({ inputTokens: 1 }));
+    expect(one.estimatedUsdNanos).toBe(20);
+    expect(formatUsdFromNanos(one.estimatedUsdNanos!)).toBe("0.00000002");
+  });
+
+  it.each([null, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER])(
+    "缺失、非法或计价溢出的输入 %s 保持未知", inputTokens => {
+      const cost = estimateCost(liquidInput({ inputTokens }));
+      expect(cost.costStatus).toBe("unknown");
+      expect(cost.estimatedUsdNanos).toBeNull();
+    },
+  );
+
+  it.each([
+    ["https://api.typesafe.ai", "d1.1"],
+    ["https://api.commandcode.ai", "d1.1"],
+    ["https://api.liquid.ai", "jev-1.13.0"],
+    ["https://api.liquid.ai", "d1"],
+    ["https://api.liquid.ai", "d1-ultra"],
+    ["https://api.liquid.ai", null],
+    ["https://api.liquid.ai.example.com", "d1.1"],
+    ["http://api.liquid.ai", "d1.1"],
+    ["https://api.liquid.ai:8443", "d1.1"],
+    ["http://127.0.0.1:18891", "d1.1"],
+  ])("不为未核实的供应商/模型组合 %s + %s 套价", (providerOrigin, responseModel) => {
+    const cost = estimateCost(liquidInput({ providerOrigin, responseModel }));
+    expect(cost.costStatus).toBe("unknown");
+    expect(cost.estimatedUsdNanos).toBeNull();
+    expect(cost.priceVersion).toBeNull();
   });
 });
 

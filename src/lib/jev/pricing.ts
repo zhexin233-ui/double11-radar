@@ -1,12 +1,13 @@
 import type { JevCostStatus } from "@/lib/domain/types";
 
 /**
- * Jev 费用估算（纯函数，无 I/O）。
+ * 决策模型费用估算（纯函数，无 I/O）。
  *
  * 设计约束（见任务 design.md 第 6 节）：
  * - 官方 Jev 1.13 / `jev-1.13.0` 按**输入**计费：$0.042 / 百万 Token；输出免费；
  * - 金额以整数**纳美元**保存，避免浮点误差；$1 = 1_000_000_000 纳美元，
  *   故每输入 Token = 42 纳美元，1,000,000 Token = 42,000,000 纳美元 = $0.042；
+ * - Liquid 官方 d1.1：$0.02 / 百万输入 Token，即每输入 Token = 20 纳美元；输出免费；
  * - 价格按**响应报告的模型版本**决定；别名 `jev-latest` 只有在响应确认为
  *   `jev-1.13.0` 时才可按该费率计价；
  * - 未知模型、非官方 provider、缺失/非法输入用量一律标 `unknown`，**绝不显示为 $0**；
@@ -19,6 +20,8 @@ export interface PriceVersion {
   version: string;
   /** 覆盖的官方版本化模型 ID（响应 model 必须精确等于其中之一）。 */
   modelIds: readonly string[];
+  /** 该模型费率适用的供应商主机名，禁止跨供应商套价。 */
+  providerHosts: readonly string[];
   /** 每输入 Token 的纳美元费率。 */
   inputNanosPerToken: number;
   /** 每输出 Token 的纳美元费率（当前为 0 = 免费）。 */
@@ -30,10 +33,12 @@ export interface PriceVersion {
 /** 官方或官方转售/底价直连服务端主机名；非已知主机（自建/未知 provider）不套用公布费率。 */
 export const OFFICIAL_JE_PROVIDER_HOST = "api.typesafe.ai";
 export const COMMAND_CODE_PROVIDER_HOST = "api.commandcode.ai";
+export const LIQUID_PROVIDER_HOST = "api.liquid.ai";
 
 export const KNOWN_JE_PROVIDER_HOSTS: readonly string[] = [
   OFFICIAL_JE_PROVIDER_HOST,
   COMMAND_CODE_PROVIDER_HOST,
+  LIQUID_PROVIDER_HOST,
 ];
 
 export const PRICE_VERSIONS: readonly PriceVersion[] = [
@@ -46,9 +51,18 @@ export const PRICE_VERSIONS: readonly PriceVersion[] = [
       "typesafe/jev-1.14.0",
       "typesafe/jev",
     ],
+    providerHosts: [OFFICIAL_JE_PROVIDER_HOST, COMMAND_CODE_PROVIDER_HOST],
     inputNanosPerToken: 42,
     outputNanosPerToken: 0,
     source: "https://docs.typesafe.ai/models.md / https://commandcode.ai/docs/resources/pricing-limits#models",
+  },
+  {
+    version: "liquid-d1.1-2026-11-07",
+    modelIds: ["d1.1"],
+    providerHosts: [LIQUID_PROVIDER_HOST],
+    inputNanosPerToken: 20,
+    outputNanosPerToken: 0,
+    source: "https://www.liquid.ai/pricing",
   },
 ];
 
@@ -134,7 +148,7 @@ export function estimateCost(input: EstimateCostInput): CostEstimate {
   });
 
   if (!isSupportedProvider(input.providerOrigin)) {
-    return unknown("非官方或未支持的 Jev 服务端，无可用公布费率");
+    return unknown("非官方或未支持的模型服务端，无可用公布费率");
   }
 
   const price = findPriceVersion(input.responseModel);
@@ -144,6 +158,9 @@ export function estimateCost(input: EstimateCostInput): CostEstimate {
         ? `未知模型价格（响应模型：${input.responseModel}）`
         : "响应未报告模型版本，无法套用公布费率",
     );
+  }
+  if (!price.providerHosts.some(host => input.providerOrigin === `https://${host}`)) {
+    return unknown("该服务商与响应模型没有对应的公布费率");
   }
 
   const inputTokens = parseTokenCount(input.inputTokens);
