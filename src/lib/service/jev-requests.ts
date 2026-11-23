@@ -169,7 +169,10 @@ export function reserveJevCall(
       );
     }
 
-    const runtimeKeys = listJevRuntimeKeys(db, key);
+    const scopedKeyIds = new Set(allKeys.map((row) => row.id));
+    const runtimeKeys = listJevRuntimeKeys(db, key).filter((runtime) =>
+      scopedKeyIds.has(runtime.id),
+    );
     let candidates = runtimeKeys;
 
     if (input.preferredKeyId) {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestDb, testKey } from "../helpers/db";
 import { addJevKey, updateJevKeySettings } from "@/lib/service/jev-keys";
 import { saveJevConfig } from "@/lib/service/config";
+import { addChannel } from "@/lib/service/model-channels";
 import {
   callJevWithLedger,
   reserveJevCall,
@@ -122,6 +123,49 @@ describe("容量与 Key 选择（AC1）", () => {
     }
   });
 
+  it("自动选择只在当前渠道中分摊负载", () => {
+    const ctx = createTestDb();
+    try {
+      const active = addChannel(ctx.db, {
+        name: "当前渠道",
+        baseUrl: "https://active.example.test",
+        model: "d1.1",
+        isActive: true,
+      });
+      const inactive = addChannel(ctx.db, {
+        name: "备用渠道",
+        baseUrl: "https://inactive.example.test",
+        model: "d1.1",
+      });
+      saveJevConfig(ctx.db, { concurrency: 2 }, KEY);
+      const activeKey = addJevKey(ctx.db, {
+        label: "当前渠道",
+        apiKey: "sk-active",
+        channelId: active.id,
+        baseUrl: active.baseUrl,
+      }, KEY);
+      addJevKey(ctx.db, {
+        label: "备用渠道",
+        apiKey: "sk-inactive",
+        channelId: inactive.id,
+        baseUrl: inactive.baseUrl,
+      }, KEY);
+      const now = new Date("2026-10-14T00:00:00.000Z");
+      requireOk(reserveJevCall(ctx.db, {
+        purpose: "test",
+        preferredKeyId: activeKey.id,
+        now,
+      }, KEY));
+
+      const automatic = requireOk(reserveJevCall(ctx.db, { purpose: "evaluate", now }, KEY));
+      expect(automatic.reservation.keyId).toBe(activeKey.id);
+      expect(automatic.reservation.baseUrl).toBe(active.baseUrl);
+      expect(requestCount(ctx.db)).toBe(2);
+    } finally {
+      ctx.close();
+    }
+  });
+
   it("全局容量跨入口共享：evaluate 与 dry_run 使用同一上限", () => {
     const ctx = createTestDb();
     try {
@@ -145,9 +189,23 @@ describe("容量与 Key 选择（AC1）", () => {
 
       const key = addJevKey(ctx.db, { label: "A", apiKey: "sk-a" }, KEY);
       updateJevKeySettings(ctx.db, key.id, { enabled: false }, KEY);
+      const inactive = addChannel(ctx.db, {
+        name: "另一个渠道",
+        baseUrl: "https://inactive.example.test",
+        model: "d1.1",
+      });
+      addJevKey(ctx.db, {
+        label: "仍可用的非活动渠道密钥",
+        apiKey: "sk-inactive",
+        channelId: inactive.id,
+        baseUrl: inactive.baseUrl,
+      }, KEY);
       const disabled = reserveJevCall(ctx.db, { purpose: "evaluate" }, KEY);
-      expect(disabled.ok).toBe(false);
-      if (!disabled.ok) expect(disabled.reason).toBe("no_key");
+      expect(disabled).toMatchObject({
+        ok: false,
+        reason: "no_key",
+        message: expect.stringContaining("密钥均不可用"),
+      });
       expect(requestCount(ctx.db)).toBe(0);
     } finally {
       ctx.close();
