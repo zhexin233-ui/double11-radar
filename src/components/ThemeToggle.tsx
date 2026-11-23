@@ -7,6 +7,7 @@ import {
   useMantineColorScheme,
   type MantineColorScheme,
 } from "@mantine/core";
+import { MonitorIcon, MoonIcon, SunIcon } from "@/components/ui/Icons";
 
 /** 三种外观状态的展示文案（中文，唯一来源）。 */
 const COLOR_SCHEME_OPTIONS: { value: MantineColorScheme; label: string }[] = [
@@ -29,26 +30,61 @@ const subscribe = () => () => {};
 const getClientSnapshot = () => true;
 const getServerSnapshot = () => false;
 
+function SchemeIcon(props: { scheme: MantineColorScheme; mounted: boolean }) {
+  if (!props.mounted || props.scheme === "auto") return <MonitorIcon />;
+  return props.scheme === "dark" ? <MoonIcon /> : <SunIcon />;
+}
+
 /**
- * 顶部导航的外观切换：
+ * 外观主题切换：
  * - 三态：跟随系统 / 浅色 / 深色；持久化由 Mantine 负责（localStorage）。
- * - 未挂载时只渲染稳定文本「外观」，挂载后再显示当前值，避免 hydration 不匹配。
+ * - 未挂载时渲染稳定占位，挂载后再显示当前值，避免 hydration 不匹配。
  */
-export function ThemeToggle() {
+export function ThemeToggle(props: { variant?: "sidebar" | "compact" } = {}) {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
-  const mounted = useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot);
+  const mounted = useSyncExternalStore(
+    subscribe,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
+  const variant = props.variant ?? "compact";
 
   return (
-    <Menu position="bottom-end" withinPortal>
+    <Menu
+      position={variant === "sidebar" ? "top-start" : "bottom-end"}
+      withinPortal
+    >
       <Menu.Target>
-        <Button variant="default" size="compact-md" aria-label="外观主题">
-          {mounted ? `外观：${LABELS[colorScheme]}` : "外观"}
-        </Button>
+        {variant === "sidebar" ? (
+          <button
+            type="button"
+            className="sidebar-action"
+            aria-label="外观主题"
+          >
+            <span className="sidebar-action-left">
+              <SchemeIcon scheme={colorScheme} mounted={mounted} />
+              <span>外观</span>
+            </span>
+            <span className="sidebar-action-meta">
+              {mounted ? LABELS[colorScheme] : "…"}
+            </span>
+          </button>
+        ) : (
+          <Button
+            variant="default"
+            size="compact-sm"
+            aria-label="外观主题"
+            leftSection={<SchemeIcon scheme={colorScheme} mounted={mounted} />}
+          >
+            {mounted ? LABELS[colorScheme] : "外观"}
+          </Button>
+        )}
       </Menu.Target>
       <Menu.Dropdown>
         {COLOR_SCHEME_OPTIONS.map((option) => (
           <Menu.Item
             key={option.value}
+            leftSection={<SchemeIcon scheme={option.value} mounted={true} />}
             onClick={() => setColorScheme(option.value)}
             rightSection={mounted && colorScheme === option.value ? "✓" : null}
           >

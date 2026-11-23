@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
 import "@mantine/core/styles.css";
 import "./globals.css";
-import {
-  ColorSchemeScript,
-  MantineProvider,
-  mantineHtmlProps,
-} from "@mantine/core";
-import { theme } from "@/theme";
+import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core";
+import { AppThemeProvider } from "@/components/AppThemeProvider";
 
 export const metadata: Metadata = {
   title: "线报需求匹配与推送",
@@ -23,9 +19,7 @@ export default function RootLayout({
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>
       <body>
-        <MantineProvider theme={theme} defaultColorScheme="auto">
-          {children}
-        </MantineProvider>
+        <AppThemeProvider>{children}</AppThemeProvider>
       </body>
     </html>
   );

@@ -21,7 +21,7 @@ export default async function AdminLayout({
   }
 
   return (
-    <div>
+    <div className="admin-shell">
       <a className="skip-link" href="#main-content">
         跳至正文
       </a>

@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 
 /**
- * 内容区块：白色/浅灰面板 + 区块标题 + 可选说明与操作。
+ * 内容区块：
+ * - 默认：顶部发丝线 + 区块标题
+ * - `alt`：纯净纸面容器（1px 边框 + 极轻层次）
  *
  * 只负责展示；不包含数据加载或业务状态。
  */
@@ -31,7 +33,7 @@ export function Section(props: {
         </div>
       ) : null}
       {props.description ? (
-        <p className="muted small reading">{props.description}</p>
+        <p className="section-desc">{props.description}</p>
       ) : null}
       {props.children}
     </section>
