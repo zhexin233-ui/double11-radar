@@ -63,7 +63,10 @@ function enabledBadge(enabled: boolean) {
  * 弹窗内反馈：密钥操作的结果不能只写到页面顶部——弹窗打开时会被遮罩挡住。
  * 三个 Modal body 里各渲染一次，保证用户当前能看到的那一层总有结果。
  */
-function PanelNotice(props: { notice: Notice | null; loadError?: string | null }) {
+function PanelNotice(props: {
+  notice: Notice | null;
+  loadError?: string | null;
+}) {
   return (
     <>
       {props.loadError ? (
@@ -78,26 +81,54 @@ function PanelNotice(props: { notice: Notice | null; loadError?: string | null }
   );
 }
 
-
 function validMinutes(value: number | string): boolean {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 1440;
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 1440
+  );
 }
 
 function AutoReenableControls(props: {
-  enabled: boolean; minutes: number | string; busy: boolean;
-  onEnabled: (value: boolean) => void; onMinutes: (value: number | string) => void;
+  enabled: boolean;
+  minutes: number | string;
+  busy: boolean;
+  onEnabled: (value: boolean) => void;
+  onMinutes: (value: number | string) => void;
 }) {
-  return <Fieldset legend="自动重新启用" style={{ flex: "1 1 100%", minWidth: 0 }}>
-    <div className="stack">
-      <Switch label="连续失败自动停用后，等待指定时间重新启用" checked={props.enabled}
-        onChange={(event) => props.onEnabled(event.currentTarget.checked)} disabled={props.busy} />
-      <NumberInput label="等待分钟数" value={props.minutes} onChange={props.onMinutes}
-        min={1} max={1440} allowDecimal={false} clampBehavior="none"
-        disabled={props.busy || !props.enabled}
-        error={!validMinutes(props.minutes) ? "请输入 1～1440 的整数" : undefined} />
-      <p className="small muted" style={{ margin: 0 }}>从自动停用时刻计时；修改间隔按原停用时刻重算。重新启用不会验证密钥可用性，仍遵守限流冷却。手动停用、替换或清除密钥会取消当前计划。</p>
-    </div>
-  </Fieldset>;
+  return (
+    <Fieldset
+      legend="自动重新启用"
+      style={{ flex: "1 1 100%", minWidth: 0 }}
+    >
+      <div className="stack">
+        <Switch
+          label="连续失败自动停用后，等待指定时间重新启用"
+          checked={props.enabled}
+          onChange={(event) => props.onEnabled(event.currentTarget.checked)}
+          disabled={props.busy}
+        />
+        <NumberInput
+          label="等待分钟数"
+          value={props.minutes}
+          onChange={props.onMinutes}
+          min={1}
+          max={1440}
+          allowDecimal={false}
+          clampBehavior="none"
+          disabled={props.busy || !props.enabled}
+          error={
+            !validMinutes(props.minutes) ? "请输入 1～1440 的整数" : undefined
+          }
+          style={{ maxWidth: 220 }}
+        />
+        <p className="small muted" style={{ margin: 0 }}>
+          从自动停用时刻计时；修改间隔按原停用时刻重算。重新启用不会验证密钥可用性，仍遵守限流冷却。手动停用、替换或清除密钥会取消当前计划。
+        </p>
+      </div>
+    </Fieldset>
+  );
 }
 
 /** 新增密钥表单：只把明文交给服务端加密保存，成功后清空输入。 */
@@ -141,7 +172,7 @@ function JevKeyAddForm(props: {
   }
 
   return (
-    <form className="row" onSubmit={submit}>
+    <form className="row subtle-box" onSubmit={submit}>
       <TextInput
         placeholder="Key 名称，例如：主账号"
         aria-label="Key 名称"
@@ -161,8 +192,13 @@ function JevKeyAddForm(props: {
         disabled={busy}
         style={{ flex: "2 1 260px" }}
       />
-      <AutoReenableControls enabled={autoEnabled} minutes={minutes} busy={busy}
-        onEnabled={setAutoEnabled} onMinutes={setMinutes} />
+      <AutoReenableControls
+        enabled={autoEnabled}
+        minutes={minutes}
+        busy={busy}
+        onEnabled={setAutoEnabled}
+        onMinutes={setMinutes}
+      />
       <Button
         type="submit"
         loading={busy}
@@ -176,7 +212,10 @@ function JevKeyAddForm(props: {
 }
 
 /** 只读密钥表：展示态与单元格语义与旧行内实现一致，操作只剩「编辑」。 */
-function JevKeysTable(props: { rows: JevKeyDto[]; onEdit: (id: string) => void }) {
+function JevKeysTable(props: {
+  rows: JevKeyDto[];
+  onEdit: (id: string) => void;
+}) {
   return (
     <TableScroll label="Jev API 密钥列表" minTableWidth={1100}>
       <table>
@@ -195,27 +234,39 @@ function JevKeysTable(props: { rows: JevKeyDto[]; onEdit: (id: string) => void }
         <tbody>
           {props.rows.map((item) => (
             <tr key={item.id}>
-              <td>{item.label}</td>
-              <td className="small">{secretStateLabel(item.secretState)}</td>
+              <td>
+                <strong>{item.label}</strong>
+              </td>
+              <td className="small mono">
+                {secretStateLabel(item.secretState)}
+              </td>
               <td>{enabledBadge(item.enabled)}</td>
               <td className="small">
-                {item.autoReenableEnabled ? `等待 ${item.autoReenableMinutes} 分钟` : "关闭"}
-                {item.autoReenableAt ? <div>待重新启用：{formatTime(item.autoReenableAt)}</div> : null}
+                {item.autoReenableEnabled
+                  ? `等待 ${item.autoReenableMinutes} 分钟`
+                  : "关闭"}
+                {item.autoReenableAt ? (
+                  <div className="muted mono">
+                    待重新启用：{formatTime(item.autoReenableAt)}
+                  </div>
+                ) : null}
               </td>
-              <td className="small">
+              <td className="small mono">
                 {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
               </td>
               <td className="small">
                 {item.disabledReason ? <div>{item.disabledReason}</div> : null}
-                {item.lastError ? <div className="muted">{item.lastError}</div> : null}
+                {item.lastError ? (
+                  <div className="muted">{item.lastError}</div>
+                ) : null}
                 {!item.disabledReason && !item.lastError ? "—" : null}
               </td>
-              <td className="small">{formatTime(item.lastUsedAt)}</td>
+              <td className="small mono">{formatTime(item.lastUsedAt)}</td>
               <td>
                 <Button
                   type="button"
                   variant="default"
-                  size="sm"
+                  size="xs"
                   aria-label={`编辑「${item.label}」`}
                   onClick={() => props.onEdit(item.id)}
                 >
@@ -253,7 +304,7 @@ function KeysModalBody(props: {
     <div className="stack">
       <PanelNotice notice={props.notice} loadError={props.loadError} />
       <div className="toolbar">
-        <p className="muted small" style={{ margin: 0 }}>
+        <p className="muted small mono" style={{ margin: 0 }}>
           共 {total} 个 Key · {enabledCount} 个启用 · {disabledKeys.length} 个禁用。
         </p>
         <Button
@@ -276,7 +327,7 @@ function KeysModalBody(props: {
         reload={props.reload}
       />
       {total === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
+        <p className="empty">
           还没有配置 Jev 密钥。添加后，后台判断、连接测试与需求试判都会从密钥池调度。
         </p>
       ) : (
@@ -300,9 +351,6 @@ function KeysModalBody(props: {
 
 /**
  * 编辑密钥弹窗 body：保留旧行内的全部能力（重命名 / 密钥变更 / 启停 / 测试 / 删除）。
- *
- * 非破坏性写入（重命名、替换密钥、连接测试）由本组件的 `guard` 直接提交；
- * 清除 / 停用 / 删除一律通过 `onRequestConfirm` 走父级的确认弹窗，不再用浏览器原生确认框。
  */
 function KeyEditForm(props: {
   item: JevKeyDto;
@@ -315,7 +363,9 @@ function KeyEditForm(props: {
   const [secretAction, setSecretAction] = useState<SecretAction>("keep");
   const [secret, setSecret] = useState("");
   const [autoEnabled, setAutoEnabled] = useState(item.autoReenableEnabled);
-  const [minutes, setMinutes] = useState<number | string>(item.autoReenableMinutes);
+  const [minutes, setMinutes] = useState<number | string>(
+    item.autoReenableMinutes,
+  );
   const [busy, setBusy] = useState(false);
 
   const base = `/api/settings/jev/keys/${item.id}`;
@@ -374,7 +424,9 @@ function KeyEditForm(props: {
         keyId: item.id,
       });
       if (!result.ok) {
-        throw new Error(`「${item.label}」连接测试失败：${result.message ?? "未知原因"}`);
+        throw new Error(
+          `「${item.label}」连接测试失败：${result.message ?? "未知原因"}`,
+        );
       }
       return `「${item.label}」连接测试成功：${result.message ?? ""}`;
     });
@@ -386,31 +438,43 @@ function KeyEditForm(props: {
 
   return (
     <div className="stack">
-      <dl className="facts">
-        <dt>密钥状态</dt>
-        <dd>{secretStateLabel(item.secretState)}</dd>
-        <dt>启用状态</dt>
-        <dd>{enabledBadge(item.enabled)}</dd>
-        <dt>连续失败</dt>
-        <dd>
-          {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
-        </dd>
-        <dt>禁用原因 / 最近错误</dt>
-        <dd>
-          {item.disabledReason ? <div>{item.disabledReason}</div> : null}
-          {item.lastError ? <div className="muted">{item.lastError}</div> : null}
-          {!item.disabledReason && !item.lastError ? "—" : null}
-        </dd>
-        <dt>自动重新启用</dt>
-        <dd>{item.autoReenableEnabled ? `等待 ${item.autoReenableMinutes} 分钟` : "关闭"}
-          {item.autoReenableAt ? <div>待重新启用：{formatTime(item.autoReenableAt)}（与限流冷却独立）</div> : null}</dd>
-        <dt>最近使用</dt>
-        <dd>{formatTime(item.lastUsedAt)}</dd>
-        <dt>创建时间</dt>
-        <dd>{formatTime(item.createdAt)}</dd>
-        <dt>更新时间</dt>
-        <dd>{formatTime(item.updatedAt)}</dd>
-      </dl>
+      <div className="subtle-box">
+        <dl className="facts">
+          <dt>密钥状态</dt>
+          <dd className="mono">{secretStateLabel(item.secretState)}</dd>
+          <dt>启用状态</dt>
+          <dd>{enabledBadge(item.enabled)}</dd>
+          <dt>连续失败</dt>
+          <dd className="mono">
+            {item.consecutiveFailures} / {JE_KEY_FAILURE_THRESHOLD}
+          </dd>
+          <dt>禁用原因 / 最近错误</dt>
+          <dd>
+            {item.disabledReason ? <div>{item.disabledReason}</div> : null}
+            {item.lastError ? (
+              <div className="muted">{item.lastError}</div>
+            ) : null}
+            {!item.disabledReason && !item.lastError ? "—" : null}
+          </dd>
+          <dt>自动重新启用</dt>
+          <dd>
+            {item.autoReenableEnabled
+              ? `等待 ${item.autoReenableMinutes} 分钟`
+              : "关闭"}
+            {item.autoReenableAt ? (
+              <div className="muted mono">
+                待重新启用：{formatTime(item.autoReenableAt)}（与限流冷却独立）
+              </div>
+            ) : null}
+          </dd>
+          <dt>最近使用</dt>
+          <dd className="mono">{formatTime(item.lastUsedAt)}</dd>
+          <dt>创建时间</dt>
+          <dd className="mono">{formatTime(item.createdAt)}</dd>
+          <dt>更新时间</dt>
+          <dd className="mono">{formatTime(item.updatedAt)}</dd>
+        </dl>
+      </div>
 
       <TextInput
         defaultValue={item.label}
@@ -425,13 +489,31 @@ function KeyEditForm(props: {
         }}
       />
 
-      <AutoReenableControls enabled={autoEnabled} minutes={minutes} busy={busy}
-        onEnabled={setAutoEnabled} onMinutes={setMinutes} />
-      <Button type="button" variant="default" size="sm" disabled={busy || !validMinutes(minutes)}
-        onClick={() => { void guard(async () => {
-          await apiSend(base, "PATCH", { autoReenableEnabled: autoEnabled, autoReenableMinutes: minutes });
-          return "自动重新启用设置已保存。";
-        }); }} style={{ alignSelf: "flex-start" }}>保存自动重新启用设置</Button>
+      <AutoReenableControls
+        enabled={autoEnabled}
+        minutes={minutes}
+        busy={busy}
+        onEnabled={setAutoEnabled}
+        onMinutes={setMinutes}
+      />
+      <Button
+        type="button"
+        variant="default"
+        size="sm"
+        disabled={busy || !validMinutes(minutes)}
+        onClick={() => {
+          void guard(async () => {
+            await apiSend(base, "PATCH", {
+              autoReenableEnabled: autoEnabled,
+              autoReenableMinutes: minutes,
+            });
+            return "自动重新启用设置已保存。";
+          });
+        }}
+        style={{ alignSelf: "flex-start" }}
+      >
+        保存自动重新启用设置
+      </Button>
 
       <Fieldset legend="密钥">
         <div className="stack">
@@ -480,11 +562,24 @@ function KeyEditForm(props: {
         >
           {item.enabled ? "停用" : "恢复"}
         </Button>
-        {!item.enabled && item.autoDisabledAt ? <Button type="button" variant="default" size="sm"
-          disabled={busy} onClick={() => props.onRequestConfirm("disable", item)}>
-          手动停用并取消当前计划
-        </Button> : null}
-        <Button type="button" variant="default" size="sm" disabled={busy} onClick={testKey}>
+        {!item.enabled && item.autoDisabledAt ? (
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            disabled={busy}
+            onClick={() => props.onRequestConfirm("disable", item)}
+          >
+            手动停用并取消当前计划
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          disabled={busy}
+          onClick={testKey}
+        >
           测试
         </Button>
         <Button
@@ -527,9 +622,6 @@ function purgeKeyNames(keys: JevKeyDto[]): string {
 
 /**
  * 密钥池管理：三个弹窗（管理 / 编辑 / 确认）+ 新增表单 + 只读分页表。
- *
- * `keys` 由页面 `useApiResource` 持有并下传，本组件不复制进 state；
- * 编辑对象每渲染从 `props.keys` 派生，`reload()` 后立即显示最新值。
  */
 export function JevKeysPanel(props: {
   channelId?: string | null;
@@ -542,10 +634,11 @@ export function JevKeysPanel(props: {
 }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
-  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(
+    null,
+  );
   const [confirmBusy, setConfirmBusy] = useState(false);
 
-  // 不存快照：reload() 改变 updatedAt 后编辑弹窗立即显示新值；Key 被删除则自动关闭。
   const editingKey = props.keys.find((key) => key.id === editingKeyId) ?? null;
 
   function closeKeys() {
@@ -579,7 +672,6 @@ export function JevKeysPanel(props: {
     setNotice({ kind: "error", text: message });
   }
 
-  // 破坏性操作共用：成功关确认弹窗并刷新；失败把错误写进弹窗内并保留确认弹窗以便重试。
   async function guard(action: () => Promise<string>): Promise<boolean> {
     setConfirmBusy(true);
     try {
@@ -616,7 +708,6 @@ export function JevKeysPanel(props: {
           await apiSend(`/api/settings/jev/keys/${pending.key.id}`, "DELETE");
           return `已删除 Key「${pending.key.label}」。`;
         case "purge-disabled": {
-          // 服务端在执行时重新判定禁用集合，提示必须用返回数量而不是打开弹窗时的快照。
           const result = await apiSend<BatchDeleteJevKeysResultDto>(
             "/api/settings/jev/keys/batch-delete",
             "POST",
@@ -689,7 +780,9 @@ export function JevKeysPanel(props: {
       >
         <div className="stack">
           <PanelNotice notice={notice} />
-          <p style={{ margin: 0 }}>{pendingConfirm ? confirmText(pendingConfirm) : ""}</p>
+          <p style={{ margin: 0 }}>
+            {pendingConfirm ? confirmText(pendingConfirm) : ""}
+          </p>
           {pendingConfirm?.kind === "purge-disabled" ? (
             <p className="muted small" style={{ margin: 0 }}>
               {purgeKeyNames(pendingConfirm.keys)}

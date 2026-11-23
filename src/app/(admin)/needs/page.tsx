@@ -1,17 +1,15 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Badge, Button, Modal, Switch, TextInput } from "@mantine/core";
+import { Button, Modal, Switch, TextInput } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
-import {
-  type NeedDto,
-  type NeedGroupDto,
-} from "@/components/api-types";
+import { type NeedDto, type NeedGroupDto } from "@/components/api-types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { List, ListItem, Eyebrow } from "@/components/ui/List";
 import { Feedback } from "@/components/ui/Feedback";
+import { StatusBadge } from "@/components/status-badge";
 
 function formatTime(value: string): string {
   const date = new Date(value);
@@ -42,8 +40,9 @@ export default function NeedsPage() {
   // 待删除的分组与需求确认弹窗
   const [pendingDeleteGroup, setPendingDeleteGroup] =
     useState<NeedGroupDto | null>(null);
-  const [pendingDeleteNeed, setPendingDeleteNeed] =
-    useState<NeedDto | null>(null);
+  const [pendingDeleteNeed, setPendingDeleteNeed] = useState<NeedDto | null>(
+    null,
+  );
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -110,33 +109,36 @@ export default function NeedsPage() {
         lead="按分组组织与管理需求。点击分组可在弹窗中查看、添加及编辑组内需求；支持一键开启或关闭整个分组（分组开启且组内项开启时才实际参与判定）。"
       />
 
-      {error && !data ? <Feedback kind="error">加载失败：{error}</Feedback> : null}
+      {error && !data ? (
+        <Feedback kind="error">加载失败：{error}</Feedback>
+      ) : null}
       {error && data ? (
-        <Feedback kind="error">刷新失败：{error}（下方为上次成功数据）</Feedback>
+        <Feedback kind="error">
+          刷新失败：{error}（下方为上次成功数据）
+        </Feedback>
       ) : null}
       {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
 
-      <Section title="新增分组">
+      <Section title="新增分组" alt>
         <form className="row" onSubmit={createGroup}>
           <TextInput
             placeholder="分组名称，例如：日用百货、数码电子"
+            aria-label="新增分组名称"
             value={newGroupName}
             onChange={(event) => setNewGroupName(event.currentTarget.value)}
             maxLength={100}
             style={{ flex: "1 1 300px" }}
           />
-          <Button
-            type="submit"
-            loading={busy}
-            disabled={!newGroupName.trim()}
-          >
+          <Button type="submit" loading={busy} disabled={!newGroupName.trim()}>
             创建分组
           </Button>
         </form>
       </Section>
 
       <Section title="需求分组列表">
-        {loading && !data ? <Feedback kind="loading">正在加载需求分组…</Feedback> : null}
+        {loading && !data ? (
+          <Feedback kind="loading">正在加载需求分组…</Feedback>
+        ) : null}
         {data && groups.length === 0 ? (
           <p className="empty">还没有任何分组。请在上方创建一个新分组。</p>
         ) : null}
@@ -148,17 +150,17 @@ export default function NeedsPage() {
               const enabledCount = needs.filter((n) => n.enabled).length;
 
               const eyebrowItems: ReactNode[] = [
-                `创建于 ${formatTime(group.createdAt)}`,
-                <Badge
+                <StatusBadge
                   key="status"
-                  variant="light"
-                  color={group.enabled ? "blue" : "gray"}
-                  size="sm"
+                  status={group.enabled ? "matched" : "baseline"}
                 >
                   {group.enabled
                     ? `${enabledCount}/${needs.length} 项已生效`
                     : "分组已关闭"}
-                </Badge>,
+                </StatusBadge>,
+                <span key="created" className="mono">
+                  创建于 {formatTime(group.createdAt)}
+                </span>,
               ];
 
               return (
@@ -169,14 +171,7 @@ export default function NeedsPage() {
                       onClick={() => setActiveGroupId(group.id)}
                     >
                       <Eyebrow items={eyebrowItems} />
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                          marginTop: "0.25rem",
-                        }}
-                      >
+                      <div style={{ marginTop: 2 }}>
                         <TextInput
                           key={`${group.id}:name`}
                           defaultValue={group.name}
@@ -189,9 +184,13 @@ export default function NeedsPage() {
                             const next = event.currentTarget.value.trim();
                             if (next && next !== group.name) {
                               void run(() =>
-                                apiSend(`/api/need-groups/${group.id}`, "PATCH", {
-                                  name: next,
-                                }),
+                                apiSend(
+                                  `/api/need-groups/${group.id}`,
+                                  "PATCH",
+                                  {
+                                    name: next,
+                                  },
+                                ),
                               );
                             } else if (!next) {
                               event.currentTarget.value = group.name;
@@ -199,21 +198,25 @@ export default function NeedsPage() {
                           }}
                         />
                       </div>
-                      <div className="list-meta" style={{ marginTop: "0.25rem" }}>
-                        包含 {needs.length} 项需求：
-                        {needs.length === 0
-                          ? "（暂无需求，点击进入添加）"
-                          : needs
-                              .slice(0, 5)
-                              .map((n) => n.name)
-                              .join("、") +
-                            (needs.length > 5 ? ` 等共 ${needs.length} 项` : "")}
+                      <div className="list-meta">
+                        <span>
+                          包含 {needs.length} 项需求：
+                          {needs.length === 0
+                            ? "（暂无需求，点击进入添加）"
+                            : needs
+                                .slice(0, 5)
+                                .map((n) => n.name)
+                                .join("、") +
+                              (needs.length > 5
+                                ? ` 等共 ${needs.length} 项`
+                                : "")}
+                        </span>
                       </div>
                     </div>
 
                     <div className="list-trailing">
                       <Button
-                        variant="light"
+                        variant="default"
                         size="sm"
                         onClick={() => setActiveGroupId(group.id)}
                       >
@@ -261,17 +264,13 @@ export default function NeedsPage() {
         }}
         title={
           activeGroup ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <span style={{ fontWeight: 600, fontSize: "1.1rem" }}>
-                {activeGroup.name}
-              </span>
-              <Badge
-                variant="light"
-                color={activeGroup.enabled ? "blue" : "gray"}
-                size="sm"
+            <div className="row" style={{ gap: "var(--sp-3)" }}>
+              <span>{activeGroup.name}</span>
+              <StatusBadge
+                status={activeGroup.enabled ? "matched" : "baseline"}
               >
                 {activeGroup.enabled ? "分组开启中" : "分组已关闭"}
-              </Badge>
+              </StatusBadge>
             </div>
           ) : (
             "组内需求"
@@ -280,25 +279,23 @@ export default function NeedsPage() {
         size={860}
         centered
       >
-        {activeGroup && (
-          <div className="stack" style={{ gap: "1rem" }}>
-            <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--mantine-color-dimmed)" }}>
+        {activeGroup ? (
+          <div className="stack">
+            <p className="muted small" style={{ margin: 0 }}>
               组内需求可单独编辑名称和备注（离开输入框即自动保存），并支持单个启停与删除。
-              {!activeGroup.enabled && "（当前分组处于关闭状态，组内需求暂不参与判定）"}
+              {!activeGroup.enabled
+                ? "（当前分组处于关闭状态，组内需求暂不参与判定）"
+                : ""}
             </p>
 
             {/* 新增需求表单 */}
             <form
-              className="row"
+              className="row subtle-box"
               onSubmit={(e) => createNeedForGroup(activeGroup.id, e)}
-              style={{
-                padding: "0.75rem",
-                backgroundColor: "var(--mantine-color-default-hover)",
-                borderRadius: "var(--mantine-radius-md)",
-              }}
             >
               <TextInput
                 placeholder="需求名称，例如：抽纸"
+                aria-label="需求名称"
                 value={newNeedName}
                 onChange={(event) => setNewNeedName(event.currentTarget.value)}
                 maxLength={100}
@@ -306,6 +303,7 @@ export default function NeedsPage() {
               />
               <TextInput
                 placeholder="备注（可选），例如：不要湿巾"
+                aria-label="需求备注"
                 value={newNeedNote}
                 onChange={(event) => setNewNeedNote(event.currentTarget.value)}
                 maxLength={500}
@@ -323,16 +321,18 @@ export default function NeedsPage() {
 
             {/* 组内现有需求列表 */}
             {(activeGroup.needs ?? []).length === 0 ? (
-              <p className="empty" style={{ margin: "1rem 0" }}>
-                该组暂无需求，请在上方添加新需求。
-              </p>
+              <p className="empty">该组暂无需求，请在上方添加新需求。</p>
             ) : (
               <div style={{ maxHeight: "55vh", overflowY: "auto" }}>
                 <List>
                   {(activeGroup.needs ?? []).map((need) => {
                     const eyebrowItems: ReactNode[] = [
-                      `v${need.version}`,
-                      `更新于 ${formatTime(need.updatedAt)}`,
+                      <span key="ver" className="mono">
+                        v{need.version}
+                      </span>,
+                      <span key="upd" className="mono">
+                        更新于 {formatTime(need.updatedAt)}
+                      </span>,
                       !activeGroup.enabled ? "所属分组已关闭" : null,
                     ].filter(Boolean);
 
@@ -351,79 +351,81 @@ export default function NeedsPage() {
                               onBlur={(event) => {
                                 const next = event.currentTarget.value.trim();
                                 if (next && next !== need.name) {
+                                  void run(() =>
+                                    apiSend(`/api/needs/${need.id}`, "PATCH", {
+                                      name: next,
+                                    }),
+                                  );
+                                } else if (!next) {
+                                  event.currentTarget.value = need.name;
+                                }
+                              }}
+                            />
+                            <TextInput
+                              key={`${need.id}:${need.version}:note`}
+                              defaultValue={need.note}
+                              aria-label="需求备注"
+                              placeholder="添加备注（可选）"
+                              disabled={busy}
+                              variant="unstyled"
+                              classNames={{ input: "list-note" }}
+                              onBlur={(event) => {
+                                if (event.currentTarget.value !== need.note) {
+                                  void run(() =>
+                                    apiSend(`/api/needs/${need.id}`, "PATCH", {
+                                      note: event.currentTarget.value,
+                                    }),
+                                  );
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="list-trailing">
+                            <Switch
+                              size="sm"
+                              checked={need.enabled}
+                              disabled={busy}
+                              aria-label={
+                                need.enabled ? "停用该需求" : "启用该需求"
+                              }
+                              onChange={(event) =>
                                 void run(() =>
                                   apiSend(`/api/needs/${need.id}`, "PATCH", {
-                                    name: next,
+                                    enabled: event.currentTarget.checked,
                                   }),
-                                );
-                              } else if (!next) {
-                                event.currentTarget.value = need.name;
+                                )
                               }
-                            }}
-                          />
-                          <TextInput
-                            key={`${need.id}:${need.version}:note`}
-                            defaultValue={need.note}
-                            aria-label="需求备注"
-                            placeholder="添加备注（可选）"
-                            disabled={busy}
-                            variant="unstyled"
-                            classNames={{ input: "list-note" }}
-                            onBlur={(event) => {
-                              if (event.currentTarget.value !== need.note) {
-                                void run(() =>
-                                  apiSend(`/api/needs/${need.id}`, "PATCH", {
-                                    note: event.currentTarget.value,
-                                  }),
-                                );
-                              }
-                            }}
-                          />
+                            />
+                            <Button
+                              variant="subtle"
+                              color="red"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => setPendingDeleteNeed(need)}
+                            >
+                              删除
+                            </Button>
+                          </div>
                         </div>
-                        <div className="list-trailing">
-                          <Switch
-                            size="sm"
-                            checked={need.enabled}
-                            disabled={busy}
-                            aria-label={need.enabled ? "停用该需求" : "启用该需求"}
-                            onChange={(event) =>
-                              void run(() =>
-                                apiSend(`/api/needs/${need.id}`, "PATCH", {
-                                  enabled: event.currentTarget.checked,
-                                }),
-                              )
-                            }
-                          />
-                          <Button
-                            variant="subtle"
-                            color="red"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => setPendingDeleteNeed(need)}
-                          >
-                            删除
-                          </Button>
-                        </div>
-                      </div>
-                    </ListItem>
-                  );
-                })}
-              </List>
-            </div>
-          )}
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              </div>
+            )}
 
-          <div className="row" style={{ justifyContent: "flex-end", marginTop: "0.5rem" }}>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setActiveGroupId(null)}
-            >
-              关闭
-            </Button>
+            <div className="row" style={{ justifyContent: "flex-end" }}>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setActiveGroupId(null)}
+              >
+                关闭
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
-    </Modal>
+        ) : null}
+      </Modal>
 
       {/* 删除需求确认弹窗 */}
       <Modal
@@ -467,11 +469,12 @@ export default function NeedsPage() {
         centered
       >
         <div className="stack">
-          <p style={{ margin: 0, color: "var(--mantine-color-red-6)" }}>
+          <p className="error" style={{ margin: 0 }}>
             确定要删除分组「{pendingDeleteGroup?.name}」吗？
           </p>
-          <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--mantine-color-dimmed)" }}>
-            注意：该操作将级联删除该分组下的全部需求（共 {pendingDeleteGroup?.needs?.length ?? 0} 项），历史已判定的线报记录不会丢失。
+          <p className="muted small" style={{ margin: 0 }}>
+            注意：该操作将级联删除该分组下的全部需求（共{" "}
+            {pendingDeleteGroup?.needs?.length ?? 0} 项），历史已判定的线报记录不会丢失。
           </p>
           <div className="row" style={{ justifyContent: "flex-end" }}>
             <Button

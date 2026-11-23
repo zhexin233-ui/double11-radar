@@ -40,7 +40,8 @@ function SecretField(props: {
             ? "无法解密（加密密钥可能已变更）"
             : props.state.configured
               ? `已配置 ${props.state.masked ?? ""}`
-              : "未配置"}）
+              : "未配置"}
+          ）
         </>
       }
     >
@@ -79,8 +80,12 @@ function PushForm(props: {
   const [deviceKeyAction, setDeviceKeyAction] = useState<SecretAction>("keep");
   const [deviceKey, setDeviceKey] = useState("");
 
-  const [feishuEnabled, setFeishuEnabled] = useState(props.view.config.feishu.enabled);
-  const [keywordPrefix, setKeywordPrefix] = useState(props.view.config.feishu.keywordPrefix);
+  const [feishuEnabled, setFeishuEnabled] = useState(
+    props.view.config.feishu.enabled,
+  );
+  const [keywordPrefix, setKeywordPrefix] = useState(
+    props.view.config.feishu.keywordPrefix,
+  );
   const [signingEnabled, setSigningEnabled] = useState(
     props.view.config.feishu.signingEnabled,
   );
@@ -127,7 +132,10 @@ function PushForm(props: {
     setBusy(true);
     setNotice(null);
     try {
-      const bark: Record<string, unknown> = { enabled: barkEnabled, serverUrl: barkServer };
+      const bark: Record<string, unknown> = {
+        enabled: barkEnabled,
+        serverUrl: barkServer,
+      };
       if (deviceKeyAction === "clear") bark.deviceKey = { clear: true };
       else if (deviceKeyAction === "replace") bark.deviceKey = deviceKey;
 
@@ -141,7 +149,10 @@ function PushForm(props: {
       if (signingAction === "clear") feishu.signingSecret = { clear: true };
       else if (signingAction === "replace") feishu.signingSecret = signingSecret;
 
-      await apiSend<NotifyConfigDto>("/api/settings/notify", "PUT", { bark, feishu });
+      await apiSend<NotifyConfigDto>("/api/settings/notify", "PUT", {
+        bark,
+        feishu,
+      });
       props.onSaved();
     } catch (caught) {
       props.onError(errorMessage(caught));
@@ -153,7 +164,22 @@ function PushForm(props: {
   return (
     <form className="stack" onSubmit={save}>
       <div className="grid-2">
-        <Section title="Bark" headingLevel={2}>
+        <Section
+          title="Bark"
+          headingLevel={2}
+          alt
+          actions={
+            <Button
+              type="button"
+              variant="default"
+              size="xs"
+              loading={busy}
+              onClick={() => void test("bark")}
+            >
+              测试 Bark
+            </Button>
+          }
+        >
           <div className="stack">
             <Switch
               checked={barkEnabled}
@@ -175,25 +201,31 @@ function PushForm(props: {
               onValue={setDeviceKey}
               placeholder="Bark 设备 Key"
             />
-            <div className="row">
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                loading={busy}
-                onClick={() => void test("bark")}
-              >
-                测试 Bark
-              </Button>
-            </div>
           </div>
         </Section>
 
-        <Section title="飞书群机器人" headingLevel={2}>
+        <Section
+          title="飞书群机器人"
+          headingLevel={2}
+          alt
+          actions={
+            <Button
+              type="button"
+              variant="default"
+              size="xs"
+              loading={busy}
+              onClick={() => void test("feishu")}
+            >
+              测试飞书
+            </Button>
+          }
+        >
           <div className="stack">
             <Switch
               checked={feishuEnabled}
-              onChange={(event) => setFeishuEnabled(event.currentTarget.checked)}
+              onChange={(event) =>
+                setFeishuEnabled(event.currentTarget.checked)
+              }
               label="启用飞书推送"
             />
             <SecretField
@@ -207,7 +239,9 @@ function PushForm(props: {
             />
             <Switch
               checked={signingEnabled}
-              onChange={(event) => setSigningEnabled(event.currentTarget.checked)}
+              onChange={(event) =>
+                setSigningEnabled(event.currentTarget.checked)
+              }
               label="开启签名校验（需同时配置签名密钥）"
             />
             <SecretField
@@ -225,17 +259,6 @@ function PushForm(props: {
               onChange={(event) => setKeywordPrefix(event.currentTarget.value)}
               maxLength={100}
             />
-            <div className="row">
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                loading={busy}
-                onClick={() => void test("feishu")}
-              >
-                测试飞书
-              </Button>
-            </div>
           </div>
         </Section>
       </div>
@@ -285,7 +308,11 @@ export default function PushPage() {
 
       {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
       {saved ? <Feedback kind="success">推送渠道配置已保存。</Feedback> : null}
-      {error ? <Feedback kind="error">刷新失败：{error}（下方为上次成功数据）</Feedback> : null}
+      {error ? (
+        <Feedback kind="error">
+          刷新失败：{error}（下方为上次成功数据）
+        </Feedback>
+      ) : null}
 
       <PushForm
         key={data.version}

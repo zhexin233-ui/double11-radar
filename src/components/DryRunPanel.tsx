@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@mantine/core";
+import { Button, Checkbox, Textarea, TextInput } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import {
   EVALUATION_LABELS,
@@ -10,7 +10,10 @@ import {
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
-import { MatchAssessment, MatchDecisionTrace } from "@/components/MatchAssessment";
+import {
+  MatchAssessment,
+  MatchDecisionTrace,
+} from "@/components/MatchAssessment";
 import { StatusBadge } from "@/components/status-badge";
 
 /**
@@ -20,10 +23,26 @@ import { StatusBadge } from "@/components/status-badge";
  */
 
 const EXAMPLES = [
-  { label: "正例：抽纸", title: "心相印超韧抽纸 24包", content: "心相印超韧抽纸 24包 9.9元包邮" },
-  { label: "正例：软抽", title: "维达软抽家庭装 6包", content: "维达软抽家庭装 6包 19.9元" },
-  { label: "反例：湿巾", title: "心相印湿巾80片", content: "心相印湿巾80片 9.9元" },
-  { label: "反例：卷纸", title: "心相印卷纸12卷", content: "心相印卷纸12卷 19.9元" },
+  {
+    label: "正例：抽纸",
+    title: "心相印超韧抽纸 24包",
+    content: "心相印超韧抽纸 24包 9.9元包邮",
+  },
+  {
+    label: "正例：软抽",
+    title: "维达软抽家庭装 6包",
+    content: "维达软抽家庭装 6包 19.9元",
+  },
+  {
+    label: "反例：湿巾",
+    title: "心相印湿巾80片",
+    content: "心相印湿巾80片 9.9元",
+  },
+  {
+    label: "反例：卷纸",
+    title: "心相印卷纸12卷",
+    content: "心相印卷纸12卷 19.9元",
+  },
   { label: "待确认：只有品牌", title: "心相印9.9元", content: "心相印9.9元" },
 ];
 
@@ -35,9 +54,9 @@ export function DryRunPanel() {
   const [mall, setMall] = useState("");
   const [price, setPrice] = useState("");
   const [useMockNeeds, setUseMockNeeds] = useState(false);
-  const [mockNeeds, setMockNeeds] = useState<Array<{ name: string; note: string }>>([
-    { name: "抽纸", note: "包含抽纸、面巾纸、软抽，排除湿巾、卷纸" },
-  ]);
+  const [mockNeeds, setMockNeeds] = useState<
+    Array<{ name: string; note: string }>
+  >([{ name: "抽纸", note: "包含抽纸、面巾纸、软抽，排除湿巾、卷纸" }]);
   const [result, setResult] = useState<DryRunResultDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +65,11 @@ export function DryRunPanel() {
     setMockNeeds((prev) => [...prev, { name: "", note: "" }]);
   }
 
-  function updateMockNeed(index: number, field: "name" | "note", val: string) {
+  function updateMockNeed(
+    index: number,
+    field: "name" | "note",
+    val: string,
+  ) {
     setMockNeeds((prev) =>
       prev.map((item, i) => (i === index ? { ...item, [field]: val } : item)),
     );
@@ -74,8 +97,12 @@ export function DryRunPanel() {
           category: category || undefined,
           brand: brand || undefined,
           mall: mall || undefined,
-          price: priceValue !== null && Number.isFinite(priceValue) ? priceValue : null,
-          mockNeeds: filteredMock && filteredMock.length > 0 ? filteredMock : undefined,
+          price:
+            priceValue !== null && Number.isFinite(priceValue)
+              ? priceValue
+              : null,
+          mockNeeds:
+            filteredMock && filteredMock.length > 0 ? filteredMock : undefined,
         }),
       );
     } catch (caught) {
@@ -90,6 +117,7 @@ export function DryRunPanel() {
       id="jev-dry-run"
       className="anchor-target"
       title="需求试判（仅验收用）"
+      alt
       description={
         <>
           粘贴一段线报样例，用与生产相同的问题与解析逻辑调用真实 Jev，
@@ -100,13 +128,14 @@ export function DryRunPanel() {
       }
     >
       <div className="stack">
-        <div className="row small">
+        <div className="row" style={{ gap: "var(--sp-2)" }}>
+          <span className="muted small">快速填充：</span>
           {EXAMPLES.map((example) => (
             <Button
               key={example.label}
               type="button"
               variant="default"
-              size="sm"
+              size="xs"
               onClick={() => {
                 setTitle(example.title);
                 setContent(example.content);
@@ -120,86 +149,92 @@ export function DryRunPanel() {
         </div>
 
         <form className="stack" onSubmit={run}>
-          <label className="field">
-            线报标题（必填）
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              maxLength={500}
-              required
-            />
-          </label>
-          <label className="field">
-            正文（可选）
-            <textarea
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              rows={3}
-              maxLength={5000}
-            />
-          </label>
+          <TextInput
+            label="线报标题（必填）"
+            value={title}
+            onChange={(event) => setTitle(event.currentTarget.value)}
+            maxLength={500}
+            required
+          />
+          <Textarea
+            label="正文（可选）"
+            value={content}
+            onChange={(event) => setContent(event.currentTarget.value)}
+            rows={3}
+            maxLength={5000}
+          />
           <div className="grid-2">
-            <label className="field">
-              品类（可选）
-              <input
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-              />
-            </label>
-            <label className="field">
-              品牌（可选）
-              <input value={brand} onChange={(event) => setBrand(event.target.value)} />
-            </label>
-            <label className="field">
-              商城（可选）
-              <input value={mall} onChange={(event) => setMall(event.target.value)} />
-            </label>
-            <label className="field">
-              价格（可选，留空表示来源未提供）
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={price}
-                onChange={(event) => setPrice(event.target.value)}
-              />
-            </label>
+            <TextInput
+              label="品类（可选）"
+              value={category}
+              onChange={(event) => setCategory(event.currentTarget.value)}
+            />
+            <TextInput
+              label="品牌（可选）"
+              value={brand}
+              onChange={(event) => setBrand(event.currentTarget.value)}
+            />
+            <TextInput
+              label="商城（可选）"
+              value={mall}
+              onChange={(event) => setMall(event.currentTarget.value)}
+            />
+            <TextInput
+              label="价格（可选，留空表示来源未提供）"
+              type="number"
+              step="0.01"
+              min="0"
+              value={price}
+              onChange={(event) => setPrice(event.currentTarget.value)}
+            />
           </div>
 
-          <div style={{ marginTop: "var(--sp-2)", padding: "var(--sp-3)", background: "var(--surface-alt)", borderRadius: "var(--r-control)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--sp-2)" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", fontWeight: 500, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={useMockNeeds}
-                  onChange={(e) => setUseMockNeeds(e.target.checked)}
-                />
-                启用模拟需求试判（未开启真实需求或测试独立规则时使用）
-              </label>
-              {useMockNeeds && (
-                <Button type="button" size="xs" variant="subtle" onClick={addMockNeed}>
+          <div className="subtle-box stack-sm">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <Checkbox
+                checked={useMockNeeds}
+                onChange={(e) => setUseMockNeeds(e.currentTarget.checked)}
+                label="启用模拟需求试判（未开启真实需求或测试独立规则时使用）"
+              />
+              {useMockNeeds ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="default"
+                  onClick={addMockNeed}
+                >
                   + 添加模拟需求
                 </Button>
-              )}
+              ) : null}
             </div>
 
-            {useMockNeeds && (
-              <div className="stack" style={{ gap: "var(--sp-2)" }}>
+            {useMockNeeds ? (
+              <div className="stack-sm" style={{ marginTop: "var(--sp-2)" }}>
                 {mockNeeds.map((m, idx) => (
-                  <div key={idx} style={{ display: "flex", gap: "var(--sp-2)", alignItems: "flex-start" }}>
-                    <input
-                      style={{ width: "160px" }}
+                  <div
+                    key={idx}
+                    className="row"
+                    style={{ alignItems: "flex-start", gap: "var(--sp-2)" }}
+                  >
+                    <TextInput
+                      style={{ flex: "0 1 180px" }}
                       placeholder="需求名称（如 抽纸）"
+                      aria-label="模拟需求名称"
                       value={m.name}
-                      onChange={(e) => updateMockNeed(idx, "name", e.target.value)}
+                      onChange={(e) =>
+                        updateMockNeed(idx, "name", e.currentTarget.value)
+                      }
                     />
-                    <input
-                      style={{ flex: 1 }}
+                    <TextInput
+                      style={{ flex: "1 1 260px" }}
                       placeholder="判定标准/说明（如 包含面巾纸，排除湿巾）"
+                      aria-label="模拟需求说明"
                       value={m.note}
-                      onChange={(e) => updateMockNeed(idx, "note", e.target.value)}
+                      onChange={(e) =>
+                        updateMockNeed(idx, "note", e.currentTarget.value)
+                      }
                     />
-                    {mockNeeds.length > 1 && (
+                    {mockNeeds.length > 1 ? (
                       <Button
                         type="button"
                         size="xs"
@@ -209,11 +244,11 @@ export function DryRunPanel() {
                       >
                         删除
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="row">
@@ -235,7 +270,7 @@ export function DryRunPanel() {
             </Feedback>
           ) : (
             <div className="stack">
-              <p className="muted small" style={{ margin: 0 }}>
+              <p className="muted small mono" style={{ margin: 0 }}>
                 使用模型 {result.model || "—"}，规则版本 {result.ruleVersion}，配置版本{" "}
                 {result.configVersion}，共 {result.needsCount} 个启用需求。
               </p>
@@ -255,9 +290,11 @@ export function DryRunPanel() {
                       return (
                         <tr key={item.needId}>
                           <td>
-                            {item.needName}
+                            <strong>{item.needName}</strong>
                             {item.needNote ? (
-                              <div className="muted small">备注：{item.needNote}</div>
+                              <div className="muted small">
+                                备注：{item.needNote}
+                              </div>
                             ) : null}
                           </td>
                           <td>
@@ -280,7 +317,9 @@ export function DryRunPanel() {
                               reason={item.decisionReason}
                               policyVersion={item.decisionPolicyVersion}
                               policy={item.decisionPolicy}
-                              matchedProbability={item.probabilities?.matched ?? null}
+                              matchedProbability={
+                                item.probabilities?.matched ?? null
+                              }
                               requestId={item.jevRequestId}
                             />
                           </td>

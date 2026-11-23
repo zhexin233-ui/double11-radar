@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  Badge,
   Button,
   Fieldset,
   Modal,
@@ -29,16 +28,13 @@ import {
   EVALUATION_MODE_OPTIONS,
   JE_CONCURRENCY_RANGE,
   JE_JOBS_PER_ROUND_RANGE,
-  JE_KEY_FAILURE_THRESHOLD,
   JEV_USAGE_BY_KEY_PAGE_SIZE,
   JEV_USAGE_BY_KEY_PREVIEW,
   MAX_REGEX_RULE_LENGTH,
   MAX_REGEX_RULES,
   type EvaluationModeDto,
   type JevConfigDto,
-  type JevKeyDto,
   type JevSettingsDto,
-  type JevUsageByKeyDto,
   type JevUsageDto,
   type ModelChannelDto,
   type TestResultDto,
@@ -53,7 +49,6 @@ function toNumber(value: number | string): number {
 /** 渠道管理组件 */
 function ChannelManager(props: {
   channels: ModelChannelDto[];
-  activeChannel: ModelChannelDto | null;
   onActivated: () => Promise<void>;
   onReload: () => Promise<void>;
   onError: (msg: string) => void;
@@ -64,6 +59,9 @@ function ChannelManager(props: {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [timeoutMs, setTimeoutMs] = useState(30000);
+  const [pendingDelete, setPendingDelete] = useState<ModelChannelDto | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
 
   function openCreate() {
@@ -124,11 +122,11 @@ function ChannelManager(props: {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("确认删除此渠道？")) return;
+  async function confirmDelete(channel: ModelChannelDto) {
     setBusy(true);
     try {
-      await apiSend(`/api/settings/channels/${id}`, "DELETE");
+      await apiSend(`/api/settings/channels/${channel.id}`, "DELETE");
+      setPendingDelete(null);
       await props.onReload();
     } catch (err) {
       props.onError(errorMessage(err));
@@ -138,21 +136,21 @@ function ChannelManager(props: {
   }
 
   return (
-    <div className="stack" style={{ marginTop: "var(--sp-3)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <div className="stack" style={{ marginTop: "var(--sp-5)" }}>
+      <div className="section-head" style={{ marginBottom: 0 }}>
         <div>
-          <h3 style={{ margin: 0 }}>渠道列表</h3>
-          <p className="muted small" style={{ margin: "var(--sp-1) 0 0 0" }}>
+          <h3>渠道列表</h3>
+          <p className="muted small" style={{ margin: "4px 0 0" }}>
             可配置多个模型渠道服务地址，并在需要时一键切换启用渠道。
           </p>
         </div>
-        <Button size="xs" variant="default" onClick={openCreate} disabled={busy}>
-          + 添加渠道
+        <Button size="sm" variant="default" onClick={openCreate} disabled={busy}>
+          添加渠道
         </Button>
       </div>
 
       <TableScroll label="模型渠道列表">
-        <table className="table" style={{ width: "100%" }}>
+        <table>
           <thead>
             <tr>
               <th>渠道名称</th>
@@ -172,31 +170,25 @@ function ChannelManager(props: {
                 <td>
                   <code>{ch.baseUrl}</code>
                 </td>
-                <td>{ch.model}</td>
-                <td>{ch.timeoutMs}ms</td>
+                <td className="mono">{ch.model}</td>
+                <td className="mono">{ch.timeoutMs}ms</td>
                 <td>
-                  {ch.isActive ? (
-                    <Badge color="green" variant="light">
-                      当前启用
-                    </Badge>
-                  ) : (
-                    <Badge color="gray" variant="outline">
-                      未启用
-                    </Badge>
-                  )}
+                  <StatusBadge status={ch.isActive ? "matched" : "baseline"}>
+                    {ch.isActive ? "当前启用" : "未启用"}
+                  </StatusBadge>
                 </td>
                 <td>
-                  <div style={{ display: "flex", gap: "var(--sp-1)" }}>
-                    {!ch.isActive && (
+                  <div className="row" style={{ gap: "var(--sp-1)" }}>
+                    {!ch.isActive ? (
                       <Button
                         size="xs"
-                        variant="light"
+                        variant="default"
                         onClick={() => void handleActivate(ch.id)}
                         disabled={busy}
                       >
                         启用
                       </Button>
-                    )}
+                    ) : null}
                     <Button
                       size="xs"
                       variant="subtle"
@@ -205,17 +197,17 @@ function ChannelManager(props: {
                     >
                       编辑
                     </Button>
-                    {!ch.isActive && (
+                    {!ch.isActive ? (
                       <Button
                         size="xs"
                         variant="subtle"
                         color="red"
-                        onClick={() => void handleDelete(ch.id)}
+                        onClick={() => setPendingDelete(ch)}
                         disabled={busy}
                       >
                         删除
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -259,15 +251,53 @@ function ChannelManager(props: {
             value={timeoutMs}
             onChange={(v) => setTimeoutMs(toNumber(v))}
           />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--sp-2)", marginTop: "var(--sp-2)" }}>
-            <Button variant="default" onClick={() => setModalOpened(false)} disabled={busy}>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setModalOpened(false)}
+              disabled={busy}
+            >
               取消
             </Button>
-            <Button type="submit" loading={busy}>
+            <Button type="submit" size="sm" loading={busy}>
               保存
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        opened={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title="删除模型渠道"
+        centered
+      >
+        <div className="stack">
+          <p style={{ margin: 0 }}>
+            确认删除渠道「{pendingDelete?.name}」？删除后不会影响历史调用账本记录。
+          </p>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <Button
+              variant="default"
+              size="sm"
+              disabled={busy}
+              onClick={() => setPendingDelete(null)}
+            >
+              取消
+            </Button>
+            <Button
+              color="red"
+              size="sm"
+              loading={busy}
+              onClick={() => {
+                if (pendingDelete) void confirmDelete(pendingDelete);
+              }}
+            >
+              确认删除
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
@@ -280,7 +310,9 @@ function ConnectionScheduleForm(props: {
   onError: (message: string) => void;
 }) {
   const [concurrency, setConcurrency] = useState(props.view.config.concurrency);
-  const [jobsPerRound, setJobsPerRound] = useState(props.view.config.jobsPerRound);
+  const [jobsPerRound, setJobsPerRound] = useState(
+    props.view.config.jobsPerRound,
+  );
   const [busy, setBusy] = useState(false);
 
   async function save(event: React.FormEvent) {
@@ -303,7 +335,7 @@ function ConnectionScheduleForm(props: {
   return (
     <form className="stack form-narrow" onSubmit={save}>
       <div className="grid-2">
-        <div className="stack">
+        <div className="stack-sm">
           <NumberInput
             label="全局并发数"
             min={JE_CONCURRENCY_RANGE.min}
@@ -312,11 +344,13 @@ function ConnectionScheduleForm(props: {
             onChange={(value) => setConcurrency(toNumber(value))}
           />
           <span className="muted small">
-            <strong>全局并发上限 {JE_CONCURRENCY_RANGE.min}—{JE_CONCURRENCY_RANGE.max}</strong>
+            <strong>
+              全局并发上限 {JE_CONCURRENCY_RANGE.min}—{JE_CONCURRENCY_RANGE.max}
+            </strong>
             （默认 {JE_CONCURRENCY_RANGE.min} = 串行）。所有入口共享，增加密钥数量不会放大并发。
           </span>
         </div>
-        <div className="stack">
+        <div className="stack-sm">
           <NumberInput
             label="每轮判断任务预算"
             min={JE_JOBS_PER_ROUND_RANGE.min}
@@ -329,7 +363,7 @@ function ConnectionScheduleForm(props: {
           </span>
         </div>
       </div>
-      <div className="row" style={{ marginTop: "var(--sp-2)" }}>
+      <div className="row">
         <Button type="submit" loading={busy}>
           保存调度配置
         </Button>
@@ -389,7 +423,7 @@ function StrategyForm(props: {
                   value={option.value}
                   disabled={busy}
                   label={
-                    <span className="stack" style={{ gap: "var(--sp-1)" }}>
+                    <span className="stack-sm" style={{ gap: 2 }}>
                       <strong>{option.label}</strong>
                       <span className="muted small">{option.description}</span>
                     </span>
@@ -400,7 +434,7 @@ function StrategyForm(props: {
           </Radio.Group>
 
           {evaluationMode === "regex_gate" ? (
-            <div className="stack" style={{ marginTop: "var(--sp-2)" }}>
+            <div className="stack-sm">
               <Textarea
                 label="全局正则规则（一行一条，任意命中即放行）"
                 rows={6}
@@ -409,16 +443,19 @@ function StrategyForm(props: {
                 spellCheck={false}
                 aria-label="全局正则规则"
                 placeholder={"抽纸|软抽\n湿巾|洗脸巾"}
-                onChange={(event) => setRegexRulesText(event.currentTarget.value)}
+                styles={{ input: { fontFamily: "var(--font-mono)" } }}
+                onChange={(event) =>
+                  setRegexRulesText(event.currentTarget.value)
+                }
               />
               <span className="muted small">
-                直接写 JS 正则 source，<strong>不要首尾斜杠</strong>，固定忽略大小写与 Unicode；
-                空白行忽略，相同规则去重。最多 {MAX_REGEX_RULES} 条，每条最多{" "}
-                {MAX_REGEX_RULE_LENGTH} 个字符，合计不超过 16 KiB。
+                直接写 JS 正则 source，<strong>不要首尾斜杠</strong>，固定忽略大小写与
+                Unicode； 空白行忽略，相同规则去重。最多 {MAX_REGEX_RULES}{" "}
+                条，每条最多 {MAX_REGEX_RULE_LENGTH} 个字符，合计不超过 16 KiB。
               </span>
             </div>
           ) : (
-            <p className="muted small" style={{ margin: "var(--sp-1) 0 0 0" }}>
+            <p className="muted small" style={{ margin: 0 }}>
               已保存的全局正则规则会保留；切换到「正则预筛后逐条判断」即可查看与编辑。
             </p>
           )}
@@ -456,7 +493,11 @@ function JevUsagePanel(props: {
   if (!props.usage) return null;
 
   const { summary, byKey, recent } = props.usage;
-  const safeByKeyPage = clampPage(byKeyPage, byKey.length, JEV_USAGE_BY_KEY_PAGE_SIZE);
+  const safeByKeyPage = clampPage(
+    byKeyPage,
+    byKey.length,
+    JEV_USAGE_BY_KEY_PAGE_SIZE,
+  );
   const previewKeys = byKey.slice(0, JEV_USAGE_BY_KEY_PREVIEW);
 
   const channelSelectOptions = [
@@ -469,7 +510,7 @@ function JevUsagePanel(props: {
 
   return (
     <div className="stack">
-      <div style={{ maxWidth: 320, marginBottom: "var(--sp-2)" }}>
+      <div style={{ maxWidth: 320 }}>
         <Select
           label="筛选渠道"
           placeholder="选择渠道"
@@ -479,111 +520,139 @@ function JevUsagePanel(props: {
         />
       </div>
 
-      <div className="grid-4">
-        <div className="stack" style={{ gap: 2 }}>
-          <span className="muted small">总请求数</span>
-          <span style={{ fontSize: "1.4rem", fontWeight: 600 }}>{summary.totalRequests}</span>
+      <div className="stats">
+        <div className="stat-cell">
+          <div className="stat-label">总请求数</div>
+          <div className="stat-value">{summary.totalRequests}</div>
         </div>
-        <div className="stack" style={{ gap: 2 }}>
-          <span className="muted small">估算总费用</span>
-          <span style={{ fontSize: "1.4rem", fontWeight: 600, color: "var(--color-primary)" }}>
-            {summary.knownCostUsd}
-          </span>
+        <div className="stat-cell">
+          <div className="stat-label">估算总费用</div>
+          <div className="stat-value mono">{summary.knownCostUsd}</div>
         </div>
-        <div className="stack" style={{ gap: 2 }}>
-          <span className="muted small">失败请求</span>
-          <span style={{ fontSize: "1.4rem", fontWeight: 600 }}>{summary.failedCount}</span>
+        <div className="stat-cell">
+          <div className="stat-label">失败请求</div>
+          <div
+            className={
+              summary.failedCount > 0 ? "stat-value error" : "stat-value"
+            }
+          >
+            {summary.failedCount}
+          </div>
         </div>
-        <div className="stack" style={{ gap: 2 }}>
-          <span className="muted small">输入 / 输出 Token</span>
-          <span style={{ fontSize: "1.1rem", fontWeight: 500 }}>
+        <div className="stat-cell">
+          <div className="stat-label">输入 / 输出 Token</div>
+          <div
+            className="stat-value mono"
+            style={{ fontSize: "clamp(1.05rem, 1.6vw, 1.35rem)" }}
+          >
             {summary.inputTokensKnown} / {summary.outputTokensKnown}
-          </span>
+          </div>
         </div>
       </div>
 
-      <div style={{ marginTop: "var(--sp-3)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h4 style={{ margin: 0 }}>各 Key 用量 (前 {JEV_USAGE_BY_KEY_PREVIEW} 个)</h4>
-          {byKey.length > JEV_USAGE_BY_KEY_PREVIEW && (
-            <Button size="xs" variant="subtle" onClick={() => setByKeyOpened(true)}>
+      <div className="stack-sm">
+        <div className="section-head" style={{ marginBottom: 0 }}>
+          <h3>各 Key 用量（前 {JEV_USAGE_BY_KEY_PREVIEW} 个）</h3>
+          {byKey.length > JEV_USAGE_BY_KEY_PREVIEW ? (
+            <Button
+              size="xs"
+              variant="default"
+              onClick={() => setByKeyOpened(true)}
+            >
               查看全部 ({byKey.length})
             </Button>
-          )}
+          ) : null}
         </div>
-        <TableScroll label="各 Key 用量预览">
-          <table className="table" style={{ width: "100%" }}>
-            <thead>
-              <tr>
-                <th>Key 名称</th>
-                <th>请求数</th>
-                <th>估算费用</th>
-                <th>失败数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {previewKeys.map((item) => (
-                <tr key={item.keyId ?? "unknown"}>
-                  <td>{item.keyLabel ?? "未记录 Key"}</td>
-                  <td>{item.requestCount}</td>
-                  <td>{item.knownCostUsd}</td>
-                  <td>{item.failedCount}</td>
+        {previewKeys.length === 0 ? (
+          <p className="empty">暂无各 Key 用量记录。</p>
+        ) : (
+          <TableScroll label="各 Key 用量预览">
+            <table>
+              <thead>
+                <tr>
+                  <th>Key 名称</th>
+                  <th>请求数</th>
+                  <th>估算费用</th>
+                  <th>失败数</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableScroll>
+              </thead>
+              <tbody>
+                {previewKeys.map((item) => (
+                  <tr key={item.keyId ?? "unknown"}>
+                    <td>{item.keyLabel ?? "未记录 Key"}</td>
+                    <td className="mono">{item.requestCount}</td>
+                    <td className="mono">{item.knownCostUsd}</td>
+                    <td className={item.failedCount > 0 ? "mono error" : "mono"}>
+                      {item.failedCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+        )}
       </div>
 
-      <div style={{ marginTop: "var(--sp-3)" }}>
-        <h4 style={{ margin: "0 0 var(--sp-1) 0" }}>最近调用账本</h4>
-        <TableScroll label="最近调用账本">
-          <table className="table" style={{ width: "100%" }}>
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>用途</th>
-                <th>Key / 服务地址</th>
-                <th>状态</th>
-                <th>HTTP / 耗时</th>
-                <th>估算费用</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.items.map((req) => (
-                <tr key={req.id}>
-                  <td>{formatTime(req.startedAt)}</td>
-                  <td>{req.purposeLabel}</td>
-                  <td>
-                    <div>{req.keyLabel ?? "—"}</div>
-                    {req.baseUrl && <div className="muted small">{req.baseUrl}</div>}
-                  </td>
-                  <td>
-                    <StatusBadge
-                      status={
-                        req.status === "succeeded"
-                          ? "matched"
-                          : req.status === "failed"
-                            ? "failed"
-                            : "baseline"
-                      }
-                    >
-                      {req.statusLabel}
-                    </StatusBadge>
-                  </td>
-                  <td>{req.httpStatus ?? "—"}</td>
-                  <td>{req.estimatedUsd ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableScroll>
-        <Pagination
-          page={props.page}
-          total={recent.total}
-          pageSize={USAGE_PAGE_SIZE}
-          onPage={props.onPage}
-        />
+      <div className="stack-sm">
+        <h3>最近调用账本</h3>
+        {recent.items.length === 0 ? (
+          <p className="empty">暂无调用账本记录。</p>
+        ) : (
+          <>
+            <TableScroll label="最近调用账本">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>用途</th>
+                    <th>Key / 服务地址</th>
+                    <th>状态</th>
+                    <th>HTTP</th>
+                    <th>估算费用</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.items.map((req) => (
+                    <tr key={req.id}>
+                      <td className="small mono">
+                        {formatTime(req.startedAt)}
+                      </td>
+                      <td>{req.purposeLabel}</td>
+                      <td>
+                        <div>{req.keyLabel ?? "—"}</div>
+                        {req.baseUrl ? (
+                          <div className="muted small mono">{req.baseUrl}</div>
+                        ) : null}
+                      </td>
+                      <td>
+                        <StatusBadge
+                          status={
+                            req.status === "succeeded"
+                              ? "matched"
+                              : req.status === "failed"
+                                ? "failed"
+                                : "baseline"
+                          }
+                        >
+                          {req.statusLabel}
+                        </StatusBadge>
+                      </td>
+                      <td className="mono">{req.httpStatus ?? "—"}</td>
+                      <td className="mono">{req.estimatedUsd ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
+            <Pagination
+              page={props.page}
+              total={recent.total}
+              pageSize={USAGE_PAGE_SIZE}
+              onPage={props.onPage}
+              unit="次调用"
+            />
+          </>
+        )}
       </div>
 
       <Modal
@@ -591,35 +660,45 @@ function JevUsagePanel(props: {
         onClose={() => setByKeyOpened(false)}
         title="全部 Key 用量明细"
         size="lg"
+        centered
       >
-        <TableScroll label="全部 Key 用量明细">
-          <table className="table" style={{ width: "100%" }}>
-            <thead>
-              <tr>
-                <th>Key 名称</th>
-                <th>请求数</th>
-                <th>估算费用</th>
-                <th>失败数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageSlice(byKey, safeByKeyPage, JEV_USAGE_BY_KEY_PAGE_SIZE).map((item) => (
-                <tr key={item.keyId ?? "unknown"}>
-                  <td>{item.keyLabel ?? "未记录 Key"}</td>
-                  <td>{item.requestCount}</td>
-                  <td>{item.knownCostUsd}</td>
-                  <td>{item.failedCount}</td>
+        <div className="stack">
+          <TableScroll label="全部 Key 用量明细">
+            <table>
+              <thead>
+                <tr>
+                  <th>Key 名称</th>
+                  <th>请求数</th>
+                  <th>估算费用</th>
+                  <th>失败数</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableScroll>
-        <Pagination
-          page={safeByKeyPage}
-          total={byKey.length}
-          pageSize={JEV_USAGE_BY_KEY_PAGE_SIZE}
-          onPage={setByKeyPage}
-        />
+              </thead>
+              <tbody>
+                {pageSlice(
+                  byKey,
+                  safeByKeyPage,
+                  JEV_USAGE_BY_KEY_PAGE_SIZE,
+                ).map((item) => (
+                  <tr key={item.keyId ?? "unknown"}>
+                    <td>{item.keyLabel ?? "未记录 Key"}</td>
+                    <td className="mono">{item.requestCount}</td>
+                    <td className="mono">{item.knownCostUsd}</td>
+                    <td className={item.failedCount > 0 ? "mono error" : "mono"}>
+                      {item.failedCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+          <Pagination
+            page={safeByKeyPage}
+            total={byKey.length}
+            pageSize={JEV_USAGE_BY_KEY_PAGE_SIZE}
+            onPage={setByKeyPage}
+            unit="个 Key"
+          />
+        </div>
       </Modal>
     </div>
   );
@@ -629,19 +708,23 @@ function JevUsagePanel(props: {
 export default function ModelSettingsPage() {
   const [activeTab, setActiveTab] = useState<string | null>("connection");
   const [keysOpened, setKeysOpened] = useState(false);
-  const [selectedChannelIdForKeys, setSelectedChannelIdForKeys] = useState<string>("");
-  const [selectedChannelIdForUsage, setSelectedChannelIdForUsage] = useState<string>("");
+  const [selectedChannelIdForKeys, setSelectedChannelIdForKeys] =
+    useState<string>("");
+  const [selectedChannelIdForUsage, setSelectedChannelIdForUsage] =
+    useState<string>("");
   const [usagePage, setUsagePage] = useState(0);
 
   const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(
-    null,
-  );
+  const [notice, setNotice] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const channelsResource = useApiResource<ModelChannelDto[]>("/api/settings/channels");
+  const channelsResource = useApiResource<ModelChannelDto[]>(
+    "/api/settings/channels",
+  );
   const channels = channelsResource.data ?? [];
-  const channelsLoading = channelsResource.loading;
 
   const settings = useApiResource<JevSettingsDto>("/api/settings/jev");
   const usage = useApiResource<JevUsageDto>(
@@ -651,7 +734,11 @@ export default function ModelSettingsPage() {
   );
 
   async function reloadAll() {
-    await Promise.all([settings.reload(), usage.reload(), channelsResource.reload()]);
+    await Promise.all([
+      settings.reload(),
+      usage.reload(),
+      channelsResource.reload(),
+    ]);
   }
 
   function reportResult(message: string, ok = true) {
@@ -660,14 +747,18 @@ export default function ModelSettingsPage() {
   }
 
   const activeChannel = channels.find((c) => c.isActive) ?? null;
-  const channelKeySelection = selectedChannelIdForKeys || activeChannel?.id || "";
+  const channelKeySelection =
+    selectedChannelIdForKeys || activeChannel?.id || "";
 
   async function testCurrentChannel() {
     setBusy(true);
     setActionError(null);
     setNotice(null);
     try {
-      const res = await apiSend<TestResultDto>("/api/settings/jev/test", "POST");
+      const res = await apiSend<TestResultDto>(
+        "/api/settings/jev/test",
+        "POST",
+      );
       reportResult(res.message ?? "测试完成", res.ok);
       await reloadAll();
     } catch (e) {
@@ -687,10 +778,11 @@ export default function ModelSettingsPage() {
     );
   }
 
-  const filteredKeys = data?.keys.filter((k) => {
-    if (!channelKeySelection) return true;
-    return k.channelId === channelKeySelection;
-  }) ?? [];
+  const filteredKeys =
+    data?.keys.filter((k) => {
+      if (!channelKeySelection) return true;
+      return k.channelId === channelKeySelection;
+    }) ?? [];
 
   const enabledKeys = filteredKeys.filter((k) => k.enabled).length;
 
@@ -704,7 +796,7 @@ export default function ModelSettingsPage() {
       {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
       {notice ? <Feedback kind={notice.kind}>{notice.text}</Feedback> : null}
 
-      <Tabs value={activeTab} onChange={setActiveTab} style={{ marginTop: "var(--sp-2)" }}>
+      <Tabs value={activeTab} onChange={setActiveTab}>
         <Tabs.List>
           <Tabs.Tab value="connection">连接与调度</Tabs.Tab>
           <Tabs.Tab value="strategy">判断模式</Tabs.Tab>
@@ -714,92 +806,98 @@ export default function ModelSettingsPage() {
         </Tabs.List>
 
         {/* Tab 1: 连接与调度 */}
-        <Tabs.Panel value="connection" pt="md">
-          <Section
-            title="当前活动渠道"
-            description="后台处理、连接测试与需求试判严格使用当前启用的渠道配置。"
-            actions={
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => void testCurrentChannel()}
-                loading={busy}
-              >
-                测试活动渠道连接
-              </Button>
-            }
-          >
-            {activeChannel ? (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "var(--sp-4)",
-                  padding: "var(--sp-3)",
-                  background: "var(--surface-muted, #f8f9fa)",
-                  borderRadius: "var(--radius-sm, 6px)",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <span className="muted small">渠道名称</span>
-                  <div style={{ fontWeight: 600 }}>{activeChannel.name}</div>
-                </div>
-                <div>
-                  <span className="muted small">服务地址 (Base URL)</span>
-                  <div>
-                    <code>{activeChannel.baseUrl}</code>
+        <Tabs.Panel value="connection" pt="lg">
+          <div className="stack" style={{ gap: "var(--sp-6)" }}>
+            <Section
+              title="当前活动渠道"
+              description="后台处理、连接测试与需求试判严格使用当前启用的渠道配置。"
+              actions={
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => void testCurrentChannel()}
+                  loading={busy}
+                >
+                  测试活动渠道连接
+                </Button>
+              }
+            >
+              {activeChannel ? (
+                <div className="meta-strip">
+                  <div className="meta-item">
+                    <span className="meta-item-label">渠道名称</span>
+                    <span className="meta-item-value">{activeChannel.name}</span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-item-label">服务地址</span>
+                    <span className="meta-item-value">
+                      <code>{activeChannel.baseUrl}</code>
+                    </span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-item-label">模型标识</span>
+                    <span className="meta-item-value mono">
+                      {activeChannel.model}
+                    </span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-item-label">超时时间</span>
+                    <span className="meta-item-value mono">
+                      {activeChannel.timeoutMs}ms
+                    </span>
+                  </div>
+                  <div className="meta-item">
+                    <span className="meta-item-label">状态</span>
+                    <div>
+                      <StatusBadge status="matched">当前启用中</StatusBadge>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <span className="muted small">模型标识</span>
-                  <div>{activeChannel.model}</div>
-                </div>
-                <div>
-                  <span className="muted small">超时时间</span>
-                  <div>{activeChannel.timeoutMs}ms</div>
-                </div>
-                <div>
-                  <Badge color="green" variant="light">
-                    当前启用中
-                  </Badge>
-                </div>
-              </div>
-            ) : (
-              <Feedback kind="error">未找到任何启用的模型渠道，请在下方选择启用。</Feedback>
-            )}
+              ) : (
+                <Feedback kind="error">
+                  未找到任何启用的模型渠道，请在下方选择启用。
+                </Feedback>
+              )}
 
-            <ChannelManager
-              channels={channels}
-              activeChannel={activeChannel}
-              onActivated={async () => {
-                reportResult("已切换启用渠道。");
-                await reloadAll();
-              }}
-              onReload={channelsResource.reload}
-              onError={setActionError}
-            />
-          </Section>
-
-          {data && (
-            <Section title="全局调度参数" description="设置模型调用的全局并发与批次任务上限。">
-              <ConnectionScheduleForm
-                key={data.version}
-                view={data}
-                onSaved={() => {
-                  reportResult("调度配置已保存。");
-                  void reloadAll();
+              <ChannelManager
+                channels={channels}
+                onActivated={async () => {
+                  reportResult("已切换启用渠道。");
+                  await reloadAll();
                 }}
+                onReload={channelsResource.reload}
                 onError={setActionError}
               />
             </Section>
-          )}
+
+            {data ? (
+              <Section
+                title="全局调度参数"
+                description="设置模型调用的全局并发与批次任务上限。"
+                alt
+              >
+                <ConnectionScheduleForm
+                  key={data.version}
+                  view={data}
+                  onSaved={() => {
+                    reportResult("调度配置已保存。");
+                    void reloadAll();
+                  }}
+                  onError={setActionError}
+                />
+              </Section>
+            ) : null}
+          </div>
         </Tabs.Panel>
 
         {/* Tab 2: 判断模式 */}
-        <Tabs.Panel value="strategy" pt="md">
-          {data && (
-            <Section title="判断模式与前置规则" description="选择后台对新线报的自动分析与正则预筛策略。">
+        <Tabs.Panel value="strategy" pt="lg">
+          {data ? (
+            <Section
+              title="判断模式与前置规则"
+              description="选择后台对新线报的自动分析与正则预筛策略。"
+              alt
+            >
               <StrategyForm
                 key={data.version}
                 view={data}
@@ -810,46 +908,55 @@ export default function ModelSettingsPage() {
                 onError={setActionError}
               />
             </Section>
-          )}
+          ) : null}
         </Tabs.Panel>
 
         {/* Tab 3: API 密钥 */}
-        <Tabs.Panel value="keys" pt="md">
+        <Tabs.Panel value="keys" pt="lg">
           <Section
             title="API 密钥池"
             description="按渠道隔离管理各上游服务商的 API 密钥。调度时仅从当前启用渠道所属的 Key 池中选取。"
+            alt
             actions={
-              <Button variant="default" size="sm" onClick={() => setKeysOpened(true)}>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setKeysOpened(true)}
+              >
                 管理当前渠道密钥
               </Button>
             }
           >
-            <div style={{ maxWidth: 320, marginBottom: "var(--sp-2)" }}>
-              <Select
-                label="所属渠道"
-                placeholder="选择渠道"
-                data={channels.map((ch) => ({
-                  value: ch.id,
-                  label: `${ch.name} (${ch.model})`,
-                }))}
-                value={channelKeySelection}
-                onChange={(val) => setSelectedChannelIdForKeys(val ?? "")}
-              />
-            </div>
+            <div className="stack">
+              <div style={{ maxWidth: 320 }}>
+                <Select
+                  label="所属渠道"
+                  placeholder="选择渠道"
+                  data={channels.map((ch) => ({
+                    value: ch.id,
+                    label: `${ch.name} (${ch.model})`,
+                  }))}
+                  value={channelKeySelection}
+                  onChange={(val) => setSelectedChannelIdForKeys(val ?? "")}
+                />
+              </div>
 
-            {filteredKeys.length === 0 ? (
-              <p className="muted" style={{ margin: 0 }}>
-                该渠道下暂未配置 API 密钥。点击右上角「管理当前渠道密钥」添加。
-              </p>
-            ) : (
-              <p className="muted" style={{ margin: 0 }}>
-                该渠道下共 {filteredKeys.length} 个 Key · {enabledKeys} 个启用。
-              </p>
-            )}
+              {filteredKeys.length === 0 ? (
+                <p className="muted small" style={{ margin: 0 }}>
+                  该渠道下暂未配置 API 密钥。点击右上角「管理当前渠道密钥」添加。
+                </p>
+              ) : (
+                <p className="muted small mono" style={{ margin: 0 }}>
+                  该渠道下共 {filteredKeys.length} 个 Key · {enabledKeys} 个启用。
+                </p>
+              )}
+            </div>
 
             <JevKeysPanel
               channelId={channelKeySelection}
-              baseUrl={channels.find((c) => c.id === channelKeySelection)?.baseUrl}
+              baseUrl={
+                channels.find((c) => c.id === channelKeySelection)?.baseUrl
+              }
               opened={keysOpened}
               onClose={() => setKeysOpened(false)}
               keys={filteredKeys}
@@ -860,7 +967,7 @@ export default function ModelSettingsPage() {
         </Tabs.Panel>
 
         {/* Tab 4: 费用与用量 */}
-        <Tabs.Panel value="usage" pt="md">
+        <Tabs.Panel value="usage" pt="lg">
           <Section
             title="费用与用量统计"
             description="展示各渠道的实际调用统计与账本。金额按公布费率估算。"
@@ -879,7 +986,7 @@ export default function ModelSettingsPage() {
         </Tabs.Panel>
 
         {/* Tab 5: 需求试判 */}
-        <Tabs.Panel value="dry-run" pt="md">
+        <Tabs.Panel value="dry-run" pt="lg">
           <DryRunPanel />
         </Tabs.Panel>
       </Tabs>

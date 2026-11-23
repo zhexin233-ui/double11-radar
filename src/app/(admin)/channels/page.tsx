@@ -65,7 +65,8 @@ export default function ChannelsPage() {
     const clamped = clampPage(page, total, CHANNELS_PAGE_SIZE);
     if (clamped !== page) setPage(clamped);
   }
-  const safePage = total === null ? page : clampPage(page, total, CHANNELS_PAGE_SIZE);
+  const safePage =
+    total === null ? page : clampPage(page, total, CHANNELS_PAGE_SIZE);
 
   async function run(action: () => Promise<unknown>, message: string) {
     setBusy(true);
@@ -107,7 +108,7 @@ export default function ChannelsPage() {
           <Button
             variant="default"
             size="sm"
-            disabled={busy}
+            loading={busy}
             onClick={() =>
               void run(
                 () => apiSend("/api/channels/refresh", "POST", {}),
@@ -123,7 +124,9 @@ export default function ChannelsPage() {
       {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
       {notice ? <Feedback kind="success">{notice}</Feedback> : null}
       {error && data ? (
-        <Feedback kind="error">刷新失败：{error}（下方为上次成功数据）</Feedback>
+        <Feedback kind="error">
+          刷新失败：{error}（下方为上次成功数据）
+        </Feedback>
       ) : null}
 
       {!data ? (
@@ -135,18 +138,21 @@ export default function ChannelsPage() {
             <>
               共 {data.stats.total} 个频道，已启用 {data.stats.selected} 个，已建立基线{" "}
               {data.stats.initialized} 个
-              {data.stats.failing > 0 ? `，${data.stats.failing} 个频道存在错误` : ""}。
+              {data.stats.failing > 0
+                ? `，${data.stats.failing} 个频道存在错误`
+                : ""}
+              。
             </>
           }
         >
           <div className="stack">
-            <div className="toolbar">
+            <div className="toolbar-bar">
               <Radio.Group
                 value={mode}
                 onChange={(next) => setMode(next as "all" | "custom")}
                 aria-label="采集选择模式"
               >
-                <div className="stack">
+                <div className="stack-sm">
                   <Radio
                     value="all"
                     label="全部开放频道（跟随能力清单，新增频道自动纳入）"
@@ -158,10 +164,14 @@ export default function ChannelsPage() {
                 </div>
               </Radio.Group>
               <Button
-                disabled={busy}
+                loading={busy}
                 onClick={() =>
                   void run(
-                    () => apiSend("/api/channels/selection", "PUT", { mode, customIds }),
+                    () =>
+                      apiSend("/api/channels/selection", "PUT", {
+                        mode,
+                        customIds,
+                      }),
                     "采集选择已保存，worker 会在下一轮按新选择调度。",
                   )
                 }
@@ -181,7 +191,7 @@ export default function ChannelsPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>采集</th>
+                      <th style={{ width: 64 }}>采集</th>
                       <th>频道</th>
                       <th>类型</th>
                       <th>基线</th>
@@ -205,18 +215,26 @@ export default function ChannelsPage() {
                               onChange={() => toggle(channel.id)}
                             />
                           </td>
-                          <td>{channel.name}</td>
-                          <td className="small">
-                            {channel.origin === "zdm" ? "值得买独立流" : "分类流"}
+                          <td>
+                            <strong>{channel.name}</strong>
+                          </td>
+                          <td className="small muted">
+                            {channel.origin === "zdm"
+                              ? "值得买独立流"
+                              : "分类流"}
                           </td>
                           <td>
                             <StatusBadge
-                              status={channel.initialized ? "matched" : "pending"}
+                              status={
+                                channel.initialized ? "matched" : "pending"
+                              }
                             >
                               {channel.initialized ? "已建立" : "未初始化"}
                             </StatusBadge>
                           </td>
-                          <td className="small">{formatTime(channel.lastSuccessAt)}</td>
+                          <td className="small mono">
+                            {formatTime(channel.lastSuccessAt)}
+                          </td>
                           <td className="small">
                             {!channel.available ? (
                               <span className="muted">已从能力清单撤下</span>

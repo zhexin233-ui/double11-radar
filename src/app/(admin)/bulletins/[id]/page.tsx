@@ -18,8 +18,12 @@ import {
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
-import { MatchAssessment, MatchDecisionTrace } from "@/components/MatchAssessment";
+import {
+  MatchAssessment,
+  MatchDecisionTrace,
+} from "@/components/MatchAssessment";
 import { StatusBadge } from "@/components/status-badge";
+import { ArrowLeftIcon } from "@/components/ui/Icons";
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -30,9 +34,11 @@ function formatTime(value: string | null): string {
 export default function BulletinDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
-  const { data: detail, error, loading, reload } = useApiResource<BulletinDetailDto>(
-    `/api/bulletins/${id}`,
-  );
+  const {
+    data: detail,
+    error,
+    reload,
+  } = useApiResource<BulletinDetailDto>(`/api/bulletins/${id}`);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -54,9 +60,10 @@ export default function BulletinDetailPage() {
   if (error && !detail) {
     return (
       <div className="page">
-        <p>
-          <Link href="/bulletins">← 返回线报记录</Link>
-        </p>
+        <Link className="back-link" href="/bulletins">
+          <ArrowLeftIcon />
+          <span>返回线报记录</span>
+        </Link>
         <Feedback kind="error">加载失败：{error}</Feedback>
       </div>
     );
@@ -65,9 +72,10 @@ export default function BulletinDetailPage() {
   if (!detail) {
     return (
       <div className="page">
-        <p>
-          <Link href="/bulletins">← 返回线报记录</Link>
-        </p>
+        <Link className="back-link" href="/bulletins">
+          <ArrowLeftIcon />
+          <span>返回线报记录</span>
+        </Link>
         <Feedback kind="loading">正在加载…</Feedback>
       </div>
     );
@@ -78,24 +86,36 @@ export default function BulletinDetailPage() {
   return (
     <div className="page">
       <header className="page-header">
-        <p style={{ marginBottom: "var(--sp-4)" }}>
-          <Link href="/bulletins">← 返回线报记录</Link>
-        </p>
-        <h1 style={{ overflowWrap: "anywhere" }}>{bulletin.title}</h1>
-        <div className="page-actions">
-          <StatusBadge status={detail.status}>{STATUS_LABELS[detail.status]}</StatusBadge>
-          <span className="muted small">{bulletin.sourceNs}</span>
+        <Link className="back-link" href="/bulletins">
+          <ArrowLeftIcon />
+          <span>返回线报记录</span>
+        </Link>
+        <h1 style={{ overflowWrap: "anywhere", maxWidth: "var(--reading-max)" }}>
+          {bulletin.title}
+        </h1>
+        <div className="page-actions" style={{ marginTop: "var(--sp-3)" }}>
+          <StatusBadge status={detail.status}>
+            {STATUS_LABELS[detail.status]}
+          </StatusBadge>
+          <span className="muted small mono">{bulletin.sourceNs}</span>
+          <span className="muted small mono">
+            {formatTime(bulletin.publishedAt)}
+          </span>
         </div>
       </header>
 
       {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
       {notice ? <Feedback kind="success">{notice}</Feedback> : null}
-      {error ? <Feedback kind="error">刷新失败：{error}（下方为上次成功数据）</Feedback> : null}
+      {error ? (
+        <Feedback kind="error">
+          刷新失败：{error}（下方为上次成功数据）
+        </Feedback>
+      ) : null}
 
-      <Section title="来源与原文">
+      <Section title="来源与原文" alt>
         <dl className="facts">
           <dt>原始链接</dt>
-          <dd>
+          <dd className="mono">
             <a href={bulletin.url} target="_blank" rel="noreferrer">
               {bulletin.url}
             </a>
@@ -113,23 +133,23 @@ export default function BulletinDetailPage() {
               : `${bulletin.price} 元（来源标注，不代表券后实付）`}
           </dd>
           <dt>发布时间</dt>
-          <dd>{formatTime(bulletin.publishedAt)}</dd>
+          <dd className="mono">{formatTime(bulletin.publishedAt)}</dd>
         </dl>
         {bulletin.content ? (
-          <>
-            <h3 style={{ marginTop: "var(--sp-7)" }}>正文</h3>
+          <div className="divider-block" style={{ marginTop: "var(--sp-5)" }}>
+            <h3 style={{ marginBottom: "var(--sp-3)" }}>正文</h3>
             <pre className="reading">{bulletin.content}</pre>
-          </>
+          </div>
         ) : null}
       </Section>
 
       {detail.processing ? (
-        <Section title="处理策略与批次">
+        <Section title="处理策略与批次" alt>
           <dl className="facts">
             <dt>判断模式</dt>
             <dd>{EVALUATION_MODE_LABELS[detail.processing.evaluationMode]}</dd>
             <dt>处理阶段</dt>
-            <dd>{detail.processing.stage}</dd>
+            <dd className="mono">{detail.processing.stage}</dd>
             {detail.processing.screeningSource ? (
               <>
                 <dt>过滤来源</dt>
@@ -156,60 +176,62 @@ export default function BulletinDetailPage() {
             {detail.processing.regexRuleCount !== null ? (
               <>
                 <dt>正则规则数</dt>
-                <dd>{detail.processing.regexRuleCount}</dd>
+                <dd className="mono">{detail.processing.regexRuleCount}</dd>
               </>
             ) : null}
             {detail.processing.gateRequestId ? (
               <>
                 <dt>初筛请求 ID</dt>
-                <dd>{detail.processing.gateRequestId}</dd>
+                <dd className="mono">{detail.processing.gateRequestId}</dd>
               </>
             ) : null}
             {detail.processing.batchPartId ? (
               <>
                 <dt>子批 ID</dt>
-                <dd>{detail.processing.batchPartId}</dd>
+                <dd className="mono">{detail.processing.batchPartId}</dd>
               </>
             ) : null}
           </dl>
         </Section>
       ) : null}
 
-      <Section title="命中需求与分类说明">
-        {detail.hasHistoricalMatched ? (
-          <Feedback kind="notice">
-            含历史判定，未记录促销识别或未按当前策略重算；下方追溯字段仅适用于升级后新产生的判断。
-          </Feedback>
-        ) : null}
-        {detail.matchedNeeds.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
-            {detail.status === "failed"
-              ? "本次判断存在处理失败，不能视为「没有匹配」。"
-              : detail.status === "uncertain"
-                ? detail.notification
-                  ? "本次为待确认，不产生新的匹配通知；已有通知与投递见下方。"
-                  : "本次为待确认，不产生新的匹配通知。"
-                : detail.processing?.stage === "filtered"
-                  ? (detail.processing.screeningReason ??
-                    "该条未匹配本地规则，未调用 JEV。")
-                  : "没有命中任何启用需求。"}
-          </p>
-        ) : (
-          <div className="stack">
-            <p style={{ margin: 0 }}>命中需求：{detail.matchedNeeds.join("、")}</p>
+      <Section title="命中需求与分类说明" alt>
+        <div className="stack">
+          {detail.hasHistoricalMatched ? (
+            <Feedback kind="notice">
+              含历史判定，未记录促销识别或未按当前策略重算；下方追溯字段仅适用于升级后新产生的判断。
+            </Feedback>
+          ) : null}
+          {detail.matchedNeeds.length === 0 ? (
             <p className="muted small" style={{ margin: 0 }}>
-              以下为<strong>程序生成的分类说明</strong>（不是模型生成的理由）：
+              {detail.status === "failed"
+                ? "本次判断存在处理失败，不能视为「没有匹配」。"
+                : detail.status === "uncertain"
+                  ? detail.notification
+                    ? "本次为待确认，不产生新的匹配通知；已有通知与投递见下方。"
+                    : "本次为待确认，不产生新的匹配通知。"
+                  : detail.processing?.stage === "filtered"
+                    ? (detail.processing.screeningReason ??
+                      "该条未匹配本地规则，未调用 JEV。")
+                    : "没有命中任何启用需求。"}
             </p>
-            <pre>{detail.explanation}</pre>
-          </div>
-        )}
+          ) : (
+            <div className="stack">
+              <p style={{ margin: 0 }}>
+                命中需求：<strong>{detail.matchedNeeds.join("、")}</strong>
+              </p>
+              <p className="muted small" style={{ margin: 0 }}>
+                以下为<strong>程序生成的分类说明</strong>（不是模型生成的理由）：
+              </p>
+              <pre>{detail.explanation}</pre>
+            </div>
+          )}
+        </div>
       </Section>
 
       <Section title="逐需求判断">
         {detail.evaluations.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
-            尚无判断记录（可能仍在队列中）。
-          </p>
+          <p className="empty">尚无判断记录（可能仍在队列中）。</p>
         ) : (
           <>
             <TableScroll label="逐需求判断列表" minTableWidth={1100}>
@@ -232,9 +254,15 @@ export default function BulletinDetailPage() {
                     return (
                       <tr key={evaluation.id}>
                         <td>
-                          {evaluation.needName}
-                          <div className="muted small">v{evaluation.needVersion}</div>
-                          {evaluation.needNote ? <div className="muted small">备注：{evaluation.needNote}</div> : null}
+                          <strong>{evaluation.needName}</strong>
+                          <div className="muted small mono">
+                            v{evaluation.needVersion}
+                          </div>
+                          {evaluation.needNote ? (
+                            <div className="muted small">
+                              备注：{evaluation.needNote}
+                            </div>
+                          ) : null}
                         </td>
                         <td>
                           <MatchAssessment
@@ -259,17 +287,25 @@ export default function BulletinDetailPage() {
                             matchedProbability={probabilities?.matched ?? null}
                             requestId={evaluation.jevRequestId}
                           />
-                          <div className="muted small">规则 {evaluation.ruleVersion} · 配置 v{evaluation.configVersion}</div>
+                          <div className="muted small mono">
+                            规则 {evaluation.ruleVersion} · 配置 v
+                            {evaluation.configVersion}
+                          </div>
                         </td>
                         <td className="small error">{evaluation.error ?? ""}</td>
-                        <td className="small">{formatTime(evaluation.updatedAt)}</td>
+                        <td className="small mono">
+                          {formatTime(evaluation.updatedAt)}
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </TableScroll>
-            <p className="muted small" style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}>
+            <p
+              className="muted small"
+              style={{ marginTop: "var(--sp-3)", marginBottom: 0 }}
+            >
               置信度表示上游概率分布的集中程度，<strong>不代表业务正确率</strong>；
               新判断须需求相关与该需求促销两项明确通过，且各自概率分布完整合法；历史策略按保存的快照展示。
             </p>
@@ -279,7 +315,7 @@ export default function BulletinDetailPage() {
 
       <Section title="投递状态">
         {detail.deliveries.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="empty">
             没有渠道投递记录（可能两个渠道都关闭，或尚未命中）。
           </p>
         ) : (
@@ -304,8 +340,8 @@ export default function BulletinDetailPage() {
                         {DELIVERY_LABELS[delivery.status]}
                       </StatusBadge>
                     </td>
-                    <td className="small">{delivery.attempts}</td>
-                    <td className="small">
+                    <td className="small mono">{delivery.attempts}</td>
+                    <td className="small mono">
                       {delivery.httpStatus ?? "—"} / {delivery.bizCode ?? "—"}
                     </td>
                     <td className="small error">{delivery.error ?? ""}</td>
