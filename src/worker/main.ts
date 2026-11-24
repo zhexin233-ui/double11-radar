@@ -8,6 +8,7 @@ import { ensureAdminCredential } from "@/lib/auth/password";
 import { loadEnv, type AppEnv } from "@/lib/env";
 import { runCollectorOnce } from "@/lib/worker/collector";
 import { runEvaluatorOnce } from "@/lib/worker/evaluator";
+import { runAnalyzerOnce } from "@/lib/worker/analyzer";
 import { runDelivererOnce } from "@/lib/worker/deliverer";
 import { disposeSharedRegexRunner } from "@/lib/service/regex-runner";
 import { getRuntimeState, patchRuntimeState } from "@/lib/worker/runtime-state";
@@ -106,7 +107,12 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
       () => runEvaluatorOnce(db, env),
       reportError,
     )
-      .then(() => withGuard("deliverer", () => runDelivererOnce(db, env), reportError))
+      .then(() =>
+        withGuard("analyzer", () => runAnalyzerOnce(db, env), reportError),
+      )
+      .then(() =>
+        withGuard("deliverer", () => runDelivererOnce(db, env), reportError),
+      )
       .finally(() => {
         working = false;
       });

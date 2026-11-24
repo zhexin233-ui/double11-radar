@@ -83,9 +83,10 @@ export type JobStatus = "pending" | "leased" | "succeeded" | "dead";
  * 后台任务种类。
  * - `evaluate`：单条线报对全部启用需求调用一次 JEV；
  * - `screen_batch`：批次初筛，一次整体相关性问题；
+ * - `analyze`：第二级深度核验与可插拔工具调用；
  * - `deliver`：通知投递。
  */
-export type JobKind = "evaluate" | "screen_batch" | "deliver";
+export type JobKind = "evaluate" | "screen_batch" | "analyze" | "deliver";
 
 /**
  * 后台自动处理模式（互斥）：
@@ -425,4 +426,147 @@ export interface JevRequest {
   estimatedUsdNanos: number | null;
   costStatus: JevCostStatus;
   unknownReason: string | null;
+}
+
+// ── 第二级深度核验与可插拔工具 ──────────────────────────────────────────────
+
+export type Stage2ToolKind = "builtin" | "mcp" | "http_api";
+
+export type Stage2ToolHealthStatus = "healthy" | "open_circuit";
+
+export interface LocalHistoryToolConfig {
+  historyDays?: number;
+  maxResults?: number;
+}
+
+export interface McpToolConfig {
+  endpointUrl: string;
+  authHeader?: string;
+  authPrefix?: string;
+  timeoutMs?: number;
+  allowedTools?: string[];
+}
+
+export interface HttpApiToolConfig {
+  functionName: string;
+  description: string;
+  endpointUrl: string;
+  method: "GET" | "POST";
+  queryParamName?: string;
+  authHeader?: string;
+  authPrefix?: string;
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+}
+
+export interface CachedMcpToolSchema {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface Stage2ToolRecord {
+  id: string;
+  name: string;
+  kind: Stage2ToolKind;
+  builtinKey: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  config: Record<string, unknown>;
+  secretNamespace: string | null;
+  cachedSchema: CachedMcpToolSchema[] | null;
+  healthStatus: Stage2ToolHealthStatus;
+  consecutiveFailures: number;
+  failureThreshold: number;
+  cooldownMinutes: number;
+  cooldownUntil: string | null;
+  lastError: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Stage2LlmConfig {
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+  maxSteps: number;
+  temperature: number;
+}
+
+export interface Stage2Config {
+  enabled: boolean;
+  includeUncertain: boolean;
+  notifyOnInsufficientInfo: boolean;
+  fallbackToStage1Notify: boolean;
+  concurrency: number;
+  llm: Stage2LlmConfig;
+}
+
+export type AnalysisVerdict =
+  | "recommended"
+  | "acceptable"
+  | "rejected"
+  | "insufficient_info";
+
+export type AnalysisTriggerSource = "matched" | "uncertain" | "manual";
+
+export type AnalysisStatus = "succeeded" | "failed";
+
+export interface StandardizedAnswer {
+  verdict: AnalysisVerdict;
+  summary: string;
+  productName: string;
+  actualTotalPrice: number | null;
+  unitPrice: number | null;
+  unitLabel: string | null;
+  priceFormula: string | null;
+  orderSteps: string[];
+  priceComparison: {
+    status: "cheaper" | "fair" | "expensive" | "no_data";
+    referencePrice: number | null;
+    source: string | null;
+    conclusion: string;
+  };
+  requirementChecks: Array<{
+    needName: string;
+    satisfied: boolean;
+    reason: string;
+  }>;
+  risks: string[];
+}
+
+export interface ToolCallTraceEntry {
+  step: number;
+  toolId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  ok: boolean;
+  infrastructureFailure: boolean;
+  durationMs: number;
+  resultPreview: string;
+  error?: string;
+}
+
+export interface BulletinAnalysis {
+  id: string;
+  bulletinId: string;
+  triggerSource: AnalysisTriggerSource;
+  status: AnalysisStatus;
+  verdict: AnalysisVerdict | null;
+  model: string;
+  baseUrl: string;
+  activeToolIds: string[];
+  stepsUsed: number;
+  toolCallsCount: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  durationMs: number;
+  answer: StandardizedAnswer | null;
+  toolTrace: ToolCallTraceEntry[];
+  error: string | null;
+  fallbackNotified: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -12,6 +12,7 @@ import { listEvaluationsByBulletin } from "@/lib/db/repos/evaluations";
 import { getEvaluationRun, getProcessing } from "@/lib/db/repos/evaluation-runs";
 import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
 import { getNotificationByBulletin } from "@/lib/db/repos/notifications";
+import { getBulletinAnalysis } from "@/lib/db/repos/analyses";
 import { buildClassificationExplanation } from "@/lib/notify/dispatch";
 import { NEED_OFFER_CONFIRMATION_POLICY_VERSION } from "@/lib/jev/match-policy";
 import { RULE_VERSION } from "@/lib/domain/constants";
@@ -19,6 +20,7 @@ import { HttpError } from "@/lib/http/json";
 import { parseIntegerParam } from "@/lib/http/query";
 import type {
   Bulletin,
+  BulletinAnalysis,
   BulletinProcessing,
   Delivery,
   Evaluation,
@@ -62,6 +64,7 @@ export interface BulletinDetail {
   deliveries: Delivery[];
   notification: Notification | null;
   processing: BulletinProcessingView | null;
+  analysis: BulletinAnalysis | null;
   /**
    * 是否存在未按当前匹配确认策略重算的历史 matched（跨 rule_version 或升级前旧记录）。
    * 首期不自动重算，仅在详情提示「含历史判定，未按本策略重算」。
@@ -97,6 +100,7 @@ export function describeBulletin(
 
   const processing = getProcessing(db, bulletin.id);
   const run = processing ? getEvaluationRun(db, processing.runId) : null;
+  const analysis = getBulletinAnalysis(db, bulletin.id);
 
   return {
     bulletin,
@@ -108,6 +112,7 @@ export function describeBulletin(
     evaluations,
     deliveries,
     notification,
+    analysis,
     hasHistoricalMatched,
     processing: processing
       ? {

@@ -490,6 +490,8 @@ export interface BulletinDetailDto {
   hasHistoricalMatched: boolean;
   /** 三模式处理元数据；旧数据 / 基线为 null。 */
   processing: BulletinProcessingDto | null;
+  /** 第二级深度核验简报；未核验或升级前旧数据为 null。 */
+  analysis: BulletinAnalysisDto | null;
 }
 
 export interface DryRunNeedResultDto {
@@ -692,6 +694,7 @@ export interface StorageStatsDto {
     deliveries: number;
     notifications: number;
     bulletinProcessing: number;
+    bulletinAnalyses: number;
     jevRequests: number;
     jobs: number;
   };
@@ -709,6 +712,7 @@ export interface CleanupResultDto {
   cleanedDeliveries: number;
   cleanedNotifications: number;
   cleanedProcessing: number;
+  cleanedAnalyses: number;
   cleanedJobs: number;
   durationMs: number;
 }
@@ -719,5 +723,134 @@ export interface VacuumResultDto {
   afterBytes: number;
   savedBytes: number;
   savedFormatted: string;
+}
+
+// ── 第二级深度核验与可插拔工具 DTO ──────────────────────────────────────────
+
+export type AnalysisVerdictDto =
+  | "recommended"
+  | "acceptable"
+  | "rejected"
+  | "insufficient_info";
+
+export const ANALYSIS_VERDICT_LABELS: Record<AnalysisVerdictDto, string> = {
+  recommended: "推荐入手",
+  acceptable: "可考虑",
+  rejected: "不推荐 / 拦截",
+  insufficient_info: "信息不足待核对",
+};
+
+export type Stage2ToolKindDto = "builtin" | "mcp" | "http_api";
+
+export const STAGE2_TOOL_KIND_LABELS: Record<Stage2ToolKindDto, string> = {
+  builtin: "内置插件",
+  mcp: "MCP (HTTP/SSE)",
+  http_api: "HTTP API",
+};
+
+export interface Stage2ToolViewDto {
+  id: string;
+  name: string;
+  kind: Stage2ToolKindDto;
+  builtinKey: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  config: Record<string, unknown>;
+  secretNamespace: string | null;
+  cachedSchema: Array<{
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  }> | null;
+  healthStatus: "healthy" | "open_circuit";
+  consecutiveFailures: number;
+  failureThreshold: number;
+  cooldownMinutes: number;
+  cooldownUntil: string | null;
+  lastError: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  secretState: SecretStateDto;
+}
+
+export interface Stage2ConfigDto {
+  enabled: boolean;
+  includeUncertain: boolean;
+  notifyOnInsufficientInfo: boolean;
+  fallbackToStage1Notify: boolean;
+  concurrency: number;
+  llm: {
+    baseUrl: string;
+    model: string;
+    timeoutMs: number;
+    maxSteps: number;
+    temperature: number;
+  };
+}
+
+export interface Stage2SettingsDto {
+  config: Stage2ConfigDto;
+  version: number;
+  apiKeyState: SecretStateDto;
+  tools: Stage2ToolViewDto[];
+}
+
+export interface StandardizedAnswerDto {
+  verdict: AnalysisVerdictDto;
+  summary: string;
+  productName: string;
+  actualTotalPrice: number | null;
+  unitPrice: number | null;
+  unitLabel: string | null;
+  priceFormula: string | null;
+  orderSteps: string[];
+  priceComparison: {
+    status: "cheaper" | "fair" | "expensive" | "no_data";
+    referencePrice: number | null;
+    source: string | null;
+    conclusion: string;
+  };
+  requirementChecks: Array<{
+    needName: string;
+    satisfied: boolean;
+    reason: string;
+  }>;
+  risks: string[];
+}
+
+export interface ToolCallTraceEntryDto {
+  step: number;
+  toolId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  ok: boolean;
+  infrastructureFailure: boolean;
+  durationMs: number;
+  resultPreview: string;
+  error?: string;
+}
+
+export interface BulletinAnalysisDto {
+  id: string;
+  bulletinId: string;
+  triggerSource: "matched" | "uncertain" | "manual";
+  status: "succeeded" | "failed";
+  verdict: AnalysisVerdictDto | null;
+  model: string;
+  baseUrl: string;
+  activeToolIds: string[];
+  stepsUsed: number;
+  toolCallsCount: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  durationMs: number;
+  answer: StandardizedAnswerDto | null;
+  toolTrace: ToolCallTraceEntryDto[];
+  error: string | null;
+  fallbackNotified: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 

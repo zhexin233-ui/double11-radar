@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Button } from "@mantine/core";
+import { Badge, Button, Group } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import {
+  ANALYSIS_VERDICT_LABELS,
   DELIVERY_LABELS,
   EVALUATION_LABELS,
   EVALUATION_MODE_LABELS,
   PROCESSING_SOURCE_LABELS,
   STATUS_LABELS,
   parseProbabilityRecord,
+  type AnalysisVerdictDto,
   type BulletinDetailDto,
 } from "@/components/api-types";
 import { Section } from "@/components/ui/Section";
@@ -42,6 +44,22 @@ export default function BulletinDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  async function triggerAnalyze() {
+    setAnalyzing(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await apiSend(`/api/bulletins/${id}/analyze`, "POST", {});
+      setNotice("二级深度核验已完成并更新简报。");
+      await reload();
+    } catch (caught) {
+      setActionError(errorMessage(caught));
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
   async function retry(deliveryId: string) {
     setBusyId(deliveryId);
@@ -310,6 +328,195 @@ export default function BulletinDetailPage() {
               新判断须需求相关与该需求促销两项明确通过，且各自概率分布完整合法；历史策略按保存的快照展示。
             </p>
           </>
+        )}
+      </Section>
+
+      <Section
+        title="二级深度核验简报"
+        actions={
+          <Button
+            size="compact-sm"
+            variant="default"
+            loading={analyzing}
+            onClick={() => void triggerAnalyze()}
+          >
+            手动触发二级核验
+          </Button>
+        }
+      >
+        {!detail.analysis ? (
+          <p className="empty">
+            暂无二级深度核验记录（可能未开启第二级，或该线报未进入二级核验）。
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: "var(--sp-3)" }}>
+            <Group gap="sm" wrap="wrap">
+              {detail.analysis.verdict ? (
+                <Badge
+                  color={
+                    (
+                      {
+                        recommended: "teal",
+                        acceptable: "blue",
+                        rejected: "red",
+                        insufficient_info: "yellow",
+                      } satisfies Record<AnalysisVerdictDto, string>
+                    )[detail.analysis.verdict]
+                  }
+                  variant="light"
+                >
+                  {ANALYSIS_VERDICT_LABELS[detail.analysis.verdict]}
+                </Badge>
+              ) : (
+                <Badge color="red" variant="light">
+                  核验失败
+                </Badge>
+              )}
+              <span className="muted small mono">
+                模型：{detail.analysis.model} | 步数：{detail.analysis.stepsUsed} | 耗时：
+                {detail.analysis.durationMs}ms
+              </span>
+              {detail.analysis.fallbackNotified ? (
+                <Badge color="orange" variant="light">
+                  已降级按一级原文推送
+                </Badge>
+              ) : null}
+            </Group>
+
+            {detail.analysis.error ? (
+              <Feedback kind="error">{detail.analysis.error}</Feedback>
+            ) : null}
+
+            {detail.analysis.answer ? (
+              <dl className="facts">
+                <dt>核验摘要</dt>
+                <dd>{detail.analysis.answer.summary}</dd>
+
+                <dt>商品规格</dt>
+                <dd>{detail.analysis.answer.productName}</dd>
+
+                <dt>到手与折算单价</dt>
+                <dd className="mono">
+                  {detail.analysis.answer.actualTotalPrice !== null
+                    ? `${detail.analysis.answer.actualTotalPrice} 元`
+                    : "未标明总价"}
+                  {detail.analysis.answer.unitPrice !== null &&
+                  detail.analysis.answer.unitLabel
+                    ? ` · ${detail.analysis.answer.unitPrice} ${detail.analysis.answer.unitLabel}`
+                    : ""}
+                  {detail.analysis.answer.priceFormula ? (
+                    <div className="muted small">
+                      算式：{detail.analysis.answer.priceFormula}
+                    </div>
+                  ) : null}
+                </dd>
+
+                <dt>比价结论</dt>
+                <dd>
+                  {detail.analysis.answer.priceComparison.conclusion}
+                  {detail.analysis.answer.priceComparison.referencePrice !== null
+                    ? `（参考价 ${detail.analysis.answer.priceComparison.referencePrice} 元${
+                        detail.analysis.answer.priceComparison.source
+                          ? ` · 来源：${detail.analysis.answer.priceComparison.source}`
+                          : ""
+                      }）`
+                    : ""}
+                </dd>
+
+                {detail.analysis.answer.orderSteps.length > 0 ? (
+                  <>
+                    <dt>下单步骤</dt>
+                    <dd>{detail.analysis.answer.orderSteps.join(" → ")}</dd>
+                  </>
+                ) : null}
+
+                <dt>需求约束核对</dt>
+                <dd>
+                  {detail.analysis.answer.requirementChecks.length === 0 ? (
+                    <span className="muted">无</span>
+                  ) : (
+                    <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+                      {detail.analysis.answer.requirementChecks.map((rc, i) => (
+                        <li key={i}>
+                          <strong>{rc.needName}</strong>：
+                          {rc.satisfied ? "满足" : "不满足"}（{rc.reason}）
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </dd>
+
+                {detail.analysis.answer.risks.length > 0 ? (
+                  <>
+                    <dt>风险提示</dt>
+                    <dd>{detail.analysis.answer.risks.join("；")}</dd>
+                  </>
+                ) : null}
+              </dl>
+            ) : null}
+
+            <div className="muted small mono">
+              本次注入工具：
+              {detail.analysis.activeToolIds.length > 0
+                ? detail.analysis.activeToolIds.join(", ")
+                : "（无工具，纯单轮核验）"}
+            </div>
+
+            {detail.analysis.toolTrace.length > 0 ? (
+              <details>
+                <summary className="small muted" style={{ cursor: "pointer" }}>
+                  查看工具调用轨迹（{detail.analysis.toolTrace.length} 次调用）
+                </summary>
+                <TableScroll label="工具调用轨迹">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>步数</th>
+                        <th>工具</th>
+                        <th>参数</th>
+                        <th>状态</th>
+                        <th>耗时</th>
+                        <th>返回摘要</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.analysis.toolTrace.map((t, idx) => (
+                        <tr key={idx}>
+                          <td className="mono small">{t.step}</td>
+                          <td className="mono small">{t.toolName}</td>
+                          <td className="mono small" style={{ maxWidth: 220 }}>
+                            {JSON.stringify(t.arguments)}
+                          </td>
+                          <td>
+                            <Badge
+                              color={
+                                t.ok
+                                  ? "teal"
+                                  : t.infrastructureFailure
+                                    ? "red"
+                                    : "yellow"
+                              }
+                              variant="light"
+                            >
+                              {t.ok
+                                ? "成功"
+                                : t.infrastructureFailure
+                                  ? "基础设施故障"
+                                  : "业务无结果"}
+                            </Badge>
+                          </td>
+                          <td className="mono small">{t.durationMs}ms</td>
+                          <td className="small" style={{ maxWidth: 280 }}>
+                            {t.resultPreview}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableScroll>
+              </details>
+            ) : null}
+          </div>
         )}
       </Section>
 

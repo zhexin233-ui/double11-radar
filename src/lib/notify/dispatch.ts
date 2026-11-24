@@ -14,6 +14,7 @@ import type {
   Evaluation,
   Notification,
   NotifyChannel,
+  StandardizedAnswer,
 } from "@/lib/domain/types";
 
 /**
@@ -40,9 +41,15 @@ export interface NotificationPayload extends NotifyMessage {
   }>;
 }
 
+export interface NotificationBuildOptions {
+  analysis?: StandardizedAnswer | null;
+  analysisFallbackNote?: string | null;
+}
+
 export function buildNotificationPayload(
   bulletin: Bulletin,
   matched: Evaluation[],
+  options?: NotificationBuildOptions,
 ): NotificationPayload {
   const needs = matched.map((evaluation) => evaluation.needName);
   return {
@@ -56,6 +63,10 @@ export function buildNotificationPayload(
     brand: bulletin.brand,
     mall: bulletin.mall,
     channelName: bulletin.sourceNs,
+    ...(options?.analysis ? { analysis: options.analysis } : {}),
+    ...(options?.analysisFallbackNote
+      ? { analysisFallbackNote: options.analysisFallbackNote }
+      : {}),
     evaluations: matched.map((evaluation) => ({
       needId: evaluation.needId,
       needName: evaluation.needName,
@@ -80,8 +91,9 @@ export function createNotificationAndDeliveries(
   bulletin: Bulletin,
   matched: Evaluation[],
   key?: Buffer,
+  options?: NotificationBuildOptions,
 ): CreateNotificationResult {
-  const payload = buildNotificationPayload(bulletin, matched);
+  const payload = buildNotificationPayload(bulletin, matched, options);
   const runtime = getNotifyRuntimeConfig(db, key);
   const create = db.transaction(() => {
     const { notification, created } = createNotificationIfAbsent(

@@ -25,7 +25,7 @@ describe("V10 双项证据持久化（AC4/AC7）", () => {
         need_version, config_version, rule_version, result, attempts, created_at, updated_at,
         decision_policy_json) VALUES ('old', ?, 'n1', '旧需求', '', 1, 1, 'old-rule', 'matched', 1, 'old', 'old', ?)`)
         .run(id, JSON.stringify({ minMatchedProbability: 0.8, probabilitySumTolerance: 0.01 }));
-      expect(migrate(db).applied).toEqual([10]);
+      expect(migrate(db).applied).toEqual([10, 11]);
       expect(migrate(db).applied).toEqual([]);
       const [row] = listEvaluationsByBulletin(db, id);
       expect(row.offerAssessment).toBeNull();

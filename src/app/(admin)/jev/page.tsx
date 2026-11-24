@@ -16,6 +16,7 @@ import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import { DryRunPanel } from "@/components/DryRunPanel";
 import { JevKeysPanel } from "@/components/JevKeysPanel";
+import { Stage2SettingsPanel } from "@/components/Stage2SettingsPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { TableScroll } from "@/components/ui/TableScroll";
@@ -803,6 +804,7 @@ export default function ModelSettingsPage() {
           <Tabs.Tab value="keys">API 密钥</Tabs.Tab>
           <Tabs.Tab value="usage">费用与用量</Tabs.Tab>
           <Tabs.Tab value="dry-run">需求试判</Tabs.Tab>
+          <Tabs.Tab value="stage2">二级核验与工具</Tabs.Tab>
         </Tabs.List>
 
         {/* Tab 1: 连接与调度 */}
@@ -988,6 +990,10 @@ export default function ModelSettingsPage() {
         {/* Tab 5: 需求试判 */}
         <Tabs.Panel value="dry-run" pt="lg">
           <DryRunPanel />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="stage2" pt="lg">
+          <Stage2SettingsPanel />
         </Tabs.Panel>
       </Tabs>
     </div>

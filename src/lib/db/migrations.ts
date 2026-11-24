@@ -623,6 +623,85 @@ function migrateNotificationDedup(db: Database.Database): void {
   }
 }
 
+const V11_STAGE2_TOOLS_AND_ANALYSES = `
+CREATE TABLE IF NOT EXISTS stage2_tools (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('builtin', 'mcp', 'http_api')),
+  builtin_key TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+  sort_order INTEGER NOT NULL DEFAULT 100,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  secret_namespace TEXT,
+  cached_schema_json TEXT,
+  health_status TEXT NOT NULL DEFAULT 'healthy' CHECK(health_status IN ('healthy', 'open_circuit')),
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  failure_threshold INTEGER NOT NULL DEFAULT 3 CHECK(failure_threshold BETWEEN 1 AND 20),
+  cooldown_minutes INTEGER NOT NULL DEFAULT 15 CHECK(cooldown_minutes BETWEEN 1 AND 1440),
+  cooldown_until TEXT,
+  last_error TEXT,
+  last_success_at TEXT,
+  last_failure_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bulletin_analyses (
+  id TEXT PRIMARY KEY,
+  bulletin_id TEXT NOT NULL UNIQUE,
+  trigger_source TEXT NOT NULL CHECK(trigger_source IN ('matched', 'uncertain', 'manual')),
+  status TEXT NOT NULL CHECK(status IN ('succeeded', 'failed')),
+  verdict TEXT CHECK(verdict IN ('recommended', 'acceptable', 'rejected', 'insufficient_info')),
+  model TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  active_tool_ids_json TEXT NOT NULL DEFAULT '[]',
+  steps_used INTEGER NOT NULL DEFAULT 0,
+  tool_calls_count INTEGER NOT NULL DEFAULT 0,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  answer_json TEXT,
+  tool_trace_json TEXT NOT NULL,
+  error TEXT,
+  fallback_notified INTEGER NOT NULL DEFAULT 0 CHECK(fallback_notified IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS bulletin_analyses_verdict_idx ON bulletin_analyses(verdict, updated_at);
+`;
+
+function seedBuiltinStage2Tools(db: Database.Database): void {
+  const now = new Date().toISOString();
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO stage2_tools (
+      id, name, kind, builtin_key, enabled, sort_order, config_json,
+      secret_namespace, cached_schema_json, health_status, consecutive_failures,
+      failure_threshold, cooldown_minutes, created_at, updated_at
+    ) VALUES (
+      @id, @name, 'builtin', @builtinKey, 1, @sortOrder, @configJson,
+      NULL, NULL, 'healthy', 0,
+      3, 15, @now, @now
+    )
+  `);
+  insert.run({
+    id: "builtin-calculator",
+    name: "确定性价格计算器",
+    builtinKey: "calculator",
+    sortOrder: 10,
+    configJson: "{}",
+    now,
+  });
+  insert.run({
+    id: "builtin-local-history",
+    name: "本地历史线报比价库",
+    builtinKey: "local_history",
+    sortOrder: 20,
+    configJson: JSON.stringify({ historyDays: 90, maxResults: 20 }),
+    now,
+  });
+}
+
 export const migrations: Migration[] = [
   // 历史迁移保持不变，新告警独立于线报清理与投递统计。
   {
@@ -666,5 +745,11 @@ export const migrations: Migration[] = [
     version: 10,
     name: "evaluations_need_offer_assessment",
     sql: "ALTER TABLE evaluations ADD COLUMN offer_assessment_json TEXT;",
+  },
+  {
+    version: 11,
+    name: "stage2_pluggable_tools_and_analyses",
+    sql: V11_STAGE2_TOOLS_AND_ANALYSES,
+    run: seedBuiltinStage2Tools,
   },
 ];

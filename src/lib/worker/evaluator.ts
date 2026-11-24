@@ -40,6 +40,7 @@ import {
   decideNeedOfferConfirmation,
 } from "@/lib/jev/match-policy";
 import { createNotificationAndDeliveries } from "@/lib/notify/dispatch";
+import { getStage2Config } from "@/lib/service/stage2-config";
 import { buildRegexMatchText } from "@/lib/regex/rules";
 import { getSharedRegexRunner, type RegexRunner } from "@/lib/service/regex-runner";
 import { getJevConfig, getJevConfigView } from "@/lib/service/config";
@@ -336,7 +337,9 @@ async function evaluateJob(
   let matched = 0;
   let uncertain = 0;
   let failedCount = 0;
+  const stage2Config = getStage2Config(db).config;
   const matchedNeedIds: string[] = [];
+  const uncertainNeedIds: string[] = [];
   const persistNow = nowFrom(deps).toISOString();
 
   // 一次多问题请求最多计一次调用失败，但每条需求的答案独立落库。
@@ -371,22 +374,53 @@ async function evaluateJob(
       if (decision.result === "matched") {
         matched += 1;
         matchedNeedIds.push(need.id);
-      } else if (decision.result === "uncertain") uncertain += 1;
-      else if (decision.result === "failed") failedCount += 1;
+      } else if (decision.result === "uncertain") {
+        uncertain += 1;
+        uncertainNeedIds.push(need.id);
+      } else if (decision.result === "failed") failedCount += 1;
     }
 
     if (matchedNeedIds.length > 0) {
-      // 只汇总本次真正落库的确认匹配项，禁止重扫全部历史 matched 混入旧项。
-      const confirmed = new Set(matchedNeedIds);
-      const matchedEvaluations = listEvaluationsByBulletin(db, bulletin.id).filter(
-        (evaluation) =>
-          evaluation.ruleVersion === RULE_VERSION &&
-          evaluation.result === "matched" &&
-          confirmed.has(evaluation.needId),
-      );
-      if (matchedEvaluations.length > 0) {
-        createNotificationAndDeliveries(db, bulletin, matchedEvaluations);
+      if (stage2Config.enabled) {
+        enqueueJob(db, {
+          kind: "analyze",
+          payloadKey: `analyze:${bulletin.id}`,
+          payload: {
+            bulletinId: bulletin.id,
+            triggerSource: "matched",
+            needIds: matchedNeedIds,
+          },
+          maxAttempts: 3,
+        });
+      } else {
+        // 只汇总本次真正落库的确认匹配项，禁止重扫全部历史 matched 混入旧项。
+        const confirmed = new Set(matchedNeedIds);
+        const matchedEvaluations = listEvaluationsByBulletin(db, bulletin.id).filter(
+          (evaluation) =>
+            evaluation.ruleVersion === RULE_VERSION &&
+            evaluation.result === "matched" &&
+            confirmed.has(evaluation.needId),
+        );
+        if (matchedEvaluations.length > 0) {
+          createNotificationAndDeliveries(db, bulletin, matchedEvaluations);
+        }
       }
+    } else if (
+      stage2Config.enabled &&
+      stage2Config.includeUncertain &&
+      uncertainNeedIds.length > 0 &&
+      failedCount === 0
+    ) {
+      enqueueJob(db, {
+        kind: "analyze",
+        payloadKey: `analyze:${bulletin.id}`,
+        payload: {
+          bulletinId: bulletin.id,
+          triggerSource: "uncertain",
+          needIds: uncertainNeedIds,
+        },
+        maxAttempts: 3,
+      });
     }
     if (processing) {
       updateProcessing(

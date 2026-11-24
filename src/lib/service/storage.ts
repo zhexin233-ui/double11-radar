@@ -47,6 +47,7 @@ export interface StorageStats {
     deliveries: number;
     notifications: number;
     bulletinProcessing: number;
+    bulletinAnalyses: number;
     jevRequests: number;
     jobs: number;
   };
@@ -60,6 +61,7 @@ export interface CleanupResult {
   cleanedDeliveries: number;
   cleanedNotifications: number;
   cleanedProcessing: number;
+  cleanedAnalyses: number;
   cleanedJobs: number;
   durationMs: number;
 }
@@ -203,6 +205,7 @@ export function getStorageStats(db: Database.Database): StorageStats {
       deliveries: getTableCount(db, "deliveries"),
       notifications: getTableCount(db, "notifications"),
       bulletinProcessing: getTableCount(db, "bulletin_processing"),
+      bulletinAnalyses: getTableCount(db, "bulletin_analyses"),
       jevRequests: getTableCount(db, "jev_requests"),
       jobs: getTableCount(db, "jobs"),
     },
@@ -238,6 +241,7 @@ export function cleanupExpiredBulletins(
   let totalCleanedDeliveries = 0;
   let totalCleanedNotifications = 0;
   let totalCleanedProcessing = 0;
+  let totalCleanedAnalyses = 0;
   let totalCleanedJobs = 0;
 
   if (retentionDays <= 0) {
@@ -247,6 +251,7 @@ export function cleanupExpiredBulletins(
       cleanedDeliveries: 0,
       cleanedNotifications: 0,
       cleanedProcessing: 0,
+      cleanedAnalyses: 0,
       cleanedJobs: 0,
       durationMs: Date.now() - startTime,
     };
@@ -274,7 +279,7 @@ export function cleanupExpiredBulletins(
     selectSql += `
       AND NOT EXISTS (
         SELECT 1 FROM jobs j
-        WHERE j.payload_key = ('evaluate:' || b.id)
+        WHERE j.payload_key IN (('evaluate:' || b.id), ('analyze:' || b.id))
           AND j.status IN ('pending', 'leased')
       )
       AND NOT EXISTS (
@@ -310,13 +315,17 @@ export function cleanupExpiredBulletins(
       const rProcessing = db
         .prepare(`DELETE FROM bulletin_processing WHERE bulletin_id IN (${placeholders})`)
         .run(...ids);
-      // 5. 删除关联已完成/失效的 jobs
-      const jobKeys = ids.map((id) => `evaluate:${id}`);
+      // 5. 删除关联的 bulletin_analyses
+      const rAnalyses = db
+        .prepare(`DELETE FROM bulletin_analyses WHERE bulletin_id IN (${placeholders})`)
+        .run(...ids);
+      // 6. 删除关联已完成/失效的 jobs（evaluate 与 analyze）
+      const jobKeys = ids.flatMap((id) => [`evaluate:${id}`, `analyze:${id}`]);
       const jobPlaceholders = jobKeys.map(() => "?").join(",");
       const rJobs = db
         .prepare(`DELETE FROM jobs WHERE payload_key IN (${jobPlaceholders})`)
         .run(...jobKeys);
-      // 6. 最后删除 bulletins 本身
+      // 7. 最后删除 bulletins 本身
       const rBulletins = db
         .prepare(`DELETE FROM bulletins WHERE id IN (${placeholders})`)
         .run(...ids);
@@ -326,6 +335,7 @@ export function cleanupExpiredBulletins(
         deliveries: rDeliveries.changes,
         notifications: rNotifs.changes,
         processing: rProcessing.changes,
+        analyses: rAnalyses.changes,
         jobs: rJobs.changes,
         bulletins: rBulletins.changes,
       };
@@ -338,6 +348,7 @@ export function cleanupExpiredBulletins(
     totalCleanedDeliveries += result.deliveries;
     totalCleanedNotifications += result.notifications;
     totalCleanedProcessing += result.processing;
+    totalCleanedAnalyses += result.analyses;
     totalCleanedJobs += result.jobs;
 
     if (result.bulletins < batchSize) {
@@ -357,6 +368,7 @@ export function cleanupExpiredBulletins(
     cleanedDeliveries: totalCleanedDeliveries,
     cleanedNotifications: totalCleanedNotifications,
     cleanedProcessing: totalCleanedProcessing,
+    cleanedAnalyses: totalCleanedAnalyses,
     cleanedJobs: totalCleanedJobs,
     durationMs: Date.now() - startTime,
   };
