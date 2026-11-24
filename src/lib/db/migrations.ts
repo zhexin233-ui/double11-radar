@@ -702,6 +702,45 @@ function seedBuiltinStage2Tools(db: Database.Database): void {
   });
 }
 
+const V12_STAGE2_REQUEST_LEDGER = `
+CREATE TABLE IF NOT EXISTS stage2_requests (
+  id TEXT PRIMARY KEY,
+  purpose TEXT NOT NULL CHECK(purpose IN ('analyze', 'manual_analyze', 'test')),
+  bulletin_id TEXT,
+  job_id TEXT,
+  provider_origin TEXT,
+  config_version INTEGER,
+  requested_model TEXT NOT NULL,
+  response_model TEXT,
+  matched_catalog_model_id TEXT,
+  status TEXT NOT NULL CHECK(status IN ('in_flight', 'succeeded', 'failed', 'interrupted')),
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  lease_until TEXT,
+  result_recorded_at TEXT,
+  http_status INTEGER,
+  error_code TEXT,
+  error_message TEXT,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  price_version TEXT,
+  input_rate_usd_per_million REAL,
+  output_rate_usd_per_million REAL,
+  input_rate_source TEXT NOT NULL DEFAULT 'unknown' CHECK(input_rate_source IN ('manual', 'openrouter', 'unknown')),
+  output_rate_source TEXT NOT NULL DEFAULT 'unknown' CHECK(output_rate_source IN ('manual', 'openrouter', 'unknown')),
+  estimated_usd_nanos INTEGER,
+  cost_status TEXT NOT NULL DEFAULT 'unknown' CHECK(cost_status IN ('known', 'unknown')),
+  unknown_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS stage2_requests_started_id_idx
+  ON stage2_requests(started_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS stage2_requests_status_lease_idx
+  ON stage2_requests(status, lease_until);
+CREATE INDEX IF NOT EXISTS stage2_requests_bulletin_idx
+  ON stage2_requests(bulletin_id);
+`;
+
 export const migrations: Migration[] = [
   // 历史迁移保持不变，新告警独立于线报清理与投递统计。
   {
@@ -751,5 +790,10 @@ export const migrations: Migration[] = [
     name: "stage2_pluggable_tools_and_analyses",
     sql: V11_STAGE2_TOOLS_AND_ANALYSES,
     run: seedBuiltinStage2Tools,
+  },
+  {
+    version: 12,
+    name: "stage2_request_ledger",
+    sql: V12_STAGE2_REQUEST_LEDGER,
   },
 ];

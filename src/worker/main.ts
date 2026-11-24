@@ -4,6 +4,8 @@ import { getDb } from "@/lib/db/client";
 import { migrate } from "@/lib/db/migrate";
 import { reclaimExpiredLeases } from "@/lib/db/repos/jobs";
 import { reclaimExpiredRequestReservations } from "@/lib/db/repos/jev-requests";
+import { reclaimExpiredStage2RequestReservations } from "@/lib/db/repos/stage2-requests";
+import { syncOpenRouterCatalog } from "@/lib/service/openrouter-pricing";
 import { ensureAdminCredential } from "@/lib/auth/password";
 import { loadEnv, type AppEnv } from "@/lib/env";
 import { runCollectorOnce } from "@/lib/worker/collector";
@@ -27,6 +29,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 const COLLECT_INTERVAL_MS = 5_000;
 const WORK_INTERVAL_MS = 2_000;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 每小时检查一次超期清理
+const OPENROUTER_PRICING_CHECK_INTERVAL_MS = 15 * 60 * 1000; // 每 15 分钟检查一次 OpenRouter 价格目录是否到期
 
 async function withGuard(
   label: string,
@@ -51,11 +54,13 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
   });
 
   let running = true;
+  const stopController = new AbortController();
   // 各循环的重入保护：单轮可能因外部超时耗时较长，避免定时器叠加。
   let collecting = false;
   let working = false;
   let cleaning = false;
   let alerting = false;
+  let syncingPricing = false;
 
   const reportError = (message: string) => {
     console.error(message);
@@ -82,6 +87,23 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
     }
   }, HEARTBEAT_INTERVAL_MS);
 
+  const syncPricing = () => {
+    if (!running || syncingPricing) return;
+    syncingPricing = true;
+    void withGuard(
+      "openrouter-pricing",
+      () => syncOpenRouterCatalog(db, { signal: stopController.signal }),
+      reportError,
+    ).finally(() => {
+      syncingPricing = false;
+    });
+  };
+  syncPricing();
+  const pricingTimer = setInterval(
+    syncPricing,
+    OPENROUTER_PRICING_CHECK_INTERVAL_MS,
+  );
+
   const collectTimer = setInterval(() => {
     if (!running || collecting) return;
     collecting = true;
@@ -91,6 +113,7 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
         reclaimExpiredLeases(db);
         // 超期请求预留转为 interrupted：释放容量、费用未知，不伪造零账单。
         reclaimExpiredRequestReservations(db);
+        reclaimExpiredStage2RequestReservations(db);
         return runCollectorOnce(db, env);
       },
       reportError,
@@ -148,12 +171,14 @@ export async function startWorker(env: AppEnv): Promise<() => void> {
 
   return () => {
     running = false;
+    stopController.abort();
     clearInterval(heartbeat);
     clearInterval(reenableTimer);
     clearInterval(collectTimer);
     clearInterval(workTimer);
     clearInterval(cleanupTimer);
     clearInterval(alertTimer);
+    clearInterval(pricingTimer);
     // 释放正则执行线程，避免进程退出时遗留 worker。
     disposeSharedRegexRunner();
   };

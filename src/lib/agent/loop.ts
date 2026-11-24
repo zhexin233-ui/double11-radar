@@ -6,6 +6,8 @@ import type {
 } from "@/lib/domain/types";
 import {
   callOpenAiChatCompletion,
+  type ChatCompletionRequest,
+  type ChatCompletionResponse,
   type ChatMessage,
 } from "@/lib/agent/llm-client";
 import { parseStandardizedAnswer } from "@/lib/agent/schema";
@@ -26,6 +28,8 @@ export interface AgentLoopInput {
     maxSteps: number;
     temperature: number;
   };
+  /** 可选统一调用器（用于接入二级逐次计费账本）；默认直接调用底层传输函数。 */
+  callLlm?: (req: ChatCompletionRequest) => Promise<ChatCompletionResponse>;
   fetchImpl?: typeof fetch;
 }
 
@@ -168,13 +172,14 @@ export async function runStage2AgentLoop(
     { role: "user", content: buildUserPrompt(input) },
   ];
 
+  const invokeLlm = input.callLlm ?? callOpenAiChatCompletion;
   let stepsUsed = 0;
   let finalRawContent: string | null = null;
 
   // 零工具退化：直接单轮无工具请求收敛
   if (remainingTools.length === 0) {
     stepsUsed = 1;
-    const res = await callOpenAiChatCompletion({
+    const res = await invokeLlm({
       baseUrl: input.llm.baseUrl,
       apiKey: input.llm.apiKey,
       model: input.llm.model,
@@ -188,7 +193,7 @@ export async function runStage2AgentLoop(
   } else {
     for (let step = 1; step <= maxSteps; step++) {
       stepsUsed = step;
-      const res = await callOpenAiChatCompletion({
+      const res = await invokeLlm({
         baseUrl: input.llm.baseUrl,
         apiKey: input.llm.apiKey,
         model: input.llm.model,
@@ -296,7 +301,7 @@ export async function runStage2AgentLoop(
         content:
           "已达到最大工具调用步数上限，请停止调用工具，立即基于已有信息输出最终的标准化 JSON 简报。",
       });
-      const forced = await callOpenAiChatCompletion({
+      const forced = await invokeLlm({
         baseUrl: input.llm.baseUrl,
         apiKey: input.llm.apiKey,
         model: input.llm.model,
@@ -323,7 +328,7 @@ export async function runStage2AgentLoop(
       role: "user",
       content: `你的输出未通过 JSON Schema 校验（${parsed.error}）。请严格按照要求的 JSON 结构重新输出唯一一个合法 JSON 对象，不要包含额外说明。`,
     });
-    const repaired = await callOpenAiChatCompletion({
+    const repaired = await invokeLlm({
       baseUrl: input.llm.baseUrl,
       apiKey: input.llm.apiKey,
       model: input.llm.model,

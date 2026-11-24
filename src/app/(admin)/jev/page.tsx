@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  Badge,
   Button,
   Fieldset,
   Modal,
@@ -33,12 +34,16 @@ import {
   JEV_USAGE_BY_KEY_PREVIEW,
   MAX_REGEX_RULE_LENGTH,
   MAX_REGEX_RULES,
+  RATE_SOURCE_LABELS,
+  USAGE_STAGE_OPTIONS,
   type EvaluationModeDto,
   type JevConfigDto,
   type JevSettingsDto,
   type JevUsageDto,
+  type JevUsageRequestDto,
   type ModelChannelDto,
   type TestResultDto,
+  type UsageStageScopeDto,
 } from "@/components/api-types";
 
 const USAGE_PAGE_SIZE = 20;
@@ -471,11 +476,27 @@ function StrategyForm(props: {
   );
 }
 
+function formatRateSourceSummary(req: JevUsageRequestDto): string {
+  if (req.stage === "stage1") {
+    return req.costStatus === "known" ? RATE_SOURCE_LABELS.official : "未知";
+  }
+  if (req.inputRateSource === req.outputRateSource) {
+    return RATE_SOURCE_LABELS[req.inputRateSource];
+  }
+  const shortLabel = (s: JevUsageRequestDto["inputRateSource"]) =>
+    s === "manual" ? "手动" : s === "openrouter" ? "目录" : "未知";
+  return `入:${shortLabel(req.inputRateSource)} / 出:${shortLabel(req.outputRateSource)}`;
+}
+
 /** 费用用量展示面板 */
 function JevUsagePanel(props: {
   channels: ModelChannelDto[];
+  stage: UsageStageScopeDto;
+  onStageChange: (stage: UsageStageScopeDto) => void;
   selectedChannelId: string;
   onChannelChange: (id: string) => void;
+  selectedModel: string;
+  onModelChange: (model: string) => void;
   usage: JevUsageDto | undefined;
   error: string | null;
   loading: boolean;
@@ -493,7 +514,7 @@ function JevUsagePanel(props: {
   }
   if (!props.usage) return null;
 
-  const { summary, byKey, recent } = props.usage;
+  const { summary, byKey, byModel, availableModels, recent } = props.usage;
   const safeByKeyPage = clampPage(
     byKeyPage,
     byKey.length,
@@ -509,26 +530,75 @@ function JevUsagePanel(props: {
     })),
   ];
 
+  const modelSelectOptions = [
+    { value: "", label: "全部模型" },
+    ...availableModels.map((m) => ({ value: m, label: m })),
+  ];
+
   return (
     <div className="stack">
-      <div style={{ maxWidth: 320 }}>
-        <Select
-          label="筛选渠道"
-          placeholder="选择渠道"
-          data={channelSelectOptions}
-          value={props.selectedChannelId}
-          onChange={(val) => props.onChannelChange(val ?? "")}
-        />
+      <div className="row" style={{ flexWrap: "wrap", gap: "var(--sp-3)" }}>
+        <div style={{ minWidth: 220 }}>
+          <Select
+            label="核验级别"
+            data={USAGE_STAGE_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+            }))}
+            value={props.stage}
+            onChange={(val) =>
+              props.onStageChange((val as UsageStageScopeDto) || "all")
+            }
+          />
+        </div>
+        <div style={{ minWidth: 240 }}>
+          <Select
+            label="筛选模型"
+            placeholder="全部模型"
+            searchable
+            data={modelSelectOptions}
+            value={props.selectedModel}
+            onChange={(val) => props.onModelChange(val ?? "")}
+          />
+        </div>
+        {props.stage === "stage1" ? (
+          <div style={{ minWidth: 240 }}>
+            <Select
+              label="筛选一级渠道"
+              placeholder="全部渠道"
+              data={channelSelectOptions}
+              value={props.selectedChannelId}
+              onChange={(val) => props.onChannelChange(val ?? "")}
+            />
+          </div>
+        ) : null}
       </div>
+
+      {props.stage !== "stage1" ? (
+        <p className="muted small" style={{ margin: 0 }}>
+          二级核验逐次调用统计自本功能启用时开始
+          {props.usage.stage2StatsStartedAt
+            ? `（最早记录：${formatTime(props.usage.stage2StatsStartedAt)}）`
+            : "（暂未产生二级调用记录）"}
+          ；OpenRouter 目录价为参考估算，不含缓存折扣或发票差异。
+        </p>
+      ) : null}
 
       <div className="stats">
         <div className="stat-cell">
           <div className="stat-label">总请求数</div>
           <div className="stat-value">{summary.totalRequests}</div>
+          {summary.pendingCount > 0 ? (
+            <div className="muted small">进行中 {summary.pendingCount} 次</div>
+          ) : null}
         </div>
         <div className="stat-cell">
-          <div className="stat-label">估算总费用</div>
-          <div className="stat-value mono">{summary.knownCostUsd}</div>
+          <div className="stat-label">已知估算总费用</div>
+          <div className="stat-value mono">${summary.knownCostUsd}</div>
+          <div className="muted small">
+            已计价 {summary.knownRequestCount} 次 · 费用未知{" "}
+            {summary.unknownCostCount} 次
+          </div>
         </div>
         <div className="stat-cell">
           <div className="stat-label">失败请求</div>
@@ -541,7 +611,7 @@ function JevUsagePanel(props: {
           </div>
         </div>
         <div className="stat-cell">
-          <div className="stat-label">输入 / 输出 Token</div>
+          <div className="stat-label">已知输入 / 输出 Token</div>
           <div
             className="stat-value mono"
             style={{ fontSize: "clamp(1.05rem, 1.6vw, 1.35rem)" }}
@@ -552,37 +622,48 @@ function JevUsagePanel(props: {
       </div>
 
       <div className="stack-sm">
-        <div className="section-head" style={{ marginBottom: 0 }}>
-          <h3>各 Key 用量（前 {JEV_USAGE_BY_KEY_PREVIEW} 个）</h3>
-          {byKey.length > JEV_USAGE_BY_KEY_PREVIEW ? (
-            <Button
-              size="xs"
-              variant="default"
-              onClick={() => setByKeyOpened(true)}
-            >
-              查看全部 ({byKey.length})
-            </Button>
-          ) : null}
-        </div>
-        {previewKeys.length === 0 ? (
-          <p className="empty">暂无各 Key 用量记录。</p>
+        <h3>按模型汇总</h3>
+        {byModel.length === 0 ? (
+          <p className="empty">暂无按模型统计记录。</p>
         ) : (
-          <TableScroll label="各 Key 用量预览">
+          <TableScroll label="按模型用量汇总" minTableWidth={640}>
             <table>
               <thead>
                 <tr>
-                  <th>Key 名称</th>
+                  <th>级别</th>
+                  <th>模型</th>
                   <th>请求数</th>
-                  <th>估算费用</th>
+                  <th>已计价 / 未知</th>
+                  <th>输入 / 输出 Token</th>
+                  <th>已知估算费用</th>
                   <th>失败数</th>
                 </tr>
               </thead>
               <tbody>
-                {previewKeys.map((item) => (
-                  <tr key={item.keyId ?? "unknown"}>
-                    <td>{item.keyLabel ?? "未记录 Key"}</td>
+                {byModel.map((item) => (
+                  <tr key={`${item.stage}:${item.model}`}>
+                    <td>
+                      <Badge
+                        size="xs"
+                        variant="light"
+                        color={item.stage === "stage2" ? "indigo" : "gray"}
+                      >
+                        {item.stageLabel}
+                      </Badge>
+                    </td>
+                    <td className="mono">{item.model}</td>
                     <td className="mono">{item.requestCount}</td>
-                    <td className="mono">{item.knownCostUsd}</td>
+                    <td className="mono">
+                      {item.knownRequestCount} / {item.unknownCostCount}
+                    </td>
+                    <td className="mono">
+                      {item.inputTokens} / {item.outputTokens}
+                    </td>
+                    <td className="mono">
+                      {item.knownRequestCount > 0
+                        ? `$${item.knownCostUsd}`
+                        : "—"}
+                    </td>
                     <td className={item.failedCount > 0 ? "mono error" : "mono"}>
                       {item.failedCount}
                     </td>
@@ -594,36 +675,107 @@ function JevUsagePanel(props: {
         )}
       </div>
 
+      {props.stage === "stage1" ? (
+        <div className="stack-sm">
+          <div className="section-head" style={{ marginBottom: 0 }}>
+            <h3>一级各 Key 用量（前 {JEV_USAGE_BY_KEY_PREVIEW} 个）</h3>
+            {byKey.length > JEV_USAGE_BY_KEY_PREVIEW ? (
+              <Button
+                size="xs"
+                variant="default"
+                onClick={() => setByKeyOpened(true)}
+              >
+                查看全部 ({byKey.length})
+              </Button>
+            ) : null}
+          </div>
+          {previewKeys.length === 0 ? (
+            <p className="empty">暂无各 Key 用量记录。</p>
+          ) : (
+            <TableScroll label="各 Key 用量预览">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Key 名称</th>
+                    <th>请求数</th>
+                    <th>已知估算费用</th>
+                    <th>费用未知</th>
+                    <th>失败数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewKeys.map((item) => (
+                    <tr key={item.keyId ?? "unknown"}>
+                      <td>{item.keyLabel ?? "未记录 Key"}</td>
+                      <td className="mono">{item.requestCount}</td>
+                      <td className="mono">
+                        {item.knownRequestCount > 0
+                          ? `$${item.knownCostUsd}`
+                          : "—"}
+                      </td>
+                      <td className="mono">{item.unknownCostCount}</td>
+                      <td
+                        className={item.failedCount > 0 ? "mono error" : "mono"}
+                      >
+                        {item.failedCount}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
+          )}
+        </div>
+      ) : null}
+
       <div className="stack-sm">
         <h3>最近调用账本</h3>
         {recent.items.length === 0 ? (
           <p className="empty">暂无调用账本记录。</p>
         ) : (
           <>
-            <TableScroll label="最近调用账本">
+            <TableScroll label="最近调用账本" minTableWidth={860}>
               <table>
                 <thead>
                   <tr>
                     <th>时间</th>
+                    <th>级别</th>
                     <th>用途</th>
-                    <th>Key / 服务地址</th>
+                    <th>模型 / 来源</th>
                     <th>状态</th>
-                    <th>HTTP</th>
+                    <th>Token（入 / 出）</th>
+                    <th>费用来源</th>
                     <th>估算费用</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recent.items.map((req) => (
-                    <tr key={req.id}>
+                    <tr key={`${req.stage}:${req.id}`}>
                       <td className="small mono">
                         {formatTime(req.startedAt)}
                       </td>
+                      <td>
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color={req.stage === "stage2" ? "indigo" : "gray"}
+                        >
+                          {req.stageLabel}
+                        </Badge>
+                      </td>
                       <td>{req.purposeLabel}</td>
                       <td>
-                        <div>{req.keyLabel ?? "—"}</div>
-                        {req.baseUrl ? (
-                          <div className="muted small mono">{req.baseUrl}</div>
-                        ) : null}
+                        <div className="mono small">{req.effectiveModel}</div>
+                        {req.stage === "stage1" ? (
+                          <div className="muted small">
+                            {req.keyLabel ?? "—"}
+                            {req.baseUrl ? ` · ${req.baseUrl}` : ""}
+                          </div>
+                        ) : (
+                          <div className="muted small mono">
+                            {req.providerOrigin ?? "—"}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <StatusBadge
@@ -637,9 +789,38 @@ function JevUsagePanel(props: {
                         >
                           {req.statusLabel}
                         </StatusBadge>
+                        {req.httpStatus !== null ? (
+                          <span className="muted small mono" style={{ marginLeft: 6 }}>
+                            HTTP {req.httpStatus}
+                          </span>
+                        ) : null}
+                        {req.errorMessage ? (
+                          <div className="error small">{req.errorMessage}</div>
+                        ) : null}
                       </td>
-                      <td className="mono">{req.httpStatus ?? "—"}</td>
-                      <td className="mono">{req.estimatedUsd ?? "—"}</td>
+                      <td className="mono small">
+                        {req.inputTokens ?? "—"} / {req.outputTokens ?? "—"}
+                      </td>
+                      <td className="small">
+                        {formatRateSourceSummary(req)}
+                      </td>
+                      <td className="mono small">
+                        {req.status === "in_flight" ? (
+                          "—"
+                        ) : req.costStatus === "known" &&
+                          req.estimatedUsd !== null ? (
+                          `$${req.estimatedUsd}`
+                        ) : (
+                          <div>
+                            <span className="muted">费用未知</span>
+                            {req.unknownReason ? (
+                              <div className="muted small">
+                                {req.unknownReason}
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -659,7 +840,7 @@ function JevUsagePanel(props: {
       <Modal
         opened={byKeyOpened}
         onClose={() => setByKeyOpened(false)}
-        title="全部 Key 用量明细"
+        title="全部一级 Key 用量明细"
         size="lg"
         centered
       >
@@ -670,7 +851,8 @@ function JevUsagePanel(props: {
                 <tr>
                   <th>Key 名称</th>
                   <th>请求数</th>
-                  <th>估算费用</th>
+                  <th>已知估算费用</th>
+                  <th>费用未知</th>
                   <th>失败数</th>
                 </tr>
               </thead>
@@ -683,7 +865,12 @@ function JevUsagePanel(props: {
                   <tr key={item.keyId ?? "unknown"}>
                     <td>{item.keyLabel ?? "未记录 Key"}</td>
                     <td className="mono">{item.requestCount}</td>
-                    <td className="mono">{item.knownCostUsd}</td>
+                    <td className="mono">
+                      {item.knownRequestCount > 0
+                        ? `$${item.knownCostUsd}`
+                        : "—"}
+                    </td>
+                    <td className="mono">{item.unknownCostCount}</td>
                     <td className={item.failedCount > 0 ? "mono error" : "mono"}>
                       {item.failedCount}
                     </td>
@@ -711,7 +898,10 @@ export default function ModelSettingsPage() {
   const [keysOpened, setKeysOpened] = useState(false);
   const [selectedChannelIdForKeys, setSelectedChannelIdForKeys] =
     useState<string>("");
+  const [usageStage, setUsageStage] = useState<UsageStageScopeDto>("all");
   const [selectedChannelIdForUsage, setSelectedChannelIdForUsage] =
+    useState<string>("");
+  const [selectedModelForUsage, setSelectedModelForUsage] =
     useState<string>("");
   const [usagePage, setUsagePage] = useState(0);
 
@@ -728,11 +918,41 @@ export default function ModelSettingsPage() {
   const channels = channelsResource.data ?? [];
 
   const settings = useApiResource<JevSettingsDto>("/api/settings/jev");
+
+  const usageParams = new URLSearchParams({
+    stage: usageStage,
+    limit: String(USAGE_PAGE_SIZE),
+    offset: String(usagePage * USAGE_PAGE_SIZE),
+  });
+  if (usageStage === "stage1" && selectedChannelIdForUsage) {
+    usageParams.set("channelId", selectedChannelIdForUsage);
+  }
+  if (selectedModelForUsage) {
+    usageParams.set("model", selectedModelForUsage);
+  }
+
   const usage = useApiResource<JevUsageDto>(
-    `/api/settings/jev/usage?page=${usagePage + 1}&pageSize=${USAGE_PAGE_SIZE}${
-      selectedChannelIdForUsage ? `&channelId=${selectedChannelIdForUsage}` : ""
-    }`,
+    `/api/settings/jev/usage?${usageParams.toString()}`,
   );
+
+  function handleUsageStageChange(nextStage: UsageStageScopeDto) {
+    setUsageStage(nextStage);
+    setUsagePage(0);
+    setSelectedModelForUsage("");
+    if (nextStage !== "stage1") {
+      setSelectedChannelIdForUsage("");
+    }
+  }
+
+  function handleUsageChannelChange(nextChannelId: string) {
+    setSelectedChannelIdForUsage(nextChannelId);
+    setUsagePage(0);
+  }
+
+  function handleUsageModelChange(nextModel: string) {
+    setSelectedModelForUsage(nextModel);
+    setUsagePage(0);
+  }
 
   async function reloadAll() {
     await Promise.all([
@@ -972,12 +1192,16 @@ export default function ModelSettingsPage() {
         <Tabs.Panel value="usage" pt="lg">
           <Section
             title="费用与用量统计"
-            description="展示各渠道的实际调用统计与账本。金额按公布费率估算。"
+            description="统一查看一级（Jev / Laya）与二级深度核验的实际调用账本。金额按公布费率、手动单价或 OpenRouter 目录参考价估算。"
           >
             <JevUsagePanel
               channels={channels}
+              stage={usageStage}
+              onStageChange={handleUsageStageChange}
               selectedChannelId={selectedChannelIdForUsage}
-              onChannelChange={setSelectedChannelIdForUsage}
+              onChannelChange={handleUsageChannelChange}
+              selectedModel={selectedModelForUsage}
+              onModelChange={handleUsageModelChange}
               usage={usage.data ?? undefined}
               error={usage.error}
               loading={usage.loading}

@@ -493,7 +493,84 @@ export interface Stage2LlmConfig {
   timeoutMs: number;
   maxSteps: number;
   temperature: number;
+  /** 可选手动输入单价（美元 / 百万 Token）；null 使用目录，0 表示免费。 */
+  inputUsdPerMillion: number | null;
+  /** 可选手动输出单价（美元 / 百万 Token）；null 使用目录，0 表示免费。 */
+  outputUsdPerMillion: number | null;
+  /** 非直连 OpenRouter 时的参考模型 ID；直连 OpenRouter 时忽略并清空。 */
+  openRouterModelId: string | null;
 }
+
+export type Stage2PriceSource = "manual" | "openrouter" | "unknown";
+
+export type OpenRouterCatalogSyncStatus = "idle" | "ok" | "error";
+
+export interface OpenRouterModelPrice {
+  inputUsdPerMillion: number | null;
+  outputUsdPerMillion: number | null;
+}
+
+export interface OpenRouterCatalogState {
+  models: Record<string, OpenRouterModelPrice>;
+  modelCount: number;
+  snapshotVersion: string | null;
+  status: OpenRouterCatalogSyncStatus;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  refreshLockUntil: string | null;
+  refreshLockOwner: string | null;
+}
+
+export interface Stage2ResolvedRate {
+  inputUsdPerMillion: number | null;
+  outputUsdPerMillion: number | null;
+  inputSource: Stage2PriceSource;
+  outputSource: Stage2PriceSource;
+  matchedCatalogModelId: string | null;
+  catalogVersion: string | null;
+  isDirectOpenRouter: boolean;
+}
+
+export type Stage2RequestPurpose = "analyze" | "manual_analyze" | "test";
+
+export type Stage2RequestStatus =
+  | "in_flight"
+  | "succeeded"
+  | "failed"
+  | "interrupted";
+
+export interface Stage2Request {
+  id: string;
+  purpose: Stage2RequestPurpose;
+  bulletinId: string | null;
+  jobId: string | null;
+  providerOrigin: string | null;
+  configVersion: number | null;
+  requestedModel: string;
+  responseModel: string | null;
+  matchedCatalogModelId: string | null;
+  status: Stage2RequestStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  leaseUntil: string | null;
+  resultRecordedAt: string | null;
+  httpStatus: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  priceVersion: string | null;
+  inputRateUsdPerMillion: number | null;
+  outputRateUsdPerMillion: number | null;
+  inputRateSource: Stage2PriceSource;
+  outputRateSource: Stage2PriceSource;
+  estimatedUsdNanos: number | null;
+  costStatus: JevCostStatus;
+  unknownReason: string | null;
+}
+
+export type UsageStageScope = "all" | "stage1" | "stage2";
 
 export interface Stage2Config {
   enabled: boolean;

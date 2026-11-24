@@ -12,6 +12,7 @@ vi.mock("@/lib/worker/collector", () => ({ runCollectorOnce: vi.fn(async () => 0
 vi.mock("@/lib/worker/evaluator", () => ({ runEvaluatorOnce: vi.fn(() => new Promise(() => {})) }));
 vi.mock("@/lib/worker/deliverer", () => ({ runDelivererOnce: vi.fn(async () => 0) }));
 vi.mock("@/lib/worker/system-alert-deliverer", () => ({ runSystemAlertDelivererOnce: vi.fn(() => new Promise(() => {})) }));
+vi.mock("@/lib/service/openrouter-pricing", () => ({ syncOpenRouterCatalog: vi.fn(async () => ({ synced: false, modelCount: 0, error: null })) }));
 
 it("启动补处理到期计划；慢判断与通知不阻塞5秒恢复，停止时清理定时器（A5）", async () => {
   const ctx = createTestDb();

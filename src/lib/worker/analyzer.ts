@@ -27,6 +27,7 @@ import {
   getStage2Config,
   readStage2LlmApiKey,
 } from "@/lib/service/stage2-config";
+import { createStage2LoopCaller } from "@/lib/service/stage2-requests";
 
 export const STAGE2_FALLBACK_NOTE =
   "二级核验未完成，以下为一级命中原文，请人工核对";
@@ -105,7 +106,7 @@ export async function analyzeBulletinOnce(
   } = {},
 ): Promise<BulletinAnalysis> {
   const now = options.now ? options.now() : new Date();
-  const { config } = getStage2Config(db, options.encryptionKey);
+  const { config, version } = getStage2Config(db, options.encryptionKey);
   const { apiKey, unreadable } = readStage2LlmApiKey(
     db,
     options.encryptionKey,
@@ -136,6 +137,17 @@ export async function analyzeBulletinOnce(
     fetchImpl: options.fetchImpl,
   });
 
+  const callLlm = createStage2LoopCaller(db, {
+    purpose: triggerSource === "manual" ? "manual_analyze" : "analyze",
+    bulletinId: bulletin.id,
+    jobId: null,
+    configVersion: version,
+    manualInputUsdPerMillion: config.llm.inputUsdPerMillion,
+    manualOutputUsdPerMillion: config.llm.outputUsdPerMillion,
+    openRouterModelId: config.llm.openRouterModelId,
+    now: options.now,
+  });
+
   const loopRes = await runStage2AgentLoop({
     bulletin,
     matchedNeeds: needs,
@@ -148,6 +160,7 @@ export async function analyzeBulletinOnce(
       maxSteps: config.llm.maxSteps,
       temperature: config.llm.temperature,
     },
+    callLlm,
     fetchImpl: options.fetchImpl,
   });
 
@@ -180,7 +193,7 @@ export async function runAnalyzerOnce(
   _env?: AppEnv,
   deps: AnalyzerDeps = {},
 ): Promise<{ processed: number }> {
-  const { config } = getStage2Config(db, deps.encryptionKey);
+  const { config, version } = getStage2Config(db, deps.encryptionKey);
   const leaseMs =
     config.llm.timeoutMs * Math.min(config.llm.maxSteps + 1, 8) + 30_000;
   const owner = `analyzer-${randomUUID()}`;
@@ -291,6 +304,17 @@ export async function runAnalyzerOnce(
       };
 
       try {
+        const callLlm = createStage2LoopCaller(db, {
+          purpose: "analyze",
+          bulletinId: bulletin.id,
+          jobId: job.id,
+          configVersion: version,
+          manualInputUsdPerMillion: config.llm.inputUsdPerMillion,
+          manualOutputUsdPerMillion: config.llm.outputUsdPerMillion,
+          openRouterModelId: config.llm.openRouterModelId,
+          now: deps.now,
+        });
+
         const loopRes = await runStage2AgentLoop({
           bulletin,
           matchedNeeds: needs,
@@ -303,6 +327,7 @@ export async function runAnalyzerOnce(
             maxSteps: config.llm.maxSteps,
             temperature: config.llm.temperature,
           },
+          callLlm,
           fetchImpl: deps.fetchImpl,
         });
 

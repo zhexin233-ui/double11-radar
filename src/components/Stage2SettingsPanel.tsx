@@ -20,8 +20,11 @@ import { TableScroll } from "@/components/ui/TableScroll";
 import { Feedback } from "@/components/ui/Feedback";
 import { formatTime } from "@/components/format";
 import {
+  RATE_SOURCE_LABELS,
   STAGE2_TOOL_KIND_LABELS,
+  type Stage2PriceSourceDto,
   type Stage2SettingsDto,
+  type Stage2SyncPricingResultDto,
   type Stage2ToolViewDto,
 } from "@/components/api-types";
 
@@ -33,6 +36,37 @@ function toNumber(val: number | string, fallback: number): number {
   if (val === "" || val === null || val === undefined) return fallback;
   const n = Number(val);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function parseOptionalRateInput(val: number | string): number | null {
+  if (val === "" || val === null || val === undefined) return null;
+  const n = Number(val);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function isDirectOpenRouterUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw.trim());
+    return (
+      parsed.protocol === "https:" &&
+      parsed.hostname.toLowerCase() === "openrouter.ai" &&
+      (parsed.port === "" || parsed.port === "443")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function formatRatePerMillion(rate: number | null): string {
+  if (rate === null) return "未知";
+  if (rate === 0) return "$0 / 百万 Token（免费）";
+  return `$${rate} / 百万 Token`;
+}
+
+function priceSourceBadgeColor(source: Stage2PriceSourceDto): string {
+  if (source === "manual") return "blue";
+  if (source === "openrouter") return "teal";
+  return "gray";
 }
 
 function formatCooldownRemaining(cooldownUntil: string | null): string {
@@ -54,6 +88,7 @@ export function Stage2SettingsPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [savingConfig, setSavingConfig] = useState(false);
   const [testingLlm, setTestingLlm] = useState(false);
+  const [syncingPricing, setSyncingPricing] = useState(false);
 
   // 引擎表单状态（首次加载或重置后同步）
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
@@ -68,6 +103,13 @@ export function Stage2SettingsPanel() {
   const [timeoutMs, setTimeoutMs] = useState(25000);
   const [maxSteps, setMaxSteps] = useState(5);
   const [temperature, setTemperature] = useState(0.1);
+  const [inputUsdPerMillion, setInputUsdPerMillion] = useState<number | string>(
+    "",
+  );
+  const [outputUsdPerMillion, setOutputUsdPerMillion] = useState<
+    number | string
+  >("");
+  const [openRouterModelId, setOpenRouterModelId] = useState("");
   const [apiKeyMode, setApiKeyMode] = useState<SecretMode>("keep");
   const [apiKeyInput, setApiKeyInput] = useState("");
 
@@ -83,8 +125,29 @@ export function Stage2SettingsPanel() {
     setTimeoutMs(data.config.llm.timeoutMs);
     setMaxSteps(data.config.llm.maxSteps);
     setTemperature(data.config.llm.temperature);
+    setInputUsdPerMillion(data.config.llm.inputUsdPerMillion ?? "");
+    setOutputUsdPerMillion(data.config.llm.outputUsdPerMillion ?? "");
+    setOpenRouterModelId(data.config.llm.openRouterModelId ?? "");
     setApiKeyMode("keep");
     setApiKeyInput("");
+  }
+
+  function handleBaseUrlChange(nextBaseUrl: string) {
+    if (nextBaseUrl !== baseUrl) {
+      setInputUsdPerMillion("");
+      setOutputUsdPerMillion("");
+      setOpenRouterModelId("");
+    }
+    setBaseUrl(nextBaseUrl);
+  }
+
+  function handleModelChange(nextModel: string) {
+    if (nextModel !== model) {
+      setInputUsdPerMillion("");
+      setOutputUsdPerMillion("");
+      setOpenRouterModelId("");
+    }
+    setModel(nextModel);
   }
 
   // 插件弹窗状态
@@ -133,6 +196,7 @@ export function Stage2SettingsPanel() {
             ? apiKeyInput
             : undefined;
 
+      const directOpenRouter = isDirectOpenRouterUrl(baseUrl);
       await apiSend("/api/settings/stage2", "PUT", {
         enabled,
         includeUncertain,
@@ -145,6 +209,11 @@ export function Stage2SettingsPanel() {
           timeoutMs,
           maxSteps,
           temperature,
+          inputUsdPerMillion: parseOptionalRateInput(inputUsdPerMillion),
+          outputUsdPerMillion: parseOptionalRateInput(outputUsdPerMillion),
+          openRouterModelId: directOpenRouter
+            ? null
+            : openRouterModelId.trim() || null,
         },
         apiKey,
         expectedVersion: data?.version,
@@ -163,6 +232,7 @@ export function Stage2SettingsPanel() {
     setNotice(null);
     setActionError(null);
     try {
+      const directOpenRouter = isDirectOpenRouterUrl(baseUrl);
       const res = await apiSend<{
         ok: boolean;
         latencyMs: number;
@@ -171,6 +241,11 @@ export function Stage2SettingsPanel() {
         baseUrl,
         model,
         timeoutMs,
+        inputUsdPerMillion: parseOptionalRateInput(inputUsdPerMillion),
+        outputUsdPerMillion: parseOptionalRateInput(outputUsdPerMillion),
+        openRouterModelId: directOpenRouter
+          ? null
+          : openRouterModelId.trim() || null,
         ...(apiKeyMode === "replace" && apiKeyInput.trim()
           ? { apiKey: apiKeyInput.trim() }
           : {}),
@@ -182,6 +257,33 @@ export function Stage2SettingsPanel() {
       setActionError(errorMessage(err));
     } finally {
       setTestingLlm(false);
+    }
+  }
+
+  async function handleSyncPricing() {
+    setSyncingPricing(true);
+    setNotice(null);
+    setActionError(null);
+    try {
+      const res = await apiSend<Stage2SyncPricingResultDto>(
+        "/api/settings/stage2/sync-pricing",
+        "POST",
+        {},
+      );
+      if (res.synced) {
+        setNotice(
+          `OpenRouter 价格目录已同步，共收录 ${res.modelCount} 个模型。`,
+        );
+      } else if (res.skippedReason === "locked") {
+        setNotice("其他进程正在同步 OpenRouter 价格目录，请稍后刷新查看。");
+      } else if (res.error) {
+        setActionError(`OpenRouter 价格目录同步失败：${res.error}`);
+      }
+      await reload();
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setSyncingPricing(false);
     }
   }
 
@@ -389,6 +491,9 @@ export function Stage2SettingsPanel() {
     return <Feedback kind="loading">正在加载二级核验配置…</Feedback>;
   }
 
+  const directOpenRouter = isDirectOpenRouterUrl(baseUrl);
+  const pricing = data.pricing;
+
   return (
     <div style={{ display: "grid", gap: "var(--sp-5)" }}>
       {actionError ? <Feedback kind="error">{actionError}</Feedback> : null}
@@ -429,19 +534,139 @@ export function Stage2SettingsPanel() {
 
           <TextInput
             label="二级 LLM 服务地址（Base URL）"
-            description="支持 OpenAI-Compatible 接口，例如 https://api.openai.com/v1 或兼容网关"
+            description="支持 OpenAI-Compatible 接口，例如 https://openrouter.ai/api/v1 或兼容网关；修改地址会清空下方单价草稿"
             value={baseUrl}
-            onChange={(e) => setBaseUrl(e.currentTarget.value)}
+            onChange={(e) => handleBaseUrlChange(e.currentTarget.value)}
             required
           />
 
           <TextInput
             label="二级模型名称"
-            description="需支持 Function Calling / Tool Calling"
+            description="需支持 Function Calling / Tool Calling；修改模型会清空下方单价草稿"
             value={model}
-            onChange={(e) => setModel(e.currentTarget.value)}
+            onChange={(e) => handleModelChange(e.currentTarget.value)}
             required
           />
+
+          <Group grow align="flex-start">
+            <NumberInput
+              label="输入单价（美元 / 百万 Token，可选）"
+              description="留空使用目录参考价，填 0 表示免费"
+              placeholder="留空自动估算"
+              min={0}
+              max={1000000}
+              decimalScale={6}
+              allowNegative={false}
+              value={inputUsdPerMillion}
+              onChange={(v) => setInputUsdPerMillion(v)}
+            />
+            <NumberInput
+              label="输出单价（美元 / 百万 Token，可选）"
+              description="留空使用目录参考价，填 0 表示免费"
+              placeholder="留空自动估算"
+              min={0}
+              max={1000000}
+              decimalScale={6}
+              allowNegative={false}
+              value={outputUsdPerMillion}
+              onChange={(v) => setOutputUsdPerMillion(v)}
+            />
+          </Group>
+
+          {directOpenRouter ? (
+            <p className="muted small" style={{ margin: 0 }}>
+              当前为直连 HTTPS OpenRouter 官方地址，将按完整模型 ID 自动精确匹配公开目录价格（无需填写参考模型 ID）。
+            </p>
+          ) : (
+            <TextInput
+              label="OpenRouter 参考模型 ID（可选）"
+              description="自定义兼容网关可显式指定对应 OpenRouter 模型 ID（如 openai/gpt-4o-mini）以复用公开目录参考价；留空则仅使用手填单价"
+              placeholder="例如：openai/gpt-4o-mini"
+              value={openRouterModelId}
+              onChange={(e) => setOpenRouterModelId(e.currentTarget.value)}
+            />
+          )}
+
+          <div className="meta-strip">
+            <div className="meta-item">
+              <span className="meta-item-label">当前已保存有效输入单价</span>
+              <span className="meta-item-value">
+                <span className="mono">
+                  {formatRatePerMillion(pricing.effective.inputUsdPerMillion)}
+                </span>{" "}
+                <Badge
+                  size="xs"
+                  variant="light"
+                  color={priceSourceBadgeColor(pricing.effective.inputSource)}
+                >
+                  {RATE_SOURCE_LABELS[pricing.effective.inputSource]}
+                </Badge>
+              </span>
+            </div>
+            <div className="meta-item">
+              <span className="meta-item-label">当前已保存有效输出单价</span>
+              <span className="meta-item-value">
+                <span className="mono">
+                  {formatRatePerMillion(pricing.effective.outputUsdPerMillion)}
+                </span>{" "}
+                <Badge
+                  size="xs"
+                  variant="light"
+                  color={priceSourceBadgeColor(pricing.effective.outputSource)}
+                >
+                  {RATE_SOURCE_LABELS[pricing.effective.outputSource]}
+                </Badge>
+              </span>
+            </div>
+            <div className="meta-item">
+              <span className="meta-item-label">OpenRouter 目录状态</span>
+              <span className="meta-item-value">
+                <Badge
+                  size="xs"
+                  variant="light"
+                  color={
+                    pricing.catalog.status === "ok"
+                      ? "teal"
+                      : pricing.catalog.status === "error"
+                        ? "red"
+                        : "gray"
+                  }
+                >
+                  {pricing.catalog.status === "ok"
+                    ? `已同步（${pricing.catalog.modelCount} 个模型）`
+                    : pricing.catalog.status === "error"
+                      ? `同步失败（保留 ${pricing.catalog.modelCount} 个缓存）`
+                      : "尚未同步"}
+                </Badge>
+                {pricing.catalog.lastSuccessAt ? (
+                  <span className="muted small mono" style={{ marginLeft: 8 }}>
+                    最近成功：{formatTime(pricing.catalog.lastSuccessAt)}
+                  </span>
+                ) : null}
+              </span>
+              {pricing.effective.matchedCatalogModelId ? (
+                <span className="muted small mono">
+                  目录匹配：{pricing.effective.matchedCatalogModelId}（参考估算）
+                </span>
+              ) : null}
+              {pricing.catalog.lastError ? (
+                <span className="error small">{pricing.catalog.lastError}</span>
+              ) : null}
+            </div>
+            <div className="meta-item">
+              <span className="meta-item-label">目录同步操作</span>
+              <div>
+                <Button
+                  size="xs"
+                  variant="default"
+                  loading={syncingPricing}
+                  onClick={() => void handleSyncPricing()}
+                >
+                  立即同步目录
+                </Button>
+              </div>
+            </div>
+          </div>
 
           <Group grow align="flex-start">
             <NumberInput

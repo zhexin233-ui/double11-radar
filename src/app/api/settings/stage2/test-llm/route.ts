@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { callOpenAiChatCompletion } from "@/lib/agent/llm-client";
 import {
   getStage2Config,
   readStage2LlmApiKey,
+  resolveStage2DraftTestPricing,
   validateHttpUrlOrThrow,
 } from "@/lib/service/stage2-config";
+import { callStage2LlmWithLedger } from "@/lib/service/stage2-requests";
 import {
   HttpError,
   handleRoute,
@@ -14,12 +15,23 @@ import {
 } from "@/lib/http/json";
 import { requireAuth } from "@/lib/http/server";
 
+const OptionalRateSchema = z
+  .number({ error: "单价必须为非负数字或留空" })
+  .finite("单价必须为有限数字")
+  .min(0, "单价不能为负数")
+  .max(1_000_000, "单价超出允许范围")
+  .nullable()
+  .optional();
+
 const TestSchema = z
   .object({
     baseUrl: z.string().trim().optional(),
     model: z.string().trim().optional(),
     timeoutMs: z.number().int().min(3000).max(120000).optional(),
     apiKey: z.string().trim().optional(),
+    inputUsdPerMillion: OptionalRateSchema,
+    outputUsdPerMillion: OptionalRateSchema,
+    openRouterModelId: z.string().trim().max(200).nullable().optional(),
   })
   .optional();
 
@@ -40,7 +52,8 @@ export const POST = handleRoute(async (req) => {
     throw invalidBodyError(parsed.error);
   }
 
-  const saved = getStage2Config(db).config;
+  const savedSnapshot = getStage2Config(db);
+  const saved = savedSnapshot.config;
   const savedKey = readStage2LlmApiKey(db);
 
   const baseUrl = parsed.data?.baseUrl
@@ -60,22 +73,39 @@ export const POST = handleRoute(async (req) => {
     );
   }
 
-  const start = Date.now();
-  const res = await callOpenAiChatCompletion({
+  const draftPricing = resolveStage2DraftTestPricing(saved.llm, {
     baseUrl,
-    apiKey,
     model,
-    timeoutMs,
-    temperature: 0,
-    messages: [
-      { role: "system", content: "You are a connectivity probe." },
-      { role: "user", content: "Reply with OK." },
-    ],
+    inputUsdPerMillion: parsed.data?.inputUsdPerMillion,
+    outputUsdPerMillion: parsed.data?.outputUsdPerMillion,
+    openRouterModelId: parsed.data?.openRouterModelId,
+  });
+
+  const start = Date.now();
+  const { response: res, requestId } = await callStage2LlmWithLedger(db, {
+    purpose: "test",
+    configVersion: savedSnapshot.version,
+    manualInputUsdPerMillion: draftPricing.inputUsdPerMillion,
+    manualOutputUsdPerMillion: draftPricing.outputUsdPerMillion,
+    openRouterModelId: draftPricing.openRouterModelId,
+    request: {
+      baseUrl,
+      apiKey,
+      model,
+      timeoutMs,
+      temperature: 0,
+      messages: [
+        { role: "system", content: "You are a connectivity probe." },
+        { role: "user", content: "Reply with OK." },
+      ],
+    },
   });
 
   return ok({
     ok: true,
+    requestId,
     model,
+    responseModel: res.responseModel,
     baseUrl,
     latencyMs: Date.now() - start,
     replyPreview: (res.content ?? "").slice(0, 120),

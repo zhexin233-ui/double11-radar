@@ -170,6 +170,30 @@ export interface BatchDeleteJevKeysResultDto {
 export const JE_KEY_FAILURE_THRESHOLD = 10;
 
 export type JevRequestPurposeDto = "evaluate" | "batch_gate" | "test" | "dry_run";
+export type Stage2RequestPurposeDto = "analyze" | "manual_analyze" | "test";
+export type UsageRequestPurposeDto = JevRequestPurposeDto | Stage2RequestPurposeDto;
+export type UsageStageScopeDto = "all" | "stage1" | "stage2";
+export type UsageLedgerStageDto = "stage1" | "stage2";
+export type Stage2PriceSourceDto = "manual" | "openrouter" | "unknown";
+export type UsageRateSourceDto = Stage2PriceSourceDto | "official";
+export type OpenRouterCatalogSyncStatusDto = "idle" | "ok" | "error";
+
+export const USAGE_STAGE_OPTIONS: ReadonlyArray<{
+  value: UsageStageScopeDto;
+  label: string;
+}> = [
+  { value: "all", label: "全部（一级 + 二级）" },
+  { value: "stage1", label: "仅一级（Jev / Laya）" },
+  { value: "stage2", label: "仅二级（深度核验）" },
+];
+
+export const RATE_SOURCE_LABELS: Record<UsageRateSourceDto, string> = {
+  manual: "手动费率",
+  openrouter: "OpenRouter 目录（参考估算）",
+  official: "官方公布费率",
+  unknown: "未知",
+};
+
 export type JevRequestStatusDto =
   | "in_flight"
   | "succeeded"
@@ -178,12 +202,15 @@ export type JevRequestStatusDto =
 export type JevCostStatusDto = "known" | "unknown";
 
 export interface JevUsageRequestDto {
+  stage: UsageLedgerStageDto;
+  stageLabel: string;
   id: string;
   channelId: string | null;
   baseUrl: string | null;
+  providerOrigin: string | null;
   startedAt: string;
   finishedAt: string | null;
-  purpose: JevRequestPurposeDto;
+  purpose: UsageRequestPurposeDto;
   purposeLabel: string;
   status: JevRequestStatusDto;
   statusLabel: string;
@@ -194,6 +221,7 @@ export interface JevUsageRequestDto {
   batchPartId: string | null;
   requestedModel: string;
   responseModel: string | null;
+  effectiveModel: string;
   httpStatus: number | null;
   errorMessage: string | null;
   inputTokens: number | null;
@@ -204,6 +232,11 @@ export interface JevUsageRequestDto {
   /** 已知费用的格式化美元字符串；未知为 null（不能显示为 $0.00）。 */
   estimatedUsd: string | null;
   priceVersion: string | null;
+  inputRateUsdPerMillion: number | null;
+  outputRateUsdPerMillion: number | null;
+  inputRateSource: UsageRateSourceDto;
+  outputRateSource: UsageRateSourceDto;
+  matchedCatalogModelId: string | null;
 }
 
 export interface JevUsageSummaryDto {
@@ -233,9 +266,27 @@ export interface JevUsageByKeyDto {
   failedCount: number;
 }
 
+export interface UsageByModelDto {
+  stage: UsageLedgerStageDto;
+  stageLabel: string;
+  model: string;
+  requestCount: number;
+  knownRequestCount: number;
+  knownCostNanos: number;
+  knownCostUsd: string;
+  unknownCostCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  failedCount: number;
+}
+
 export interface JevUsageDto {
+  stage: UsageStageScopeDto;
+  stage2StatsStartedAt: string | null;
   summary: JevUsageSummaryDto;
   byKey: JevUsageByKeyDto[];
+  byModel: UsageByModelDto[];
+  availableModels: string[];
   recent: { items: JevUsageRequestDto[]; total: number };
   channels?: ModelChannelDto[];
 }
@@ -787,6 +838,29 @@ export interface Stage2ConfigDto {
     timeoutMs: number;
     maxSteps: number;
     temperature: number;
+    inputUsdPerMillion: number | null;
+    outputUsdPerMillion: number | null;
+    openRouterModelId: string | null;
+  };
+}
+
+export interface Stage2EffectivePricingDto {
+  effective: {
+    inputUsdPerMillion: number | null;
+    outputUsdPerMillion: number | null;
+    inputSource: Stage2PriceSourceDto;
+    outputSource: Stage2PriceSourceDto;
+    matchedCatalogModelId: string | null;
+    catalogVersion: string | null;
+    isDirectOpenRouter: boolean;
+  };
+  catalog: {
+    status: OpenRouterCatalogSyncStatusDto;
+    modelCount: number;
+    snapshotVersion: string | null;
+    lastAttemptAt: string | null;
+    lastSuccessAt: string | null;
+    lastError: string | null;
   };
 }
 
@@ -795,6 +869,15 @@ export interface Stage2SettingsDto {
   version: number;
   apiKeyState: SecretStateDto;
   tools: Stage2ToolViewDto[];
+  pricing: Stage2EffectivePricingDto;
+}
+
+export interface Stage2SyncPricingResultDto {
+  synced: boolean;
+  skippedReason: "fresh" | "backoff" | "locked" | null;
+  modelCount: number;
+  error: string | null;
+  pricing: Stage2EffectivePricingDto;
 }
 
 export interface StandardizedAnswerDto {
