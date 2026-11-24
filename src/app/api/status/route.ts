@@ -60,7 +60,7 @@ export const GET = handleRoute(async (req) => {
     (channel) => channel.selected && channel.lastError,
   );
   const processingHealthy =
-    heartbeatFresh && jobs.dead === 0 && failingChannels.length === 0;
+    heartbeatFresh && jobs.activeDead === 0 && failingChannels.length === 0;
 
   return ok({
     worker: {

@@ -566,7 +566,7 @@ export interface StatusDto {
       lastErrorAt: string | null;
     }>;
   };
-  jobs: { pending: number; leased: number; dead: number };
+  jobs: { pending: number; leased: number; dead: number; activeDead: number };
   counts: {
     matchedBulletins: number;
     uncertainBulletins: number;

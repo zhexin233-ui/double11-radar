@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@mantine/core";
+import { apiSend, errorMessage } from "@/components/api-client";
 import { useApiResource } from "@/components/use-api";
 import {
   ALERT_DISPATCH_LABELS,
@@ -20,11 +22,57 @@ function formatTime(value: string | null): string {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
+function jobKindLabel(kind: string): string {
+  switch (kind) {
+    case "evaluate":
+      return "判断";
+    case "screen_batch":
+      return "预筛";
+    case "analyze":
+      return "深度核验";
+    default:
+      return "投递";
+  }
+}
+
 export default function StatusPage() {
   const { data: status, error, loading, reload } = useApiResource<StatusDto>(
     "/api/status",
     { refreshMs: 15000 },
   );
+  const [retryingKey, setRetryingKey] = useState<string | null>(null);
+  const [retryFeedback, setRetryFeedback] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const handleRetryJobs = async (id?: string) => {
+    const key = id ?? "__all__";
+    setRetryingKey(key);
+    setRetryFeedback(null);
+    try {
+      const result = await apiSend<{ retried: number }>(
+        "/api/jobs/retry",
+        "POST",
+        id ? { id } : {},
+      );
+      setRetryFeedback({
+        kind: "success",
+        text:
+          result.retried > 0
+            ? `已重新入队 ${result.retried} 条失败任务，后台将尽快重跑。`
+            : "当前没有可重试的失败任务。",
+      });
+      await reload();
+    } catch (err) {
+      setRetryFeedback({
+        kind: "error",
+        text: `重试失败任务出错：${errorMessage(err)}`,
+      });
+    } finally {
+      setRetryingKey(null);
+    }
+  };
 
   const header = (
     <PageHeader
@@ -181,7 +229,11 @@ export default function StatusPage() {
               {jobs.pending}（进行中 {jobs.leased}）
             </dd>
             <dt>失败任务</dt>
-            <dd className={jobs.dead ? "mono error" : "mono"}>{jobs.dead}</dd>
+            <dd className={jobs.activeDead ? "mono error" : "mono"}>
+              {jobs.dead > 0 && jobs.activeDead === 0
+                ? `${jobs.dead}（历史，已恢复）`
+                : jobs.dead}
+            </dd>
           </dl>
         </Section>
 
@@ -294,8 +346,26 @@ export default function StatusPage() {
       {status.recentFailedJobs.length > 0 ? (
         <Section
           title="最近失败任务"
-          description="最多显示最近 10 条（诊断快照，不分页）。"
+          description="最多显示最近 10 条（诊断快照，不分页）。后续同类型任务已恢复成功时，历史失败任务不再阻塞系统健康状态，可按需手动重试。"
+          actions={
+            jobs.dead > 0 ? (
+              <Button
+                variant="default"
+                size="xs"
+                loading={retryingKey === "__all__"}
+                disabled={retryingKey !== null}
+                onClick={() => void handleRetryJobs()}
+              >
+                重试全部失败任务（{jobs.dead}）
+              </Button>
+            ) : undefined
+          }
         >
+          {retryFeedback ? (
+            <div style={{ marginBottom: "var(--sp-3)" }}>
+              <Feedback kind={retryFeedback.kind}>{retryFeedback.text}</Feedback>
+            </div>
+          ) : null}
           <TableScroll label="最近失败任务列表">
             <table>
               <thead>
@@ -305,16 +375,32 @@ export default function StatusPage() {
                   <th>尝试</th>
                   <th>错误</th>
                   <th>时间</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {status.recentFailedJobs.map((job) => (
                   <tr key={job.id}>
-                    <td>{job.kind === "evaluate" ? "判断" : "投递"}</td>
+                    <td>{jobKindLabel(job.kind)}</td>
                     <td>{job.status}</td>
                     <td className="mono">{job.attempts}</td>
                     <td className="small">{job.lastError}</td>
                     <td className="small mono">{formatTime(job.updatedAt)}</td>
+                    <td>
+                      {job.status === "dead" ? (
+                        <Button
+                          variant="subtle"
+                          size="xs"
+                          loading={retryingKey === job.id}
+                          disabled={retryingKey !== null}
+                          onClick={() => void handleRetryJobs(job.id)}
+                        >
+                          重试
+                        </Button>
+                      ) : (
+                        <span className="muted small">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -341,19 +341,84 @@ export function jobStats(db: Database.Database): {
   pending: number;
   leased: number;
   dead: number;
+  /** 尚未被同类型后续成功任务覆盖的失败任务数（用于判断当前是否仍处于处理故障）。 */
+  activeDead: number;
 } {
   const row = db
     .prepare(
-      `SELECT
-         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-         SUM(CASE WHEN status = 'leased' THEN 1 ELSE 0 END) AS leased,
-         SUM(CASE WHEN status = 'dead' THEN 1 ELSE 0 END) AS dead
-       FROM jobs`,
+      `WITH last_ok AS (
+         SELECT kind, MAX(updated_at) AS max_ok
+         FROM jobs
+         WHERE status = 'succeeded'
+         GROUP BY kind
+       )
+       SELECT
+         SUM(CASE WHEN j.status = 'pending' THEN 1 ELSE 0 END) AS pending,
+         SUM(CASE WHEN j.status = 'leased' THEN 1 ELSE 0 END) AS leased,
+         SUM(CASE WHEN j.status = 'dead' THEN 1 ELSE 0 END) AS dead,
+         SUM(CASE
+           WHEN j.status = 'dead'
+             AND (last_ok.max_ok IS NULL OR j.updated_at >= last_ok.max_ok)
+           THEN 1 ELSE 0
+         END) AS active_dead
+       FROM jobs j
+       LEFT JOIN last_ok ON last_ok.kind = j.kind`,
     )
-    .get() as { pending: number | null; leased: number | null; dead: number | null };
+    .get() as {
+      pending: number | null;
+      leased: number | null;
+      dead: number | null;
+      active_dead: number | null;
+    };
   return {
     pending: row.pending ?? 0,
     leased: row.leased ?? 0,
     dead: row.dead ?? 0,
+    activeDead: row.active_dead ?? 0,
   };
+}
+
+/** 将单条已耗尽重试的 dead 任务重新放回队列。 */
+export function retryDeadJob(
+  db: Database.Database,
+  id: string,
+  now: Date = new Date(),
+): boolean {
+  const nowIso = now.toISOString();
+  const result = db
+    .prepare(
+      `UPDATE jobs
+       SET status = 'pending',
+           attempts = 0,
+           run_at = @nowIso,
+           lease_until = NULL,
+           lease_owner = NULL,
+           last_error = NULL,
+           updated_at = @nowIso
+       WHERE id = @id AND status = 'dead'`,
+    )
+    .run({ id, nowIso });
+  return result.changes === 1;
+}
+
+/** 将所有已耗尽重试的 dead 任务重新放回队列，返回重置条数。 */
+export function retryAllDeadJobs(
+  db: Database.Database,
+  now: Date = new Date(),
+): number {
+  const nowIso = now.toISOString();
+  const result = db
+    .prepare(
+      `UPDATE jobs
+       SET status = 'pending',
+           attempts = 0,
+           run_at = @nowIso,
+           lease_until = NULL,
+           lease_owner = NULL,
+           last_error = NULL,
+           updated_at = @nowIso
+       WHERE status = 'dead'`,
+    )
+    .run({ nowIso });
+  return result.changes;
 }
