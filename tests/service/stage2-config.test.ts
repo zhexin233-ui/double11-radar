@@ -10,6 +10,19 @@ import {
 
 const KEY = testKey();
 
+it("未配置二级模型超时时默认 180 秒，已保存的值优先", () => {
+  const ctx = createTestDb();
+  try {
+    expect(getStage2Config(ctx.db, KEY).config.llm.timeoutMs).toBe(180_000);
+    setSetting(ctx.db, STAGE2_SETTING_NAMESPACE, { llm: { model: "gpt-4o" } });
+    expect(getStage2Config(ctx.db, KEY).config.llm.timeoutMs).toBe(180_000);
+    updateStage2Config(ctx.db, { llm: { timeoutMs: 25_000 } }, KEY);
+    expect(getStage2Config(ctx.db, KEY).config.llm.timeoutMs).toBe(25_000);
+  } finally {
+    ctx.close();
+  }
+});
+
 describe("二级配置费率补丁、模型切换与草稿测试契约", () => {
   it("历史配置缺省费率与参考模型读出 null，同模型补丁沿用未传字段、null 清除、0 保留", () => {
     const ctx = createTestDb();

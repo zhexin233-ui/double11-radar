@@ -16,11 +16,13 @@ import { isDirectOpenRouterBaseUrl } from "@/lib/stage2/pricing";
 
 export const STAGE2_SETTING_NAMESPACE = "stage2";
 export const STAGE2_LLM_SECRET_NAMESPACE = "stage2.llmApiKey";
+export const STAGE2_LLM_TIMEOUT_MIN_MS = 3_000;
+export const STAGE2_LLM_TIMEOUT_MAX_MS = 180_000;
 
 export const DEFAULT_STAGE2_LLM_CONFIG: Stage2LlmConfig = {
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
-  timeoutMs: 25_000,
+  timeoutMs: 180_000,
   maxSteps: 5,
   temperature: 0.1,
   inputUsdPerMillion: null,
@@ -178,8 +180,8 @@ export function getStage2Config(
       timeoutMs: clampInt(
         rawLlm?.timeoutMs,
         DEFAULT_STAGE2_LLM_CONFIG.timeoutMs,
-        3_000,
-        120_000,
+        STAGE2_LLM_TIMEOUT_MIN_MS,
+        STAGE2_LLM_TIMEOUT_MAX_MS,
       ),
       maxSteps: clampInt(
         rawLlm?.maxSteps,
@@ -302,7 +304,12 @@ export function updateStage2Config(
       model: nextModel,
       timeoutMs:
         input.llm?.timeoutMs !== undefined
-          ? clampInt(input.llm.timeoutMs, current.config.llm.timeoutMs, 3_000, 120_000)
+          ? clampInt(
+              input.llm.timeoutMs,
+              current.config.llm.timeoutMs,
+              STAGE2_LLM_TIMEOUT_MIN_MS,
+              STAGE2_LLM_TIMEOUT_MAX_MS,
+            )
           : current.config.llm.timeoutMs,
       maxSteps:
         input.llm?.maxSteps !== undefined

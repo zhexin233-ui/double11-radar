@@ -9,6 +9,7 @@ import {
   GET as getStage2Settings,
   PUT as putStage2Settings,
 } from "@/app/api/settings/stage2/route";
+import { POST as testStage2Llm } from "@/app/api/settings/stage2/test-llm/route";
 import { POST as createTool } from "@/app/api/settings/stage2/tools/route";
 import {
   PUT as updateTool,
@@ -78,7 +79,7 @@ describe("http/stage2-api (AC9)", () => {
           {
             enabled: true,
             apiKey: "sk-stage2-super-secret",
-            llm: { model: "gpt-4o", maxSteps: 6 },
+            llm: { model: "gpt-4o", maxSteps: 6, timeoutMs: 180_000 },
           },
           token,
         ),
@@ -88,8 +89,25 @@ describe("http/stage2-api (AC9)", () => {
       const putJson = await putRes.json();
       expect(putJson.data.config.enabled).toBe(true);
       expect(putJson.data.config.llm.model).toBe("gpt-4o");
+      expect(putJson.data.config.llm.timeoutMs).toBe(180_000);
       expect(putJson.data.apiKeyState.configured).toBe(true);
       expect(JSON.stringify(putJson)).not.toContain("sk-stage2-super-secret");
+
+      const fetchImpl = vi.fn(async () =>
+        Response.json({ choices: [{ message: { content: "OK" } }] }),
+      );
+      vi.stubGlobal("fetch", fetchImpl);
+      const testRes = await testStage2Llm(
+        makeReq(
+          "http://localhost:3000/api/settings/stage2/test-llm",
+          "POST",
+          { timeoutMs: 180_000 },
+          token,
+        ),
+        emptyCtx,
+      );
+      expect(testRes.status).toBe(200);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
 
       // 3. 新增外部 HTTP 工具
       const createRes = await createTool(
@@ -155,6 +173,7 @@ describe("http/stage2-api (AC9)", () => {
       expect(builtinDelRes.status).toBe(400);
     } finally {
       closeDb();
+      vi.unstubAllGlobals();
       vi.unstubAllEnvs();
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   getStage2Config,
+  STAGE2_LLM_TIMEOUT_MAX_MS,
+  STAGE2_LLM_TIMEOUT_MIN_MS,
   updateStage2Config,
 } from "@/lib/service/stage2-config";
 import { listStage2ToolsWithSecrets } from "@/lib/service/stage2-tools";
@@ -38,7 +40,12 @@ const PutSchema = z.object({
     .object({
       baseUrl: z.string().trim().min(1).max(500).optional(),
       model: z.string().trim().min(1).max(200).optional(),
-      timeoutMs: z.number().int().min(3000).max(120000).optional(),
+      timeoutMs: z
+        .number()
+        .int()
+        .min(STAGE2_LLM_TIMEOUT_MIN_MS)
+        .max(STAGE2_LLM_TIMEOUT_MAX_MS)
+        .optional(),
       maxSteps: z.number().int().min(1).max(8).optional(),
       temperature: z.number().min(0).max(2).optional(),
       inputUsdPerMillion: OptionalRateSchema,

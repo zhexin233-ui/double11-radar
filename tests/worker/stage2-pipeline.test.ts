@@ -1,16 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RULE_VERSION } from "@/lib/domain/constants";
 import { setSecret } from "@/lib/db/repos/settings";
 import { enqueueJob } from "@/lib/db/repos/jobs";
 import { getBulletinAnalysis } from "@/lib/db/repos/analyses";
 import { getNotificationByBulletin } from "@/lib/db/repos/notifications";
 import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
+import { loadEnv } from "@/lib/env";
+import { saveNotifyConfig } from "@/lib/service/config";
 import {
   STAGE2_LLM_SECRET_NAMESPACE,
   updateStage2Config,
 } from "@/lib/service/stage2-config";
 import { cleanupExpiredBulletins } from "@/lib/service/storage";
 import { runAnalyzerOnce, STAGE2_FALLBACK_NOTE } from "@/lib/worker/analyzer";
+import { runDelivererOnce } from "@/lib/worker/deliverer";
 import { createTestDb, testKey } from "../helpers/db";
 
 function seedMatchedBulletin(
@@ -50,13 +53,29 @@ function seedMatchedBulletin(
     .run(`eval-${bulletinId}`, bulletinId, RULE_VERSION, createdAt, createdAt);
 }
 
+async function deliverFeishu(ctx: ReturnType<typeof createTestDb>) {
+  const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ code: 0 }));
+  await expect(runDelivererOnce(ctx.db, loadEnv(), { fetchImpl }))
+    .resolves.toMatchObject({ processed: 1, succeeded: 1 });
+  expect(fetchImpl).toHaveBeenCalledExactlyOnceWith(
+    "https://feishu.example.com/webhook",
+    expect.objectContaining({ method: "POST" }),
+  );
+  const body = fetchImpl.mock.calls[0][1]?.body;
+  expect(typeof body).toBe("string");
+  return JSON.parse(String(body)).content.post.zh_cn;
+}
+
 describe("worker/stage2-pipeline (AC8)", () => {
-  it("recommended 落库简报并创建带简报的通知；rejected 拦截不推送", async () => {
+  it("recommended 将二级简报投递到飞书；rejected 拦截不推送", async () => {
     const ctx = createTestDb();
     const key = testKey();
     try {
       updateStage2Config(ctx.db, { enabled: true }, key);
       setSecret(ctx.db, STAGE2_LLM_SECRET_NAMESPACE, "sk-stage2", key);
+      saveNotifyConfig(ctx.db, {
+        feishu: { enabled: true, webhook: "https://feishu.example.com/webhook" },
+      }, key);
 
       seedMatchedBulletin(ctx, "b-rec");
       enqueueJob(ctx.db, {
@@ -107,6 +126,9 @@ describe("worker/stage2-pipeline (AC8)", () => {
       const notifRec = getNotificationByBulletin(ctx.db, "b-rec");
       expect(notifRec).not.toBeNull();
       expect(notifRec?.payload).toContain("好价可入");
+      const feishuPost = await deliverFeishu(ctx);
+      expect(feishuPost.title).toContain("[推荐] 维达抽纸 24 包");
+      expect(feishuPost.content[0][0].text).toContain("结论（推荐）：好价可入");
 
       // rejected 拦截不发送通知
       seedMatchedBulletin(ctx, "b-rej");
@@ -171,6 +193,9 @@ describe("worker/stage2-pipeline (AC8)", () => {
         key,
       );
       setSecret(ctx.db, STAGE2_LLM_SECRET_NAMESPACE, "sk-stage2", key);
+      saveNotifyConfig(ctx.db, {
+        feishu: { enabled: true, webhook: "https://feishu.example.com/webhook" },
+      }, key);
       seedMatchedBulletin(ctx, "b-dead");
       enqueueJob(ctx.db, {
         kind: "analyze",
@@ -190,6 +215,9 @@ describe("worker/stage2-pipeline (AC8)", () => {
       const notif = getNotificationByBulletin(ctx.db, "b-dead");
       expect(notif).not.toBeNull();
       expect(notif?.payload).toContain(STAGE2_FALLBACK_NOTE);
+      const feishuPost = await deliverFeishu(ctx);
+      expect(feishuPost.title).toContain("命中需求：抽纸");
+      expect(feishuPost.content[0][0].text).toContain(STAGE2_FALLBACK_NOTE);
     } finally {
       ctx.close();
     }

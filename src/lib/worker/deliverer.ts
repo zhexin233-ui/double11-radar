@@ -5,7 +5,6 @@ import {
   reclaimExpiredDeliveryLeases,
 } from "@/lib/db/repos/deliveries";
 import { getNotificationPayload, sendForChannel } from "@/lib/notify/dispatch";
-import type { NotifyMessage } from "@/lib/notify/types";
 import { getNotifyRuntimeConfig } from "@/lib/service/config";
 import { patchRuntimeState } from "@/lib/worker/runtime-state";
 import type { AppEnv } from "@/lib/env";
@@ -63,17 +62,6 @@ export async function runDelivererOnce(
       stats.failed += 1;
       continue;
     }
-    const message: NotifyMessage = {
-      bulletinTitle: payload.bulletinTitle,
-      needs: payload.needs,
-      explanation: payload.explanation,
-      url: payload.url,
-      price: payload.price,
-      brand: payload.brand,
-      mall: payload.mall,
-      channelName: payload.channelName,
-    };
-
     const runtime = getNotifyRuntimeConfig(db);
     const configured =
       delivery.channel === "bark" ? runtime.bark : runtime.feishu;
@@ -91,7 +79,7 @@ export async function runDelivererOnce(
     try {
       result = await sendForChannel(
         delivery.channel,
-        message,
+        payload,
         runtime,
         deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
       );

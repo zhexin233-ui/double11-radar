@@ -3,6 +3,8 @@ import {
   getStage2Config,
   readStage2LlmApiKey,
   resolveStage2DraftTestPricing,
+  STAGE2_LLM_TIMEOUT_MAX_MS,
+  STAGE2_LLM_TIMEOUT_MIN_MS,
   validateHttpUrlOrThrow,
 } from "@/lib/service/stage2-config";
 import { callStage2LlmWithLedger } from "@/lib/service/stage2-requests";
@@ -27,7 +29,12 @@ const TestSchema = z
   .object({
     baseUrl: z.string().trim().optional(),
     model: z.string().trim().optional(),
-    timeoutMs: z.number().int().min(3000).max(120000).optional(),
+    timeoutMs: z
+      .number()
+      .int()
+      .min(STAGE2_LLM_TIMEOUT_MIN_MS)
+      .max(STAGE2_LLM_TIMEOUT_MAX_MS)
+      .optional(),
     apiKey: z.string().trim().optional(),
     inputUsdPerMillion: OptionalRateSchema,
     outputUsdPerMillion: OptionalRateSchema,

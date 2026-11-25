@@ -32,6 +32,9 @@ type SecretInputDto = string | { clear: true } | null | undefined;
 
 type SecretMode = "keep" | "replace" | "clear";
 
+const DEFAULT_LLM_TIMEOUT_MS = 180_000;
+const MAX_LLM_TIMEOUT_MS = 180_000;
+
 function toNumber(val: number | string, fallback: number): number {
   if (val === "" || val === null || val === undefined) return fallback;
   const n = Number(val);
@@ -100,7 +103,7 @@ export function Stage2SettingsPanel() {
   const [concurrency, setConcurrency] = useState(1);
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
   const [model, setModel] = useState("gpt-4o-mini");
-  const [timeoutMs, setTimeoutMs] = useState(25000);
+  const [timeoutMs, setTimeoutMs] = useState(DEFAULT_LLM_TIMEOUT_MS);
   const [maxSteps, setMaxSteps] = useState(5);
   const [temperature, setTemperature] = useState(0.1);
   const [inputUsdPerMillion, setInputUsdPerMillion] = useState<number | string>(
@@ -672,10 +675,10 @@ export function Stage2SettingsPanel() {
             <NumberInput
               label="单轮请求超时（毫秒）"
               min={3000}
-              max={120000}
+              max={MAX_LLM_TIMEOUT_MS}
               step={1000}
               value={timeoutMs}
-              onChange={(v) => setTimeoutMs(toNumber(v, 25000))}
+              onChange={(v) => setTimeoutMs(toNumber(v, DEFAULT_LLM_TIMEOUT_MS))}
             />
             <NumberInput
               label="最大工具调用步数（1-8）"
