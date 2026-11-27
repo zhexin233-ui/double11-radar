@@ -1,6 +1,7 @@
 import type {
   AnalysisVerdict,
   NotifyChannel,
+  Stage2Ratings,
   StandardizedAnswer,
 } from "@/lib/domain/types";
 
@@ -40,6 +41,12 @@ export interface SystemNotifyMessage {
 
 export type ChannelMessage = NotifyMessage | SystemNotifyMessage;
 
+export type Stage2NotifyMessage = NotifyMessage & { analysis: StandardizedAnswer };
+
+export function isStage2Notification(message: ChannelMessage): message is Stage2NotifyMessage {
+  return !("kind" in message) && Boolean(message.analysis);
+}
+
 export interface SendResult {
   ok: boolean;
   httpStatus: number | null;
@@ -65,11 +72,66 @@ const VERDICT_BADGE: Record<AnalysisVerdict, string> = {
   insufficient_info: "待核对",
 };
 
+export const STAGE2_RATING_ROWS = [
+  [
+    { key: "priceValue", label: "价格力度", shortLabel: "价格" },
+    { key: "needMatch", label: "需求契合", shortLabel: "契合" },
+  ],
+  [
+    { key: "orderEase", label: "下单省心", shortLabel: "省心" },
+    { key: "lowRisk", label: "低风险度", shortLabel: "低风险" },
+  ],
+] as const satisfies ReadonlyArray<ReadonlyArray<{
+  key: keyof Stage2Ratings;
+  label: string;
+  shortLabel: string;
+}>>;
+
+export function formatStarRating(score: number | null | undefined, fallback = "暂无数据"): string {
+  if (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 5) {
+    return fallback;
+  }
+  return "★".repeat(score) + "☆".repeat(5 - score);
+}
+
+function truncateCompactText(text: string, maxLength: number): string {
+  const singleLine = text.replace(/\s+/gu, " ").trim();
+  const characters = Array.from(singleLine);
+  return characters.length <= maxLength
+    ? singleLine
+    : `${characters.slice(0, maxLength - 1).join("")}…`;
+}
+
+function formatStage2PriceLine(answer: StandardizedAnswer): string {
+  const priceParts: string[] = [];
+  if (answer.actualTotalPrice !== null) {
+    priceParts.push(`到手 ${answer.actualTotalPrice} 元`);
+  }
+  const unitLabel = truncateCompactText(answer.unitLabel ?? "", 24);
+  if (answer.unitPrice !== null && unitLabel) {
+    priceParts.push(`${answer.unitPrice} ${unitLabel}`);
+  }
+  return priceParts.join(" · ");
+}
+
+export function formatStage2CoreLine(message: Stage2NotifyMessage): string {
+  const price = formatStage2PriceLine(message.analysis);
+  const needs = truncateCompactText(message.needs.join("、"), 80);
+  return [price, needs && `命中：${needs}`].filter(Boolean).join(" | ");
+}
+
+export function formatStage2ConclusionLines(answer: StandardizedAnswer): string[] {
+  const summary = truncateCompactText(answer.summary, 80);
+  const risks = truncateCompactText(answer.risks.map((risk) => risk.trim()).filter(Boolean).join("；"), 60);
+  return [summary, risks && `注意：${risks}`].filter(Boolean);
+}
+
 export function notificationTitle(message: ChannelMessage): string {
   if ("kind" in message) return message.title;
   if (message.analysis) {
     const badge = VERDICT_BADGE[message.analysis.verdict];
-    return `[${badge}] ${message.analysis.productName}`;
+    const stars = formatStarRating(message.analysis.ratings?.overall, "");
+    return [`[${badge}]`, stars, truncateCompactText(message.analysis.productName, 80)].filter(Boolean).join(" ");
   }
   if (message.needs.length === 1) {
     return `命中需求：${message.needs[0]}`;
@@ -81,51 +143,18 @@ export function notificationTitle(message: ChannelMessage): string {
 export function notificationBodyLines(message: ChannelMessage): string[] {
   if ("kind" in message) return message.lines;
 
-  if (message.analysis) {
-    const a = message.analysis;
-    const lines: string[] = [
-      `结论（${VERDICT_BADGE[a.verdict]}）：${a.summary}`,
-      `需求：${message.needs.join("、")}`,
-    ];
-    const priceParts: string[] = [];
-    if (a.actualTotalPrice !== null) {
-      priceParts.push(`到手 ${a.actualTotalPrice} 元`);
+  if (isStage2Notification(message)) {
+    const { analysis } = message;
+    const lines = [formatStage2CoreLine(message)];
+    if (analysis.ratings) {
+      const ratings = analysis.ratings;
+      lines.push(
+        STAGE2_RATING_ROWS.flat()
+          .map(({ key, shortLabel }) => `${shortLabel} ${formatStarRating(ratings[key])}`)
+          .join(" | "),
+      );
     }
-    if (a.unitPrice !== null && a.unitLabel) {
-      priceParts.push(`折算 ${a.unitPrice} ${a.unitLabel}`);
-    }
-    if (priceParts.length > 0) {
-      lines.push(`价格：${priceParts.join(" | ")}`);
-    }
-    if (a.priceFormula) {
-      lines.push(`算式：${a.priceFormula}`);
-    }
-    lines.push(
-      `比价：${a.priceComparison.conclusion}${
-        a.priceComparison.referencePrice !== null
-          ? `（参考价 ${a.priceComparison.referencePrice} 元${
-              a.priceComparison.source ? `，来源：${a.priceComparison.source}` : ""
-            }）`
-          : ""
-      }`,
-    );
-    if (a.orderSteps.length > 0) {
-      lines.push(`下单步骤：${a.orderSteps.join(" → ")}`);
-    }
-    if (a.risks.length > 0) {
-      lines.push(`风险提示：${a.risks.join("；")}`);
-    }
-    if (message.mall || message.channelName) {
-      const meta = [
-        message.mall ? `商城：${message.mall}` : null,
-        message.channelName ? `频道：${message.channelName}` : null,
-      ]
-        .filter(Boolean)
-        .join(" | ");
-      if (meta) lines.push(meta);
-    }
-    lines.push(`原线报：${message.bulletinTitle}`);
-    return lines;
+    return [...lines.filter(Boolean), ...formatStage2ConclusionLines(analysis)];
   }
 
   const lines: string[] = [`需求：${message.needs.join("、")}`];

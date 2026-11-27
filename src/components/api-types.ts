@@ -880,8 +880,17 @@ export interface Stage2SyncPricingResultDto {
   pricing: Stage2EffectivePricingDto;
 }
 
+export interface Stage2RatingsDto {
+  overall: number | null;
+  priceValue: number | null;
+  needMatch: number | null;
+  orderEase: number | null;
+  lowRisk: number | null;
+}
+
 export interface StandardizedAnswerDto {
   verdict: AnalysisVerdictDto;
+  ratings?: Stage2RatingsDto | null;
   summary: string;
   productName: string;
   actualTotalPrice: number | null;

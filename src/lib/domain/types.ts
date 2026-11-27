@@ -591,8 +591,19 @@ export type AnalysisTriggerSource = "matched" | "uncertain" | "manual";
 
 export type AnalysisStatus = "succeeded" | "failed";
 
+/** 各维度为 1–5 的整数，依据不足时为 null。 */
+export interface Stage2Ratings {
+  overall: number | null;
+  priceValue: number | null;
+  needMatch: number | null;
+  orderEase: number | null;
+  lowRisk: number | null;
+}
+
 export interface StandardizedAnswer {
   verdict: AnalysisVerdict;
+  /** 历史简报和通知快照可能未记录评分。 */
+  ratings?: Stage2Ratings | null;
   summary: string;
   productName: string;
   actualTotalPrice: number | null;

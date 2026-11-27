@@ -1,6 +1,16 @@
 import { z } from "zod";
 import type { StandardizedAnswer } from "@/lib/domain/types";
 
+const StarScoreSchema = z.number().int().min(1).max(5).nullable();
+
+export const Stage2RatingsSchema = z.object({
+  overall: StarScoreSchema,
+  priceValue: StarScoreSchema,
+  needMatch: StarScoreSchema,
+  orderEase: StarScoreSchema,
+  lowRisk: StarScoreSchema,
+});
+
 export const StandardizedAnswerSchema = z.object({
   verdict: z.enum([
     "recommended",
@@ -8,8 +18,9 @@ export const StandardizedAnswerSchema = z.object({
     "rejected",
     "insufficient_info",
   ]),
-  summary: z.string().min(1, "summary 不能为空"),
-  productName: z.string().min(1, "productName 不能为空"),
+  ratings: Stage2RatingsSchema,
+  summary: z.string().trim().min(1, "summary 不能为空"),
+  productName: z.string().trim().min(1, "productName 不能为空"),
   actualTotalPrice: z.number().finite().nullable(),
   unitPrice: z.number().finite().nullable(),
   unitLabel: z.string().nullable(),

@@ -1,25 +1,38 @@
 import { describeNetworkFailure } from "@/lib/http/network-error";
+import type { AnalysisVerdict } from "@/lib/domain/types";
 import { genFeishuSign } from "@/lib/notify/feishu-sign";
 import {
   NOTIFY_TIMEOUT_MS,
+  STAGE2_RATING_ROWS,
+  formatStage2ConclusionLines,
+  formatStage2CoreLine,
+  formatStarRating,
+  isStage2Notification,
   notificationBodyLines,
   notificationTitle,
   type ChannelMessage,
   type SendDependencies,
   type SendResult,
+  type Stage2NotifyMessage,
 } from "@/lib/notify/types";
 
 /**
  * 飞书群自定义机器人 Webhook 推送（首版固定一个群）。
  *
- * - `msg_type: "post"`，`content` 是**对象**（不是字符串化的 JSON）；
- * - 链接使用 `{ tag: "a", text, href }` 节点，不用 Markdown 语法；
+ * - 二级简报使用 `interactive` 卡片，一级命中、降级与系统告警使用 `post`；
  * - 开启签名时按官方 Method 3 生成 `timestamp` / `sign` 放在 body 顶层；
  * - 成功 = HTTP 2xx **且** 业务 `code === 0`；非零码必须记录，不能仅凭 HTTP200 判成功；
  * - `19021/19022/19024`（签名/IP/关键词）属配置错误，不自动重试。
  */
 
 export const FEISHU_CONFIG_ERROR_CODES = new Set(["19021", "19022", "19024"]);
+
+const STAGE2_HEADER_TEMPLATE: Record<AnalysisVerdict, string> = {
+  recommended: "green",
+  acceptable: "blue",
+  insufficient_info: "orange",
+  rejected: "red",
+};
 
 export interface FeishuConfig {
   webhookUrl: string;
@@ -63,6 +76,55 @@ export function buildFeishuPost(
   return { zh_cn: { title, content: paragraphs } };
 }
 
+function plainText(content: string) {
+  return { tag: "plain_text" as const, content };
+}
+
+type FeishuCardElement =
+  | { tag: "div"; text: ReturnType<typeof plainText> }
+  | { tag: "div"; fields: Array<{ is_short: true; text: { tag: "lark_md"; content: string } }> }
+  | { tag: "action"; actions: Array<{ tag: "button"; type: "primary"; text: ReturnType<typeof plainText>; url: string }> };
+
+/** 构造飞书自定义机器人二级核验卡片。 */
+export function buildFeishuStage2Card(message: Stage2NotifyMessage, keywordPrefix?: string | null) {
+  const { analysis, url } = message;
+  const elements: FeishuCardElement[] = [];
+  const coreLine = formatStage2CoreLine(message);
+  if (coreLine) {
+    elements.push({ tag: "div", text: plainText(coreLine) });
+  }
+  if (analysis.ratings) {
+    const ratings = analysis.ratings;
+    for (const row of STAGE2_RATING_ROWS) {
+      elements.push({
+        tag: "div",
+        fields: row.map(({ key, label }) => ({
+          is_short: true,
+          text: { tag: "lark_md", content: `**${label}**\n${formatStarRating(ratings[key])}` },
+        })),
+      });
+    }
+  }
+  const conclusion = formatStage2ConclusionLines(analysis).join("\n");
+  if (conclusion) {
+    elements.push({ tag: "div", text: plainText(conclusion) });
+  }
+  if (/^https?:\/\/[^/\\\s][^\\\s]*$/iu.test(url) && URL.canParse(url)) {
+    elements.push({
+      tag: "action",
+      actions: [{ tag: "button", type: "primary", text: plainText("查看原始线报"), url }],
+    });
+  }
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: STAGE2_HEADER_TEMPLATE[analysis.verdict],
+      title: plainText(`${keywordPrefix ?? ""}${notificationTitle(message)}`),
+    },
+    elements,
+  };
+}
+
 export async function sendFeishu(
   message: ChannelMessage,
   config: FeishuConfig,
@@ -70,10 +132,9 @@ export async function sendFeishu(
 ): Promise<SendResult> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const timestamp = Math.floor(Date.now() / 1000);
-  const body: Record<string, unknown> = {
-    msg_type: "post",
-    content: { post: buildFeishuPost(message, config.keywordPrefix) },
-  };
+  const body: Record<string, unknown> = isStage2Notification(message)
+    ? { msg_type: "interactive", card: buildFeishuStage2Card(message, config.keywordPrefix) }
+    : { msg_type: "post", content: { post: buildFeishuPost(message, config.keywordPrefix) } };
   if (config.signingSecret) {
     body.timestamp = String(timestamp);
     body.sign = genFeishuSign(config.signingSecret, timestamp);

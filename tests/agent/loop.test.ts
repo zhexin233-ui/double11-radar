@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { runStage2AgentLoop } from "@/lib/agent/loop";
+import { parseStandardizedAnswer } from "@/lib/agent/schema";
 import type { RegisteredTool } from "@/lib/agent/tools/types";
+import { LEGACY_STAGE2_ANSWER, STAGE2_RATINGS } from "../fixtures/stage2";
 
 const SAMPLE_BULLETIN = {
   id: "b1",
@@ -13,26 +15,8 @@ const SAMPLE_BULLETIN = {
   url: "https://example.com/b1",
 };
 
-const VALID_ANSWER_JSON = JSON.stringify({
-  verdict: "recommended",
-  summary: "折合 1.25 元/包，低于历史均价，推荐入手",
-  productName: "维达抽纸 24 包",
-  actualTotalPrice: 29.9,
-  unitPrice: 1.25,
-  unitLabel: "元/包",
-  priceFormula: "29.9 / 24 = 1.25",
-  orderSteps: ["领券下单"],
-  priceComparison: {
-    status: "no_data",
-    referencePrice: null,
-    source: null,
-    conclusion: "未查到历史参考价",
-  },
-  requirementChecks: [
-    { needName: "抽纸", satisfied: true, reason: "符合要求" },
-  ],
-  risks: [],
-});
+const VALID_ANSWER = { ...LEGACY_STAGE2_ANSWER, ratings: STAGE2_RATINGS };
+const VALID_ANSWER_JSON = JSON.stringify(VALID_ANSWER);
 
 function makeTool(
   pluginId: string,
@@ -55,6 +39,33 @@ function makeTool(
   };
 }
 
+describe("二级模型评分契约（AC1）", () => {
+  it("接受 1 至 5 的整数与 null，保留原始评分", () => {
+    const answer = { ...VALID_ANSWER, ratings: { ...STAGE2_RATINGS, orderEase: 1 } };
+    expect(parseStandardizedAnswer(JSON.stringify(answer))).toEqual({ ok: true, data: answer });
+  });
+
+  it.each([
+    ["缺少评分对象", undefined, "ratings"],
+    ["评分对象为 null", null, "ratings"],
+    ["缺少维度", { ...STAGE2_RATINGS, lowRisk: undefined }, "ratings.lowRisk"],
+    ["低于 1 分", { ...STAGE2_RATINGS, priceValue: 0 }, "ratings.priceValue"],
+    ["超过 5 分", { ...STAGE2_RATINGS, needMatch: 6 }, "ratings.needMatch"],
+    ["包含小数", { ...STAGE2_RATINGS, overall: 3.5 }, "ratings.overall"],
+    ["分数为字符串", { ...STAGE2_RATINGS, orderEase: "4" }, "ratings.orderEase"],
+  ])("拒绝%s的新模型输出", (_scenario, ratings, path) => {
+    expect(parseStandardizedAnswer(JSON.stringify({ ...VALID_ANSWER, ratings }))).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(path),
+    });
+  });
+
+  it.each(["summary", "productName"])("拒绝只有空白的 %s", (field) => {
+    const result = parseStandardizedAnswer(JSON.stringify({ ...VALID_ANSWER, [field]: " \n " }));
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining(field) });
+  });
+});
+
 describe("agent/loop (AC6 & AC7)", () => {
   it("零工具时自动退化为单轮无 tools 参数请求", async () => {
     let sawToolsParam = false;
@@ -73,8 +84,15 @@ describe("agent/loop (AC6 & AC7)", () => {
       },
       fetchImpl: async (_url, init) => {
         callCount += 1;
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const body = JSON.parse(String(init?.body)) as {
+          messages: Array<{ role: string; content: string }>;
+        };
         if ("tools" in body) sawToolsParam = true;
+        expect(body.messages[0].role).toBe("system");
+        const prompt = body.messages[0].content;
+        for (const rule of ["overall（综合推荐）", "priceValue（价格力度）", "needMatch（需求契合）", "orderEase（下单省心）", "lowRisk（低风险度）", "填 null", "summary 只写一句极简的购买结论"]) {
+          expect(prompt).toContain(rule);
+        }
         return new Response(
           JSON.stringify({
             choices: [{ message: { content: VALID_ANSWER_JSON } }],
@@ -89,6 +107,7 @@ describe("agent/loop (AC6 & AC7)", () => {
     expect(sawToolsParam).toBe(false);
     expect(res.status).toBe("succeeded");
     expect(res.answer?.verdict).toBe("recommended");
+    expect(res.answer?.ratings).toEqual(STAGE2_RATINGS);
     expect(res.inputTokens).toBe(50);
   });
 
@@ -215,10 +234,10 @@ describe("agent/loop (AC6 & AC7)", () => {
           );
         }
         if (callIdx === 2) {
-          // 强制收敛返回了非法 JSON（缺少必填字段）
+          // 强制收敛遗漏新模型输出必填的评分对象。
           return new Response(
             JSON.stringify({
-              choices: [{ message: { content: '{"verdict":"recommended"}' } }],
+              choices: [{ message: { content: JSON.stringify(LEGACY_STAGE2_ANSWER) } }],
             }),
             { status: 200 },
           );

@@ -3,9 +3,12 @@ import { RULE_VERSION } from "@/lib/domain/constants";
 import { setSecret } from "@/lib/db/repos/settings";
 import { enqueueJob } from "@/lib/db/repos/jobs";
 import { getBulletinAnalysis } from "@/lib/db/repos/analyses";
+import { getBulletin } from "@/lib/db/repos/bulletins";
+import { listEvaluationsByBulletin } from "@/lib/db/repos/evaluations";
 import { getNotificationByBulletin } from "@/lib/db/repos/notifications";
 import { listDeliveriesByBulletin } from "@/lib/db/repos/deliveries";
 import { loadEnv } from "@/lib/env";
+import { createNotificationAndDeliveries, getNotificationPayload } from "@/lib/notify/dispatch";
 import { saveNotifyConfig } from "@/lib/service/config";
 import {
   STAGE2_LLM_SECRET_NAMESPACE,
@@ -14,6 +17,7 @@ import {
 import { cleanupExpiredBulletins } from "@/lib/service/storage";
 import { runAnalyzerOnce, STAGE2_FALLBACK_NOTE } from "@/lib/worker/analyzer";
 import { runDelivererOnce } from "@/lib/worker/deliverer";
+import { LEGACY_STAGE2_ANSWER, STAGE2_RATINGS } from "../fixtures/stage2";
 import { createTestDb, testKey } from "../helpers/db";
 
 function seedMatchedBulletin(
@@ -63,7 +67,7 @@ async function deliverFeishu(ctx: ReturnType<typeof createTestDb>) {
   );
   const body = fetchImpl.mock.calls[0][1]?.body;
   expect(typeof body).toBe("string");
-  return JSON.parse(String(body)).content.post.zh_cn;
+  return JSON.parse(String(body));
 }
 
 describe("worker/stage2-pipeline (AC8)", () => {
@@ -95,6 +99,7 @@ describe("worker/stage2-pipeline (AC8)", () => {
                   message: {
                     content: JSON.stringify({
                       verdict: "recommended",
+                      ratings: STAGE2_RATINGS,
                       summary: "好价可入",
                       productName: "维达抽纸 24 包",
                       actualTotalPrice: 29.9,
@@ -123,12 +128,19 @@ describe("worker/stage2-pipeline (AC8)", () => {
 
       const analysisRec = getBulletinAnalysis(ctx.db, "b-rec");
       expect(analysisRec?.verdict).toBe("recommended");
-      const notifRec = getNotificationByBulletin(ctx.db, "b-rec");
-      expect(notifRec).not.toBeNull();
-      expect(notifRec?.payload).toContain("好价可入");
-      const feishuPost = await deliverFeishu(ctx);
-      expect(feishuPost.title).toContain("[推荐] 维达抽纸 24 包");
-      expect(feishuPost.content[0][0].text).toContain("结论（推荐）：好价可入");
+      expect(analysisRec?.answer?.ratings).toEqual(STAGE2_RATINGS);
+      expect(getNotificationPayload(ctx.db, "b-rec")?.analysis?.ratings).toEqual(STAGE2_RATINGS);
+      const feishuBody = await deliverFeishu(ctx);
+      expect(feishuBody).toMatchObject({
+        msg_type: "interactive",
+        card: {
+          header: { template: "green", title: { content: "[推荐] ★★★★☆ 维达抽纸 24 包" } },
+          elements: expect.arrayContaining([
+            expect.objectContaining({ text: { tag: "plain_text", content: "好价可入" } }),
+          ]),
+        },
+      });
+      expect(JSON.stringify(feishuBody)).not.toContain("29.9 / 24 = 1.25");
 
       // rejected 拦截不发送通知
       seedMatchedBulletin(ctx, "b-rej");
@@ -149,6 +161,7 @@ describe("worker/stage2-pipeline (AC8)", () => {
                   message: {
                     content: JSON.stringify({
                       verdict: "rejected",
+                      ratings: { overall: 1, priceValue: 1, needMatch: 1, orderEase: null, lowRisk: null },
                       summary: "伪优惠",
                       productName: "维达抽纸",
                       actualTotalPrice: 50,
@@ -215,9 +228,35 @@ describe("worker/stage2-pipeline (AC8)", () => {
       const notif = getNotificationByBulletin(ctx.db, "b-dead");
       expect(notif).not.toBeNull();
       expect(notif?.payload).toContain(STAGE2_FALLBACK_NOTE);
-      const feishuPost = await deliverFeishu(ctx);
+      const feishuBody = await deliverFeishu(ctx);
+      expect(feishuBody.msg_type).toBe("post");
+      const feishuPost = feishuBody.content.post.zh_cn;
       expect(feishuPost.title).toContain("命中需求：抽纸");
       expect(feishuPost.content[0][0].text).toContain(STAGE2_FALLBACK_NOTE);
+    } finally {
+      ctx.close();
+    }
+  });
+
+  it("从数据库读取缺少评分的历史通知快照并投递卡片（AC3）", async () => {
+    const ctx = createTestDb();
+    const key = testKey();
+    try {
+      saveNotifyConfig(ctx.db, {
+        feishu: { enabled: true, webhook: "https://feishu.example.com/webhook" },
+      }, key);
+      seedMatchedBulletin(ctx, "b-legacy");
+      const bulletin = getBulletin(ctx.db, "b-legacy");
+      if (!bulletin) throw new Error("测试线报未写入数据库");
+      createNotificationAndDeliveries(
+        ctx.db, bulletin, listEvaluationsByBulletin(ctx.db, bulletin.id), key,
+        { analysis: LEGACY_STAGE2_ANSWER },
+      );
+
+      const body = await deliverFeishu(ctx);
+      expect(body.msg_type).toBe("interactive");
+      expect(body.card.header.title.content).toBe("[推荐] 维达抽纸 24 包");
+      expect(JSON.stringify(body.card.elements)).not.toMatch(/fields|[★☆]/u);
     } finally {
       ctx.close();
     }

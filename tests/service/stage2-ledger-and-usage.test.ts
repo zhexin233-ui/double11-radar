@@ -32,6 +32,7 @@ const KEY = testKey();
 
 const VALID_STAGE2_JSON = JSON.stringify({
   verdict: "recommended",
+  ratings: { overall: 4, priceValue: null, needMatch: 5, orderEase: 5, lowRisk: 4 },
   summary: "好价推荐",
   productName: "维达抽纸 24包",
   actualTotalPrice: 29.9,

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useParams } from "next/navigation";
 import { Badge, Button, Group } from "@mantine/core";
 import { apiSend, errorMessage } from "@/components/api-client";
+import { formatStarRating } from "@/components/format";
 import { useApiResource } from "@/components/use-api";
 import {
   ANALYSIS_VERDICT_LABELS,
@@ -100,6 +101,7 @@ export default function BulletinDetailPage() {
   }
 
   const { bulletin } = detail;
+  const ratings = detail.analysis?.answer?.ratings;
 
   return (
     <div className="page">
@@ -385,6 +387,26 @@ export default function BulletinDetailPage() {
 
             {detail.analysis.error ? (
               <Feedback kind="error">{detail.analysis.error}</Feedback>
+            ) : null}
+
+            {ratings ? (
+              <div className="stack-sm">
+                <h3>量化评分</h3>
+                <dl className="facts">
+                  {[
+                    { label: "综合推荐", score: ratings.overall },
+                    { label: "价格力度", score: ratings.priceValue },
+                    { label: "需求契合", score: ratings.needMatch },
+                    { label: "下单省心", score: ratings.orderEase },
+                    { label: "低风险度", score: ratings.lowRisk },
+                  ].map(({ label, score }) => (
+                    <Fragment key={label}>
+                      <dt>{label}</dt>
+                      <dd>{formatStarRating(score)}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              </div>
             ) : null}
 
             {detail.analysis.answer ? (

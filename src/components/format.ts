@@ -9,3 +9,11 @@ export function formatTime(value: string | null): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
+
+/** 历史简报中的空值或非法分数统一显示为暂无数据。 */
+export function formatStarRating(score: number | null | undefined): string {
+  if (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 5) {
+    return "暂无数据";
+  }
+  return `${"★".repeat(score)}${"☆".repeat(5 - score)} ${score}/5`;
+}

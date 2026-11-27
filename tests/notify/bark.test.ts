@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { sendBark } from "@/lib/notify/bark";
 import type { NotifyMessage } from "@/lib/notify/types";
+import { LEGACY_STAGE2_ANSWER, STAGE2_RATINGS } from "../fixtures/stage2";
 import { jsonResponse } from "../fixtures/xianbao";
 
 const MESSAGE: NotifyMessage = {
@@ -10,6 +11,8 @@ const MESSAGE: NotifyMessage = {
   url: "https://new.xianbao.fun/haodan/1.html",
   price: 9.9,
 };
+
+const CONFIG = { serverUrl: "https://api.day.app", deviceKey: "device-key" };
 
 describe("Bark 推送（mock 验证）", () => {
   it("POST 到 /push，带 url 与 group", async () => {
@@ -26,6 +29,13 @@ describe("Bark 推送（mock 验证）", () => {
     expect(body.url).toBe(MESSAGE.url);
     expect(body.group).toBe("线报需求匹配");
     expect(body.device_key).toBe("device-key");
+    expect(body.title).toBe("命中需求：抽纸");
+    expect(body.body).toBe([
+      "需求：抽纸",
+      `线报：${MESSAGE.bulletinTitle}`,
+      "原文价格：9.9 元（来源标注，不代表券后实付）",
+      `分类说明（程序生成）：${MESSAGE.explanation}`,
+    ].join("\n"));
   });
 
   it("业务 code 非 200 视为失败", async () => {
@@ -63,6 +73,78 @@ describe("Bark 推送（mock 验证）", () => {
     expect(result.retryable).toBe(true);
     expect(result.error).toContain("Bark 服务无法连接");
     expect(result.error).not.toContain("network down");
+  });
+});
+
+describe("Bark 二级核验（AC3、AC4，模拟推送接口）", () => {
+  it("系统告警沿用原有标题、正文和分组", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ code: 200 }));
+    await sendBark({ kind: "system_alert", title: "密钥异常", lines: ["密钥已停用", "请检查密钥"] }, CONFIG, { fetchImpl });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
+      device_key: CONFIG.deviceKey,
+      title: "密钥异常",
+      body: "密钥已停用\n请检查密钥",
+      group: "系统密钥通知",
+    });
+  });
+
+  it("使用四行呈现带风险的评分摘要，原链接可跳转", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ code: 200 }));
+    const result = await sendBark({
+      ...MESSAGE,
+      mall: "示例商城",
+      channelName: "示例频道",
+      analysis: { ...LEGACY_STAGE2_ANSWER, ratings: STAGE2_RATINGS },
+    }, CONFIG, { fetchImpl });
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toMatchObject({
+      title: "[推荐] ★★★★☆ 维达抽纸 24 包",
+      body: [
+        "到手 29.9 元 · 1.25 元/包 | 命中：抽纸",
+        "价格 ★★★★★ | 契合 ★★☆☆☆ | 省心 ★★★☆☆ | 低风险 暂无数据",
+        "近期好价可入",
+        "注意：需先领券",
+      ].join("\n"),
+      url: MESSAGE.url,
+    });
+  });
+
+  it.each([
+    ["字段缺省", LEGACY_STAGE2_ANSWER],
+    ["字段为 null", { ...LEGACY_STAGE2_ANSWER, ratings: null }],
+  ] as const)("历史评分%s时成功发送紧凑正文且省略星级", async (_scenario, answer) => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ code: 200 }));
+    const result = await sendBark({
+      ...MESSAGE,
+      analysis: { ...answer, actualTotalPrice: null, unitPrice: null, risks: [] },
+    }, CONFIG, { fetchImpl });
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toMatchObject({
+      title: "[推荐] 维达抽纸 24 包",
+      body: "命中：抽纸\n近期好价可入",
+    });
+  });
+
+  it("仍展示零元到手，历史异常分数显示暂无数据", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ code: 200 }));
+    await sendBark({
+      ...MESSAGE,
+      analysis: {
+        ...LEGACY_STAGE2_ANSWER,
+        actualTotalPrice: 0,
+        unitPrice: null,
+        ratings: { ...STAGE2_RATINGS, overall: -1, priceValue: 6, needMatch: 2.5 },
+        risks: [],
+      },
+    }, CONFIG, { fetchImpl });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toMatchObject({
+      title: "[推荐] 维达抽纸 24 包",
+      body: [
+        "到手 0 元 | 命中：抽纸",
+        "价格 暂无数据 | 契合 暂无数据 | 省心 ★★★☆☆ | 低风险 暂无数据",
+        "近期好价可入",
+      ].join("\n"),
+    });
   });
 });
 
